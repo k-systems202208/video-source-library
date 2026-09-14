@@ -17,7 +17,9 @@ jobs:
         with:
           ref: feature/issue-57-external-subtitles
       - name: Apply patch
-        run: python scripts/issue57_patch.py
+        run: |
+          sed -i 's/0.7.9 動画版Tailscale外部URL分離/0.7.9 動画版Tailscale外部URLの分離/' scripts/issue57_patch.py
+          python scripts/issue57_patch.py
       - name: Verify
         run: |
           python -m py_compile windows-installer/src/subtitle_stream.py windows-installer/src/library_service.py windows-installer/src/server.py
@@ -27,6 +29,7 @@ jobs:
           if git diff --quiet; then exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -- scripts/issue57_patch.py
           git add README.md tests/test_release_consistency.py windows-installer/src/library_service.py windows-installer/src/server.py windows-installer/src/video-library.html windows-installer/src/service-worker.js windows-installer/src/app_version.py windows-installer/installer/VideoLibrary.iss
           git commit -m "Issue #57: 外部字幕をデフォルトONでブラウザ再生"
           git push
