@@ -71,6 +71,14 @@
 - `source_subfolder` は論理グループ情報として維持
 - 修復後に通常スキャンを行うため、動画再生と字幕照合も正しい実パスを利用
 
+### 0.7.2〜0.7.7: 字幕照合・診断完成と整合性整理
+- 0.7.2: 同一作品内で一意に確定できる字幕だけを安全に自動紐付け
+- 0.7.3: WindowsランチャーUIを音楽ライブラリと同系統へ統一
+- 0.7.4: 残存字幕を安全条件の範囲で追加照合
+- 0.7.5: 対応動画が登録されていない字幕を「対応動画なし」として正常系へ分離
+- 0.7.6: 診断ヘッダーを「字幕判定」に変更し、紐付済みと対応動画なしを明示
+- 0.7.7: 実機検証、アプリバージョン、README / Phase 6文書の整合性を整理
+
 対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
 ## ffprobe
@@ -117,7 +125,7 @@ movie.en.default.vtt
 
 `movie.commentary.srt` のように意味推測が必要な名前は自動紐付けしません。こうした字幕はスキャン診断画面で候補を確認できますが、自動紐付けはしません。
 
-Phase 6では検出・紐付け・表示までです。SRT/ASS→WebVTT変換とプレーヤー字幕表示は後続機能です。
+0.7.6までに字幕の検出・安全な紐付け・診断分類を実装済みです。SRT/ASS→WebVTT変換とプレーヤー字幕表示は後続機能です。
 
 ## Windowsでの通常利用
 
@@ -162,7 +170,7 @@ CI / Releaseで生成された `VideoLibrary-<version>-setup.exe` を実行し�
 
 ### スキャン診断
 
-メイン画面右上の「診断」からOwner専用診断画面を開けます。最新の成功スキャンについて、MISSING / NEW_FILE / 未紐付字幕 / エラーと候補を確認できます。
+メイン画面右上の「診断」からOwner専用診断画面を開けます。最新の成功スキャンについて、MISSING / NEW_FILE / 未紐付字幕 / 対応動画なし / 未対応字幕 / エラーと候補を確認できます。
 
 診断画面は読み取り専用です。候補を見つけてもファイル移動、ファイル名変更、DBパス更新、字幕紐付けは自動実行しません。必要な修正ルールを人が確認してから別工程で適用します。
 
@@ -227,10 +235,13 @@ python scripts\validate_real_library.py `
   --metadata "C:\path\video_library.json" `
   --expected-works 440 `
   --expected-videos 4869 `
-  --expected-subtitles 1237
+  --expected-subtitles 1234 `
+  --expected-matched-subtitles 1227 `
+  --expected-orphan-subtitles 7 `
+  --expected-unsupported-subtitles 3
 ```
 
-440作品 / 4,869動画 / 字幕1,237件、SQLite整合性、未紐付字幕、ffprobeエラーをまとめて確認します。0.7.1以降、この実機検証も起動時と同じ文字化けパス修復を先に適用します。
+440作品 / 4,869動画、対応字幕1,234件（紐付1,227件・対応動画なし7件）、未対応字幕3件、SQLite整合性、MISSING / NEW_FILE / 真の未紐付字幕 / 診断エラー / ffprobeエラーをまとめて確認します。対応動画なし7件は正常系として扱います。0.7.1以降、この実機検証も起動時と同じ文字化けパス修復を先に適用します。
 
 ## 個人データを公開しない
 実際の `video_library.json`、実動画、実字幕は公開リポジトリ／CIへ含めません。CIでは同じ **440作品 / 4,869動画 / 動画0件4作品** の合成データを使用します。
@@ -264,6 +275,12 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 - [0.6.9 起動時スキャンフロー](docs/20-0.6.9-startup-scan-flow.md)
 - [0.7.0 スキャン診断](docs/21-0.7.0-scan-diagnostics.md)
 - [0.7.1 Unicode / 文字化けパス修復](docs/22-0.7.1-unicode-path-repair.md)
+- [0.7.2 安全な字幕一意照合](docs/23-0.7.2-safe-subtitle-match.md)
+- [0.7.3 ランチャーUI統一](docs/24-0.7.3-launcher-ui-parity.md)
+- [0.7.4 残存字幕照合](docs/24-0.7.4-residual-subtitle-matching.md)
+- [0.7.5 対応動画なし字幕診断](docs/25-0.7.5-orphan-subtitle-diagnostics.md)
+- [0.7.6 字幕判定表示](docs/26-0.7.6-diagnostics-subtitle-judgement.md)
+- [0.7.7 整合性整理](docs/27-0.7.7-consistency-cleanup.md)
 
 ## 正本
 - 動画そのもの: ユーザー指定の動画フォルダー
