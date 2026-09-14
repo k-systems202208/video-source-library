@@ -1,1 +1,69 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#171a1f"><title>自宅動画ライブラリ</title><style>html,body{height:100%;margin:0;background:#111318;color:#f2f4f7;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}.box{min-height:100%;display:grid;place-items:center;padding:24px;text-align:center}.card{max-width:520px;background:#191c22;border:1px solid #303641;border-radius:18px;padding:28px}.muted{color:#a8b0bd}</style></head><body><div class="box"><div class="card"><h1>自宅動画ライブラリ</h1><p>サーバーへ接続できません。</p><p class="muted">自宅PCの動画ライブラリが起動しているか、Tailscale接続をご確認ください。</p></div></div></body></html>
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#171a1f">
+<title>自宅動画ライブラリ</title>
+<style>
+html,body{height:100%;margin:0;background:#111318;color:#f2f4f7;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+.box{min-height:100%;display:grid;place-items:center;padding:24px;text-align:center}
+.card{max-width:560px;background:#191c22;border:1px solid #303641;border-radius:18px;padding:28px}
+.muted{color:#a8b0bd}.error{color:#ffb4ab;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<div class="box"><div class="card">
+<h1>自宅動画ライブラリ</h1>
+<p id="message">サーバーへ接続できません。</p>
+<p id="detail" class="muted">自宅PCの動画ライブラリが起動しているか、Tailscale接続をご確認ください。</p>
+</div></div>
+<script>
+(async()=>{
+  const params=new URLSearchParams(location.search);
+  if(params.get('owner-bootstrap')!=='1')return;
+
+  const message=document.getElementById('message');
+  const detail=document.getElementById('detail');
+  message.textContent='ローカルオーナー確認中…';
+  detail.textContent='この画面は自動的にライブラリへ移動します。';
+
+  const prefix='#token=';
+  const fragment=location.hash || '';
+  const token=fragment.startsWith(prefix)?fragment.slice(prefix.length):'';
+
+  // Remove the secret from the address bar/history before any network request.
+  history.replaceState(null,'',location.pathname+'?owner-bootstrap=1');
+
+  if(!token){
+    message.textContent='ローカルオーナー確認に失敗しました。';
+    detail.textContent='認証トークンがありません。管理画面から「ブラウザで開く」をもう一度押してください。';
+    detail.className='error';
+    return;
+  }
+
+  try{
+    const response=await fetch('/api/local-auth/exchange?token='+encodeURIComponent(token),{
+      method:'GET',
+      credentials:'same-origin',
+      cache:'no-store',
+      redirect:'follow'
+    });
+    if(!response.ok){
+      let diagnostic='HTTP '+response.status;
+      try{
+        const body=await response.json();
+        if(body&&body.error&&body.error.code)diagnostic+=' / '+body.error.code;
+      }catch(_){ }
+      throw new Error(diagnostic);
+    }
+    location.replace('/');
+  }catch(error){
+    message.textContent='ローカルオーナー確認に失敗しました。';
+    detail.textContent='管理画面から「ブラウザで開く」をもう一度押してください。\n'+String(error&&error.message?error.message:error);
+    detail.className='error';
+  }
+})();
+</script>
+</body>
+</html>
