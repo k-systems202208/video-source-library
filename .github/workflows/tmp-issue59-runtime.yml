@@ -1,0 +1,30 @@
+name: Apply Issue 59 Runtime Patch
+
+on:
+  push:
+    branches: [feature/issue-59-playback-runtime]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/issue-59-playback-runtime
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Apply runtime patch
+        run: python scripts/apply_issue59_runtime.py
+      - name: Remove temporary patch files and commit
+        run: |
+          rm -f scripts/apply_issue59_runtime.py .github/workflows/tmp-issue59-runtime.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "0.9.0: 互換再生ランタイムとプレイヤーモーダルを実装"
+          git push origin HEAD:feature/issue-59-playback-runtime
