@@ -6,6 +6,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +28,9 @@ from matroska_audio import (
     preferred_japanese_audio_patch,
 )
 from metadata_importer import import_file
+from playback_compat import PlaybackPreparation
 from sample_metadata import build_metadata
+import server as server_module
 from server import create_server
 
 EBML_HEADER = 0x1A45DFA3
@@ -112,6 +115,14 @@ class JapaneseAudioHttpV078Tests(unittest.TestCase):
         expected[self.patch.offset:self.patch.offset + len(self.patch.data)] = self.patch.data
         self.expected = bytes(expected)
 
+        self.playback_patch = mock.patch.object(
+            server_module,
+            "prepare_browser_playback",
+            side_effect=lambda source, extension, video_codec, audio_codec, cache_dir, **kwargs: PlaybackPreparation(
+                path=Path(source), content_type="video/x-matroska", transcoded=False
+            ),
+        )
+        self.playback_patch.start()
         self.server = create_server(
             self.db_path,
             host="127.0.0.1",
@@ -126,6 +137,7 @@ class JapaneseAudioHttpV078Tests(unittest.TestCase):
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=2)
+        self.playback_patch.stop()
         self.temp.cleanup()
 
     def test_full_delivery_prefers_japanese_without_touching_source_file(self):
