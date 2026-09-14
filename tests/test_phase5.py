@@ -60,11 +60,11 @@ class BackupTests(unittest.TestCase):
     def test_backup_schedule_and_restore_round_trip(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); db = root / "library.db"; metadata = root / "fixture.json"
-            metadata.write_text(json.dumps(build_metadata(work_count=3, video_count=3), ensure_ascii=False), encoding="utf-8")
+            metadata.write_text(json.dumps(build_metadata(work_count=6, video_count=6), ensure_ascii=False), encoding="utf-8")
             import_file(metadata, db)
             backup = create_manual_backup(database_path=db, backup_dir=root / "Backups")
             self.assertTrue(backup["valid"])
-            self.assertEqual(backup["workCount"], 3)
+            self.assertEqual(backup["workCount"], 6)
             self.assertEqual(len(list_backups(root / "Backups")), 1)
             with connect(db) as connection:
                 original = connection.execute("SELECT official_title FROM works WHERE external_work_no=1").fetchone()[0]
