@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from urllib.error import HTTPError
@@ -33,6 +34,14 @@ class Phase3ScannerTests(unittest.TestCase):
     def test_scan_matched_missing_and_new(self):
         with connect(self.db_path) as c:
             r=scan_library(c,self.video_root); self.assertEqual((r['filesFound'],r['filesMatched'],r['filesMissing'],r['filesNew'],r['errors']),(6,5,1,1,0)); rows=c.execute("SELECT v.external_file_no,vf.scan_status,vf.is_available FROM videos v JOIN video_files vf ON vf.video_id=v.id ORDER BY v.external_file_no").fetchall(); self.assertEqual([x['scan_status'] for x in rows[:5]],['MATCHED']*5); self.assertEqual(rows[5]['scan_status'],'MISSING'); self.assertEqual(c.execute('SELECT COUNT(*) FROM scan_discoveries').fetchone()[0],1); self.assertEqual(latest_scan_status(c)['latest']['filesMatched'],5)
+    def test_scan_progress_callback_reports_phases_without_absolute_root(self):
+        events=[]
+        with connect(self.db_path) as c: scan_library(c,self.video_root,progress_callback=events.append)
+        phases={x.get('phase') for x in events}; self.assertIn('SCANNING',phases); self.assertIn('SUBTITLES',phases); self.assertIn('SUCCESS',phases)
+        current_items=[str(x['currentItem']) for x in events if x.get('currentItem')]
+        self.assertTrue(current_items); self.assertTrue(all(str(self.video_root) not in x for x in current_items))
+        scanning=[x for x in events if x.get('phase')=='SCANNING' and x.get('total')]
+        self.assertTrue(scanning); self.assertEqual(scanning[-1]['total'],6)
     def test_scan_does_not_delete_personal_state_for_missing_file(self):
         with connect(self.db_path) as c:
             now='2026-09-14T00:00:00+09:00'; c.execute("INSERT INTO users(display_name,is_owner,is_active,created_at,updated_at) VALUES ('Owner',1,1,?,?)",(now,now)); u=c.execute('SELECT id FROM users').fetchone()[0]; v=c.execute('SELECT id FROM videos WHERE external_file_no=6').fetchone()[0]; c.execute("INSERT INTO user_video_state(user_id,video_id,favorite,watched,play_count,position_ms,created_at,updated_at) VALUES (?,?,1,0,3,4567,?,?)",(u,v,now,now)); c.commit(); scan_library(c,self.video_root); self.assertEqual(tuple(c.execute('SELECT favorite,play_count,position_ms FROM user_video_state WHERE video_id=?',(v,)).fetchone()),(1,3,4567))
@@ -60,14 +69,21 @@ class Phase3HttpTests(unittest.TestCase):
         req=Request(f'{self.base_url}/video/{self.video_id}',headers={'Range':'bytes=999-1000'})
         with self.assertRaises(HTTPError) as x:urlopen(req)
         self.assertEqual(x.exception.code,416); self.assertEqual(x.exception.headers['Content-Range'],f'bytes */{len(self.data)}')
-    def test_scan_api_and_status_do_not_expose_root_path(self):
-        with urlopen(Request(f'{self.base_url}/api/scan',data=b'',method='POST')) as r:self.assertEqual(json.loads(r.read())['status'],'SUCCESS')
-        with urlopen(f'{self.base_url}/api/scan/status') as r:text=r.read().decode('utf-8'); data=json.loads(text); self.assertTrue(data['videoRootConfigured']); self.assertNotIn(str(self.video_root),text)
+    def test_scan_api_is_async_and_status_does_not_expose_root_path(self):
+        with urlopen(Request(f'{self.base_url}/api/scan',data=b'',method='POST')) as r:
+            self.assertEqual(r.status,202); accepted=json.loads(r.read()); self.assertTrue(accepted['accepted'])
+        deadline=time.monotonic()+5; data=None; text=''
+        while time.monotonic()<deadline:
+            with urlopen(f'{self.base_url}/api/scan/status') as r: text=r.read().decode('utf-8'); data=json.loads(text)
+            self.assertTrue(data['videoRootConfigured']); self.assertNotIn(str(self.video_root),text)
+            if not data['running']: break
+            time.sleep(.05)
+        self.assertIsNotNone(data); self.assertFalse(data['running']); self.assertEqual(data['latest']['status'],'SUCCESS'); self.assertIsNotNone(data['progress']); self.assertEqual(data['progress']['phase'],'SUCCESS')
     def test_video_api_does_not_expose_physical_path(self):
         with urlopen(f'{self.base_url}/api/videos/{self.video_id}') as r:text=r.read().decode('utf-8')
         self.assertNotIn('relative_path',text); self.assertNotIn('relativePath',text); self.assertNotIn(str(self.video_root),text)
-    def test_ui_contains_player_and_scan_control(self):
+    def test_ui_contains_player_scan_control_and_progress_modal(self):
         with urlopen(f'{self.base_url}/') as r:html=r.read().decode('utf-8')
-        self.assertIn('再スキャン',html); self.assertIn("document.createElement('video')",html)
+        self.assertIn('再スキャン',html); self.assertIn("document.createElement('video')",html); self.assertIn('id="scanModal"',html); self.assertIn('進捗を表示',html); self.assertIn('/api/scan/status',html)
 
 if __name__=='__main__':unittest.main()
