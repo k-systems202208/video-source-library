@@ -42,50 +42,38 @@ jobs:
               '        self.remote_disable_button = ttk.Button(remote_buttons, text="外部接続を停止", command=self.disable_remote)\n        self.remote_disable_button.pack(side="left", padx=8)\n        self.remote_open_button = ttk.Button(remote_buttons, text="外部URLを開く", command=self.open_remote, state="disabled")\n        self.remote_open_button.pack(side="left")\n        ttk.Button(remote_buttons, text="Tailscale再確認", command=self.refresh_remote).pack(side="right")\n',
           )
 
-          old_remote = '''    def refresh_remote(self) -> None:
-              status = get_remote_status()
-              if not status.installed:
-                  self.remote.set("Tailscale未インストール")
-              elif not status.logged_in:
-                  self.remote.set("未ログイン")
-              elif status.serve_active:
-                  self.remote.set(f"外部接続は有効です： {status.serve_url}")
-              else:
-                  self.remote.set("Tailscaleログイン済み / 外部接続は停止中")
-
-          '''.replace('          ', '')
-          new_remote = '''    def refresh_remote(self) -> None:
-              status = get_remote_status()
-              self.remote_url = status.serve_url if status.serve_active else ""
-              self.remote_open_button.configure(state="normal" if self.remote_url else "disabled")
-              if not status.installed:
-                  self.remote.set("Tailscale未インストール")
-              elif not status.logged_in:
-                  self.remote.set("未ログイン")
-              elif status.serve_active:
-                  self.remote.set(f"動画版の外部接続は有効です： {status.serve_url}")
-              else:
-                  self.remote.set("Tailscaleログイン済み / 動画版の外部接続は停止中")
-
-              def open_remote(self) -> None:
-                  if not self.remote_url:
-                      self.refresh_remote()
-                  if not self.remote_url:
-                      messagebox.showinfo(APP_NAME, "動画版の外部接続を先に有効化してください。")
-                      return
-                  try:
-                      webbrowser.open(self.remote_url)
-                  except Exception as exc:
-                      messagebox.showerror(APP_NAME, f"外部URLを開けませんでした。\\n{exc}")
-
-          '''.replace('          ', '')
-          # The helper above intentionally preserves method indentation in source text.
-          new_remote = new_remote.replace('\n    def open_remote', '\n    def open_remote')
           if '    def open_remote(self) -> None:\n' not in text:
-              count = text.count(old_remote)
-              if count != 1:
-                  raise SystemExit(f'expected one refresh_remote block, found {count}')
-              text = text.replace(old_remote, new_remote, 1)
+              start = text.find('    def refresh_remote(self) -> None:\n')
+              end = text.find('    def enable_remote(self) -> None:\n', start)
+              if start < 0 or end < 0:
+                  raise SystemExit('refresh_remote/enable_remote boundary not found')
+              block = (
+                  '    def refresh_remote(self) -> None:\n'
+                  '        status = get_remote_status()\n'
+                  '        self.remote_url = status.serve_url if status.serve_active else ""\n'
+                  '        self.remote_open_button.configure(state="normal" if self.remote_url else "disabled")\n'
+                  '        if not status.installed:\n'
+                  '            self.remote.set("Tailscale未インストール")\n'
+                  '        elif not status.logged_in:\n'
+                  '            self.remote.set("未ログイン")\n'
+                  '        elif status.serve_active:\n'
+                  '            self.remote.set(f"動画版の外部接続は有効です： {status.serve_url}")\n'
+                  '        else:\n'
+                  '            self.remote.set("Tailscaleログイン済み / 動画版の外部接続は停止中")\n'
+                  '\n'
+                  '    def open_remote(self) -> None:\n'
+                  '        if not self.remote_url:\n'
+                  '            self.refresh_remote()\n'
+                  '        if not self.remote_url:\n'
+                  '            messagebox.showinfo(APP_NAME, "動画版の外部接続を先に有効化してください。")\n'
+                  '            return\n'
+                  '        try:\n'
+                  '            webbrowser.open(self.remote_url)\n'
+                  '        except Exception as exc:\n'
+                  '            messagebox.showerror(APP_NAME, f"外部URLを開けませんでした。\\n{exc}")\n'
+                  '\n'
+              )
+              text = text[:start] + block + text[end:]
 
           path.write_text(text, encoding='utf-8')
       - name: Verify launcher syntax and UI markers
