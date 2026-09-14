@@ -93,7 +93,7 @@ class DiagnosticsHttpTests(unittest.TestCase):
         status, json_headers, json_payload = self.request("GET", "/api/admin/scan-diagnostics.json", headers=headers)
         self.assertEqual(status, 200)
         self.assertIn("attachment", json_headers["Content-Disposition"])
-        self.assertEqual(json.loads(json_payload.decode("utf-8"))["summary"]["newFiles"], 1)
+        self.assertEqual(json_payload["summary"]["newFiles"], 1)
 
     def test_main_page_links_to_diagnostics(self):
         status, _, html = self.request("GET", "/")
