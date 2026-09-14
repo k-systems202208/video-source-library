@@ -4,11 +4,13 @@ import json
 import secrets
 import shutil
 import threading
+import time
 import tkinter as tk
 import urllib.parse
 import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from typing import Any, Callable
 
 from app_config import load_config, save_config
 from backup_restore import apply_pending_restore, create_manual_backup
@@ -18,10 +20,11 @@ from media_probe import find_ffprobe
 from metadata_importer import import_file
 from paths import CONFIG_PATH, DATABASE_PATH, DATA_ROOT, RUNTIME_PATH
 from remote_access import disable_remote_access, enable_remote_access, get_remote_status
+from scanner import scan_library
 from server import create_server
 
 APP_NAME = "自宅動画ライブラリ"
-APP_VERSION = "0.6.8"
+APP_VERSION = "0.6.9"
 # Music Library uses 8765. Keep Video Library on a different localhost origin
 # so Service Worker, Cache Storage and PWA state cannot collide.
 DEFAULT_PORT = 8876
@@ -56,13 +59,7 @@ def database_counts() -> tuple[int, int]:
 
 
 def recover_interrupted_scans(database_path: Path = DATABASE_PATH) -> int:
-    """Mark scans left RUNNING by a previous process as interrupted.
-
-    scan_runs is durable history, but the worker thread is process-local.  A
-    RUNNING row therefore cannot still be active after the Windows launcher has
-    restarted.  Leaving it untouched makes the browser believe an old scan is
-    still running forever.
-    """
+    """Mark scans left RUNNING by a previous process as interrupted."""
     if not database_path.is_file():
         return 0
     with connect(database_path) as connection:
@@ -81,15 +78,43 @@ def recover_interrupted_scans(database_path: Path = DATABASE_PATH) -> int:
         return max(0, int(cursor.rowcount or 0))
 
 
+def run_startup_scan(
+    database_path: Path,
+    video_root: Path,
+    *,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Run the same scan used by the browser before starting the HTTP server."""
+    with connect(database_path) as connection:
+        return scan_library(connection, video_root, progress_callback=progress_callback)
+
+
+def _phase_text(value: str | None) -> str:
+    return {
+        "PREPARING": "準備中",
+        "SCANNING": "動画を走査中",
+        "PROBING": "ffprobe解析中",
+        "SUBTITLES": "字幕を照合中",
+        "FINALIZING": "結果を保存中",
+        "SUCCESS": "完了",
+        "FAILED": "失敗",
+    }.get(str(value or ""), str(value or "処理中"))
+
+
 class VideoLibraryLauncher(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(f"{APP_NAME} {APP_VERSION}")
-        self.geometry("780x500")
-        self.minsize(700, 460)
+        self.geometry("820x690")
+        self.minsize(740, 620)
         self.server = None
         self.server_thread: threading.Thread | None = None
+        self.scan_thread: threading.Thread | None = None
+        self.scan_started_monotonic: float | None = None
         self.control_secret = ""
+        self._last_phase = ""
+        self._last_logged_current = -1
+        self._indeterminate = False
         config = load_config(CONFIG_PATH)
         default_metadata = str(METADATA_PATH) if METADATA_PATH.is_file() else ""
         self.video_root = tk.StringVar(value=str(config.get("videoRoot") or ""))
@@ -98,47 +123,101 @@ class VideoLibraryLauncher(tk.Tk):
         self.metadata_status = tk.StringVar(value="メタデータ未確認")
         self.probe_status = tk.StringVar(value="ffprobe未確認")
         self.remote = tk.StringVar(value="未確認")
+        self.scan_status = tk.StringVar(value="起動スキャン待機中")
+        self.scan_counts = tk.StringVar(value="MATCHED 0 / MISSING 0 / NEW_FILE 0 / 字幕 0 / ffprobe 0")
+        self.scan_current = tk.StringVar(value="現在処理中: —")
+        self.scan_elapsed = tk.StringVar(value="経過: —")
         self._build()
         self.after(200, self.refresh_local_status)
         self.after(300, self.refresh_remote)
+        # Music Library-compatible startup flow: if the previous settings are
+        # usable, start scanning immediately and open the browser only when done.
+        self.after(800, self._auto_start_if_ready)
         self.protocol("WM_DELETE_WINDOW", self.close)
 
     def _build(self) -> None:
-        frame = ttk.Frame(self, padding=18); frame.pack(fill="both", expand=True)
+        frame = ttk.Frame(self, padding=18)
+        frame.pack(fill="both", expand=True)
         ttk.Label(frame, text=APP_NAME, font=("Segoe UI", 18, "bold")).pack(anchor="w")
-        ttk.Label(frame, textvariable=self.status).pack(anchor="w", pady=(2, 16))
+        ttk.Label(frame, text="動画フォルダーを確認・スキャンした後、ブラウザを起動します。").pack(anchor="w", pady=(2, 10))
+        ttk.Label(frame, textvariable=self.status).pack(anchor="w", pady=(0, 12))
 
-        row = ttk.Frame(frame); row.pack(fill="x", pady=3)
+        row = ttk.Frame(frame)
+        row.pack(fill="x", pady=3)
         ttk.Label(row, text="動画フォルダー", width=16).pack(side="left")
-        ttk.Entry(row, textvariable=self.video_root).pack(side="left", fill="x", expand=True, padx=8)
-        ttk.Button(row, text="参照", command=self.choose_root).pack(side="right")
+        self.root_entry = ttk.Entry(row, textvariable=self.video_root)
+        self.root_entry.pack(side="left", fill="x", expand=True, padx=8)
+        self.root_button = ttk.Button(row, text="参照", command=self.choose_root)
+        self.root_button.pack(side="right")
 
-        meta_row = ttk.Frame(frame); meta_row.pack(fill="x", pady=3)
+        meta_row = ttk.Frame(frame)
+        meta_row.pack(fill="x", pady=3)
         ttk.Label(meta_row, text="メタデータJSON", width=16).pack(side="left")
-        ttk.Entry(meta_row, textvariable=self.metadata_path).pack(side="left", fill="x", expand=True, padx=8)
-        ttk.Button(meta_row, text="参照", command=self.choose_metadata).pack(side="right")
-        ttk.Button(meta_row, text="取込", command=self.import_metadata).pack(side="right", padx=(0, 8))
+        self.meta_entry = ttk.Entry(meta_row, textvariable=self.metadata_path)
+        self.meta_entry.pack(side="left", fill="x", expand=True, padx=8)
+        self.meta_browse_button = ttk.Button(meta_row, text="参照", command=self.choose_metadata)
+        self.meta_browse_button.pack(side="right")
+        self.import_button = ttk.Button(meta_row, text="取込", command=self.import_metadata)
+        self.import_button.pack(side="right", padx=(0, 8))
 
         ttk.Label(frame, textvariable=self.metadata_status).pack(anchor="w", pady=(4, 0))
         ttk.Label(frame, textvariable=self.probe_status).pack(anchor="w", pady=(2, 0))
 
-        buttons = ttk.Frame(frame); buttons.pack(fill="x", pady=18)
-        ttk.Button(buttons, text="開始", command=self.start_server).pack(side="left")
-        ttk.Button(buttons, text="ブラウザで開く", command=self.open_browser).pack(side="left", padx=8)
-        ttk.Button(buttons, text="停止", command=self.stop_server).pack(side="left")
-        ttk.Separator(frame).pack(fill="x", pady=8)
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x", pady=12)
+        self.start_button = ttk.Button(buttons, text="ライブラリを開始", command=self.start_library)
+        self.start_button.pack(side="left")
+        self.browser_button = ttk.Button(buttons, text="ブラウザで開く", command=self.open_browser, state="disabled")
+        self.browser_button.pack(side="left", padx=8)
+        self.stop_button = ttk.Button(buttons, text="停止", command=self.stop_server, state="disabled")
+        self.stop_button.pack(side="left")
 
-        remote_row = ttk.Frame(frame); remote_row.pack(fill="x", pady=8)
+        scan_box = ttk.LabelFrame(frame, text="起動スキャン", padding=10)
+        scan_box.pack(fill="both", expand=True, pady=(2, 10))
+        ttk.Label(scan_box, textvariable=self.scan_status, font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        self.scan_progress = ttk.Progressbar(scan_box, mode="determinate", maximum=100)
+        self.scan_progress.pack(fill="x", pady=(8, 5))
+        ttk.Label(scan_box, textvariable=self.scan_counts).pack(anchor="w")
+        ttk.Label(scan_box, textvariable=self.scan_current).pack(anchor="w", pady=(3, 0))
+        ttk.Label(scan_box, textvariable=self.scan_elapsed).pack(anchor="w", pady=(2, 6))
+        self.log_text = tk.Text(scan_box, height=10, wrap="none", font=("Consolas", 9), state="disabled")
+        self.log_text.pack(fill="both", expand=True)
+
+        ttk.Separator(frame).pack(fill="x", pady=6)
+        remote_row = ttk.Frame(frame)
+        remote_row.pack(fill="x", pady=6)
         ttk.Label(remote_row, text="Tailscale: ").pack(side="left")
         ttk.Label(remote_row, textvariable=self.remote).pack(side="left")
         ttk.Button(remote_row, text="外部接続を有効化", command=self.enable_remote).pack(side="right")
         ttk.Button(remote_row, text="無効化", command=self.disable_remote).pack(side="right", padx=8)
 
-        bottom = ttk.Frame(frame); bottom.pack(fill="x", pady=14)
+        bottom = ttk.Frame(frame)
+        bottom.pack(fill="x", pady=8)
         ttk.Button(bottom, text="バックアップ作成", command=self.backup).pack(side="left")
         ttk.Button(bottom, text="Tailscale再確認", command=self.refresh_remote).pack(side="left", padx=8)
         ttk.Button(bottom, text="状態再確認", command=self.refresh_local_status).pack(side="left")
-        ttk.Label(frame, text=f"データ保存先: {DATA_ROOT}").pack(anchor="w", pady=(18, 0))
+        ttk.Label(frame, text=f"データ保存先: {DATA_ROOT}").pack(anchor="w", pady=(8, 0))
+
+    def _append_log(self, text: str) -> None:
+        self.log_text.configure(state="normal")
+        self.log_text.insert("end", text.rstrip() + "\n")
+        self.log_text.see("end")
+        self.log_text.configure(state="disabled")
+
+    def _set_busy(self, busy: bool) -> None:
+        state = "disabled" if busy else "normal"
+        self.start_button.configure(state=state)
+        self.root_button.configure(state=state)
+        self.meta_browse_button.configure(state=state)
+        self.import_button.configure(state=state)
+        self.root_entry.configure(state=state)
+        self.meta_entry.configure(state=state)
+        if busy:
+            self.browser_button.configure(state="disabled")
+            self.stop_button.configure(state="disabled")
+        else:
+            self.browser_button.configure(state="normal" if self.server is not None else "disabled")
+            self.stop_button.configure(state="normal" if self.server is not None else "disabled")
 
     def _save_config(self) -> None:
         value = load_config(CONFIG_PATH)
@@ -162,7 +241,7 @@ class VideoLibraryLauncher(tk.Tk):
             self._save_config()
 
     def import_metadata(self) -> None:
-        if self.server is not None:
+        if self.server is not None or self.scan_thread is not None:
             messagebox.showinfo(APP_NAME, "メタデータ取込前にライブラリを停止してください。")
             return
         source = Path(self.metadata_path.get()).expanduser()
@@ -191,31 +270,182 @@ class VideoLibraryLauncher(tk.Tk):
         ffprobe = find_ffprobe()
         self.probe_status.set(f"ffprobe: {'利用可 - ' + str(ffprobe) if ffprobe else '未検出（動画解析のみ省略）'}")
 
-    def start_server(self) -> None:
-        if self.server is not None:
+    def _auto_start_if_ready(self) -> None:
+        if self.server is not None or self.scan_thread is not None:
             return
         root = Path(self.video_root.get()).expanduser()
-        if not root.is_dir():
-            messagebox.showerror(APP_NAME, "動画フォルダーが見つかりません。")
+        if not root.is_dir() or not DATABASE_PATH.is_file():
+            self.status.set("動画フォルダーとメタデータを確認してください")
             return
         try:
             works, videos = database_counts()
-        except Exception as exc:
-            messagebox.showerror(APP_NAME, f"DBを確認できませんでした。\n{exc}")
+        except Exception:
             return
-        if works == 0 or videos == 0:
-            messagebox.showerror(APP_NAME, "先に監査済み video_library.json を取り込んでください。")
+        if works > 0 and videos > 0:
+            self.start_library(auto=True)
+
+    def start_library(self, auto: bool = False) -> None:
+        if self.server is not None:
+            self.open_browser()
             return
+        if self.scan_thread is not None:
+            return
+        root = Path(self.video_root.get()).expanduser()
+        if not root.is_dir():
+            if auto:
+                self.status.set("動画フォルダーを確認してください")
+            else:
+                messagebox.showerror(APP_NAME, "動画フォルダーが見つかりません。")
+            return
+
         self._save_config()
         DATA_ROOT.mkdir(parents=True, exist_ok=True)
         restore = apply_pending_restore(DATA_ROOT)
         if restore and restore.get("state") == "error":
             messagebox.showwarning(APP_NAME, f"予約された復元に失敗しました。\n{restore.get('error', '')}")
         try:
-            recover_interrupted_scans(DATABASE_PATH)
+            works, videos = database_counts()
+            if works == 0 or videos == 0:
+                raise RuntimeError("先に監査済み video_library.json を取り込んでください。")
+            recovered = recover_interrupted_scans(DATABASE_PATH)
         except Exception as exc:
-            messagebox.showerror(APP_NAME, f"前回スキャン状態を回収できませんでした。\n{exc}")
+            if auto:
+                self.status.set(f"起動準備エラー: {exc}")
+            else:
+                messagebox.showerror(APP_NAME, f"起動準備に失敗しました。\n{exc}")
             return
+
+        self._set_busy(True)
+        self.scan_started_monotonic = time.monotonic()
+        self._last_phase = ""
+        self._last_logged_current = -1
+        self.status.set("動画ライブラリを準備中 — 起動スキャンを実行しています")
+        self.scan_status.set("準備中 — スキャンを開始しています")
+        self.scan_counts.set("MATCHED 0 / MISSING 0 / NEW_FILE 0 / 字幕 0 / ffprobe 0")
+        self.scan_current.set("現在処理中: —")
+        self.scan_elapsed.set("経過: 0:00")
+        self.scan_progress.configure(mode="indeterminate")
+        self.scan_progress.start(12)
+        self._indeterminate = True
+        self._append_log("=" * 72)
+        self._append_log(f"{APP_NAME} {APP_VERSION}")
+        self._append_log(f"動画フォルダー: {root}")
+        if recovered:
+            self._append_log(f"前回中断スキャン回収: {recovered}件")
+        self._append_log("起動スキャンを開始します。ブラウザは完了後に開きます。")
+        atomic_write_json(RUNTIME_PATH, {"state": "scanning", "videoRoot": str(root)})
+
+        self.scan_thread = threading.Thread(
+            target=self._startup_scan_worker,
+            args=(root,),
+            daemon=True,
+            name="VideoLibraryStartupScan",
+        )
+        self.scan_thread.start()
+
+    def _startup_scan_worker(self, root: Path) -> None:
+        try:
+            result = run_startup_scan(
+                DATABASE_PATH,
+                root,
+                progress_callback=self._progress_from_worker,
+            )
+        except Exception as exc:
+            self.after(0, lambda e=exc: self._startup_scan_failed(e))
+            return
+        self.after(0, lambda r=result, p=root: self._startup_scan_succeeded(p, r))
+
+    def _progress_from_worker(self, progress: dict[str, Any]) -> None:
+        snapshot = dict(progress)
+        self.after(0, lambda p=snapshot: self._apply_scan_progress(p))
+
+    def _apply_scan_progress(self, progress: dict[str, Any]) -> None:
+        phase = str(progress.get("phase") or "")
+        message = str(progress.get("message") or _phase_text(phase))
+        current = int(progress.get("current") or 0)
+        total = int(progress.get("total") or 0)
+        matched = int(progress.get("filesMatched") or 0)
+        missing = int(progress.get("filesMissing") or 0)
+        new_file = int(progress.get("filesNew") or 0)
+        subtitles = int(progress.get("subtitlesFound") or 0)
+        probed = int(progress.get("filesProbed") or 0)
+        current_item = str(progress.get("currentItem") or "—")
+
+        self.scan_status.set(f"{_phase_text(phase)} — {message}")
+        self.scan_counts.set(
+            f"MATCHED {matched:,} / MISSING {missing:,} / NEW_FILE {new_file:,} / "
+            f"字幕 {subtitles:,} / ffprobe {probed:,}"
+        )
+        self.scan_current.set(f"現在処理中: {current_item}")
+        if self.scan_started_monotonic is not None:
+            seconds = max(0, int(time.monotonic() - self.scan_started_monotonic))
+            self.scan_elapsed.set(f"経過: {seconds // 60}:{seconds % 60:02d}")
+
+        if total > 0:
+            if self._indeterminate:
+                self.scan_progress.stop()
+                self._indeterminate = False
+            self.scan_progress.configure(mode="determinate", maximum=max(1, total))
+            self.scan_progress["value"] = min(current, total)
+        elif not self._indeterminate:
+            self.scan_progress.configure(mode="indeterminate")
+            self.scan_progress.start(12)
+            self._indeterminate = True
+
+        if phase != self._last_phase:
+            self._append_log(f"[{_phase_text(phase)}] {message}")
+            self._last_phase = phase
+        if current > 0 and (current >= self._last_logged_current + 250 or (total > 0 and current == total)):
+            suffix = f" / {total:,}" if total else ""
+            self._append_log(f"  {current:,}{suffix}  {current_item}")
+            self._last_logged_current = current
+
+    def _startup_scan_succeeded(self, root: Path, result: dict[str, Any]) -> None:
+        self.scan_thread = None
+        if self._indeterminate:
+            self.scan_progress.stop()
+            self._indeterminate = False
+        self.scan_progress.configure(mode="determinate", maximum=100)
+        self.scan_progress["value"] = 100
+        self.scan_status.set("完了 — 起動スキャンが完了しました")
+        self.scan_counts.set(
+            f"MATCHED {int(result.get('filesMatched') or 0):,} / "
+            f"MISSING {int(result.get('filesMissing') or 0):,} / "
+            f"NEW_FILE {int(result.get('filesNew') or 0):,} / "
+            f"字幕 {int(result.get('subtitlesFound') or 0):,} / "
+            f"ffprobe {int(result.get('filesProbed') or 0):,}"
+        )
+        self.scan_current.set("現在処理中: 完了")
+        elapsed_ms = int(result.get("durationMs") or 0)
+        self.scan_elapsed.set(f"経過: {elapsed_ms // 60000}:{(elapsed_ms // 1000) % 60:02d}")
+        self._append_log(
+            "スキャン完了: "
+            f"一致 {result.get('filesMatched', 0):,} / 欠落 {result.get('filesMissing', 0):,} / "
+            f"新規 {result.get('filesNew', 0):,} / 字幕 {result.get('subtitlesFound', 0):,}"
+        )
+        self.status.set("スキャン完了 — ブラウザを起動しています")
+        if not self._start_http_server(root):
+            self._set_busy(False)
+            return
+        self._set_busy(False)
+        self.open_browser()
+
+    def _startup_scan_failed(self, exc: Exception) -> None:
+        self.scan_thread = None
+        if self._indeterminate:
+            self.scan_progress.stop()
+            self._indeterminate = False
+        self.scan_progress.configure(mode="determinate", maximum=100)
+        self.scan_progress["value"] = 0
+        self.scan_status.set("失敗 — 起動スキャンを完了できませんでした")
+        self.status.set("起動スキャンに失敗しました。ブラウザは起動していません。")
+        self.scan_current.set("現在処理中: —")
+        self._append_log(f"ERROR: {type(exc).__name__}: {exc}")
+        atomic_write_json(RUNTIME_PATH, {"state": "error", "message": str(exc)})
+        self._set_busy(False)
+        messagebox.showerror(APP_NAME, f"起動スキャンに失敗しました。\n{exc}")
+
+    def _start_http_server(self, root: Path) -> bool:
         self.control_secret = secrets.token_urlsafe(48)
         try:
             self.server = create_server(
@@ -228,18 +458,25 @@ class VideoLibraryLauncher(tk.Tk):
             )
         except Exception as exc:
             self.server = None
+            self.status.set("サーバーを開始できませんでした")
+            self._append_log(f"SERVER ERROR: {exc}")
             messagebox.showerror(APP_NAME, f"サーバーを開始できませんでした。\n{exc}")
-            return
+            return False
         self.server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.server_thread.start()
         url = f"http://127.0.0.1:{self.server.server_port}/"
-        atomic_write_json(RUNTIME_PATH, {"state": "running", "port": self.server.server_port, "url": url, "videoRoot": str(root)})
-        self.status.set(f"実行中  {url}")
-        self.open_browser()
+        atomic_write_json(
+            RUNTIME_PATH,
+            {"state": "running", "port": self.server.server_port, "url": url, "videoRoot": str(root)},
+        )
+        self.status.set(f"実行中 — ブラウザで利用できます  {url}")
+        self._append_log(f"ブラウザURL: {url}")
+        return True
 
     def open_browser(self) -> None:
         if self.server is None:
-            self.start_server(); return
+            self.start_library()
+            return
         base = f"http://127.0.0.1:{self.server.server_port}/"
         try:
             webbrowser.open(request_local_owner_browser_url(base, self.control_secret))
@@ -247,27 +484,43 @@ class VideoLibraryLauncher(tk.Tk):
             messagebox.showerror(APP_NAME, f"オーナーとしてブラウザを開けませんでした。\n{exc}")
 
     def stop_server(self) -> None:
+        if self.scan_thread is not None:
+            messagebox.showinfo(APP_NAME, "起動スキャン中です。終了する場合はこのウィンドウを閉じてください。")
+            return
         if self.server is not None:
-            self.server.shutdown(); self.server.server_close(); self.server = None
+            self.server.shutdown()
+            self.server.server_close()
+            self.server = None
         self.status.set("停止中")
+        self.browser_button.configure(state="disabled")
+        self.stop_button.configure(state="disabled")
+        self.start_button.configure(state="normal")
         atomic_write_json(RUNTIME_PATH, {"state": "stopped"})
 
     def refresh_remote(self) -> None:
         status = get_remote_status()
-        if not status.installed: self.remote.set("Tailscale未インストール")
-        elif not status.logged_in: self.remote.set("未ログイン")
-        elif status.serve_active: self.remote.set(f"有効  {status.serve_url}")
-        else: self.remote.set("ログイン済み / Serve無効")
+        if not status.installed:
+            self.remote.set("Tailscale未インストール")
+        elif not status.logged_in:
+            self.remote.set("未ログイン")
+        elif status.serve_active:
+            self.remote.set(f"有効  {status.serve_url}")
+        else:
+            self.remote.set("ログイン済み / Serve無効")
 
     def enable_remote(self) -> None:
         if self.server is None:
-            messagebox.showinfo(APP_NAME, "先に動画ライブラリを開始してください。"); return
-        ok, url, message = enable_remote_access(self.server.server_port); self.refresh_remote()
+            messagebox.showinfo(APP_NAME, "先に動画ライブラリを開始してください。")
+            return
+        ok, url, message = enable_remote_access(self.server.server_port)
+        self.refresh_remote()
         messagebox.showinfo(APP_NAME, f"{message}\n{url}") if ok else messagebox.showerror(APP_NAME, message)
 
     def disable_remote(self) -> None:
-        result = disable_remote_access(); self.refresh_remote()
-        if result.returncode != 0: messagebox.showerror(APP_NAME, result.output)
+        result = disable_remote_access()
+        self.refresh_remote()
+        if result.returncode != 0:
+            messagebox.showerror(APP_NAME, result.output)
 
     def backup(self) -> None:
         try:
@@ -277,11 +530,17 @@ class VideoLibraryLauncher(tk.Tk):
             messagebox.showerror(APP_NAME, str(exc))
 
     def close(self) -> None:
-        self.stop_server(); self.destroy()
+        if self.server is not None:
+            self.server.shutdown()
+            self.server.server_close()
+            self.server = None
+        atomic_write_json(RUNTIME_PATH, {"state": "stopped"})
+        self.destroy()
 
 
 def main() -> int:
-    VideoLibraryLauncher().mainloop(); return 0
+    VideoLibraryLauncher().mainloop()
+    return 0
 
 
 if __name__ == "__main__":
