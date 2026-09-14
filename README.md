@@ -103,11 +103,20 @@
 - ライブラリ停止中に「キャッシュをすべて削除」できる
 - 手動削除・自動整理とも `%LOCALAPPDATA%\VideoLibrary\PlaybackCache` だけを対象とし、元動画・字幕・SQLite・メタデータは変更しない
 
+### 0.9.2: v1.0前の実ライブラリ全件再生監査
+- Windowsランチャーの「全件再生監査」で登録動画を実ファイル単位にffprobe解析
+- コンテナ、映像Codec、全音声Codec・言語、日本語音声、外部字幕、埋め込み字幕を集計
+- 各動画を `DIRECT` / `TRANSCODE` / `NO_ROUTE` に分類
+- 欠損、ffprobe失敗、映像ストリームなし、FFmpeg不在を `NO_ROUTE` として明示
+- JSON / CSVレポートを `%LOCALAPPDATA%\VideoLibrary\diagnostics` へ出力
+- 元動画・字幕・PlaybackCache・SQLiteの利用者状態は変更しない
+- v1.0受入条件は実ライブラリ4,869件で `NO_ROUTE = 0`
+
 対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
 ## ffmpeg / ffprobe
 
-ffprobeはCodec・音声トラック解析に使用し、ffmpegはブラウザ非互換動画を再生用MP4へ変換します。0.9.0のWindows Installerには両方を同梱します。
+ffprobeはCodec・音声トラック解析に使用し、ffmpegはブラウザ非互換動画を再生用MP4へ変換します。0.9.0以降のWindows Installerには両方を同梱します。
 
 検索順:
 
@@ -270,6 +279,8 @@ python scripts\validate_real_library.py `
 
 440作品 / 4,869動画、対応字幕1,234件（紐付1,227件・対応動画なし7件）、未対応字幕3件、SQLite整合性、MISSING / NEW_FILE / 真の未紐付字幕 / 診断エラー / ffprobeエラーをまとめて確認します。対応動画なし7件は正常系として扱います。0.7.1以降、この実機検証も起動時と同じ文字化けパス修復を先に適用します。
 
+0.9.2ではさらに、Windowsランチャーでライブラリを停止してから「全件再生監査」を実行します。全登録動画をffprobeで解析し、`DIRECT` / `TRANSCODE` / `NO_ROUTE`、音声トラック、日本語音声、外部字幕、埋め込み字幕をJSON/CSVへ記録します。v1.0受入条件は4,869件すべてが監査対象となり、`NO_ROUTE = 0` であることです。
+
 ## 個人データを公開しない
 実際の `video_library.json`、実動画、実字幕は公開リポジトリ／CIへ含めません。CIでは同じ **440作品 / 4,869動画 / 動画0件4作品** の合成データを使用します。
 
@@ -311,6 +322,10 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 - [0.7.8 MKV複数音声の日本語優先再生](docs/28-0.7.8-japanese-audio-default.md)
 - [0.7.9 動画版Tailscale外部URLの分離](docs/29-0.7.9-video-remote-url.md)
 - [0.8.0 外部字幕のブラウザ再生](docs/30-0.8.0-external-subtitle-playback.md)
+- [全動画形式再生CI](docs/31-playback-format-ci.md)
+- [0.9.0 互換再生とプレイヤーモーダル](docs/31-0.9.0-playback-runtime-modal.md)
+- [0.9.1 再生キャッシュ容量管理](docs/32-0.9.1-playback-cache-management.md)
+- [0.9.2 実ライブラリ全件再生監査](docs/33-0.9.2-playback-audit.md)
 
 ## 正本
 - 動画そのもの: ユーザー指定の動画フォルダー

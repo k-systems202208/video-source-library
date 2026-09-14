@@ -21,6 +21,7 @@ from database import connect, initialize_database, now_iso
 from local_auth import create_bootstrap_token
 from media_probe import find_ffprobe
 from metadata_importer import import_file
+from playback_audit import audit_real_library
 from playback_cache import DEFAULT_CACHE_LIMIT_BYTES, clear_playback_cache, format_bytes, playback_cache_stats
 from paths import CONFIG_PATH, DATABASE_PATH, DATA_ROOT, RUNTIME_PATH
 from remote_access import disable_remote_access, enable_remote_access, get_remote_status
@@ -33,6 +34,7 @@ APP_NAME = "自宅動画ライブラリ"
 DEFAULT_PORT = 8876
 METADATA_PATH = DATA_ROOT / "metadata" / "video_library.json"
 PLAYBACK_CACHE_PATH = DATA_ROOT / "PlaybackCache"
+PLAYBACK_AUDIT_OUTPUT_PATH = DATA_ROOT / "diagnostics"
 
 # Keep the Windows launcher visually aligned with mp3-source-music-library.
 UI_FONT = "Yu Gothic UI"
@@ -129,6 +131,8 @@ class VideoLibraryLauncher(tk.Tk):
         self.server = None
         self.server_thread: threading.Thread | None = None
         self.scan_thread: threading.Thread | None = None
+        self.audit_thread: threading.Thread | None = None
+        self.audit_started_monotonic: float | None = None
         self.scan_started_monotonic: float | None = None
         self.control_secret = ""
         self._last_phase = ""
@@ -255,7 +259,9 @@ class VideoLibraryLauncher(tk.Tk):
         footer = ttk.Frame(main)
         footer.pack(fill="x", pady=(8, 0))
         ttk.Button(footer, text="バックアップ作成", command=self.backup).pack(side="left")
-        ttk.Button(footer, text="状態再確認", command=self.refresh_local_status).pack(side="left", padx=8)
+        self.audit_button = ttk.Button(footer, text="全件再生監査", command=self.start_playback_audit)
+        self.audit_button.pack(side="left", padx=8)
+        ttk.Button(footer, text="状態再確認", command=self.refresh_local_status).pack(side="left")
         ttk.Label(
             footer,
             text="この画面を閉じるとローカルサーバーも停止します。動画ファイル自体は変更しません。",
@@ -296,6 +302,117 @@ class VideoLibraryLauncher(tk.Tk):
                 f"再生キャッシュを削除しました。\n{result.removed_files}ファイル / {format_bytes(result.removed_bytes)}",
             )
 
+    def start_playback_audit(self) -> None:
+        if self.server is not None or self.scan_thread is not None or self.audit_thread is not None:
+            messagebox.showinfo(APP_NAME, "全件再生監査の前にライブラリを停止してください。")
+            return
+        root_text = self.video_root.get().strip()
+        root = Path(root_text).expanduser() if root_text and root_text != "未設定" else Path()
+        if not root.is_dir() or not DATABASE_PATH.is_file():
+            messagebox.showerror(APP_NAME, "動画フォルダーまたはライブラリDBを確認してください。")
+            return
+        if find_ffprobe() is None:
+            messagebox.showerror(APP_NAME, "ffprobeが見つからないため全件再生監査を実行できません。")
+            return
+        if not messagebox.askyesno(
+            APP_NAME,
+            "登録済み動画を全件ffprobe解析します。\n数分以上かかる場合があります。開始しますか？",
+        ):
+            return
+
+        self._set_busy(True)
+        self.audit_started_monotonic = time.monotonic()
+        self.status.set("全件再生監査を実行中です")
+        self.scan_status.set("再生監査中 — ffprobeで登録動画を確認しています")
+        self.scan_counts.set("DIRECT 0 / 互換変換 0 / 再生経路なし 0")
+        self.scan_current.set("現在処理中: —")
+        self.scan_elapsed.set("経過: 0:00")
+        self.scan_progress.configure(mode="determinate", maximum=1)
+        self.scan_progress["value"] = 0
+        self._append_log("=" * 72)
+        self._append_log("v1.0前 全件再生監査を開始します。元動画は変更しません。")
+        self.audit_thread = threading.Thread(
+            target=self._playback_audit_worker,
+            args=(root,),
+            daemon=True,
+            name="VideoLibraryPlaybackAudit",
+        )
+        self.audit_thread.start()
+
+    def _playback_audit_worker(self, root: Path) -> None:
+        try:
+            report = audit_real_library(
+                DATABASE_PATH,
+                root,
+                PLAYBACK_AUDIT_OUTPUT_PATH,
+                progress_callback=self._audit_progress_from_worker,
+            )
+        except Exception as exc:
+            self.after(0, lambda e=exc: self._playback_audit_failed(e))
+            return
+        self.after(0, lambda r=report: self._playback_audit_succeeded(r))
+
+    def _audit_progress_from_worker(self, progress: dict[str, Any]) -> None:
+        snapshot = dict(progress)
+        self.after(0, lambda p=snapshot: self._apply_audit_progress(p))
+
+    def _apply_audit_progress(self, progress: dict[str, Any]) -> None:
+        current = int(progress.get("current") or 0)
+        total = int(progress.get("total") or 0)
+        direct = int(progress.get("direct") or 0)
+        transcode = int(progress.get("transcode") or 0)
+        no_route = int(progress.get("noRoute") or 0)
+        current_item = str(progress.get("currentItem") or "—")
+        self.scan_status.set(f"再生監査中 — {current:,} / {total:,}")
+        self.scan_counts.set(f"DIRECT {direct:,} / 互換変換 {transcode:,} / 再生経路なし {no_route:,}")
+        self.scan_current.set(f"現在処理中: {current_item}")
+        self.scan_progress.configure(mode="determinate", maximum=max(1, total))
+        self.scan_progress["value"] = min(current, total)
+        if self.audit_started_monotonic is not None:
+            seconds = max(0, int(time.monotonic() - self.audit_started_monotonic))
+            self.scan_elapsed.set(f"経過: {seconds // 60}:{seconds % 60:02d}")
+        if current and (current % 250 == 0 or current == total):
+            self._append_log(
+                f"監査 {current:,}/{total:,}: DIRECT {direct:,} / 互換変換 {transcode:,} / 再生経路なし {no_route:,}"
+            )
+
+    def _playback_audit_succeeded(self, report: dict[str, Any]) -> None:
+        self.audit_thread = None
+        summary = report.get("summary") or {}
+        total = int(summary.get("total") or 0)
+        direct = int(summary.get("direct") or 0)
+        transcode = int(summary.get("transcode") or 0)
+        no_route = int(summary.get("noRoute") or 0)
+        self.scan_progress.configure(mode="determinate", maximum=max(1, total))
+        self.scan_progress["value"] = total
+        self.scan_status.set("完了 — 全件再生監査が完了しました")
+        self.scan_counts.set(f"DIRECT {direct:,} / 互換変換 {transcode:,} / 再生経路なし {no_route:,}")
+        self.scan_current.set("現在処理中: 完了")
+        self.status.set("全件再生監査が完了しました")
+        self._append_log(
+            f"全件再生監査完了: {total:,}件 / DIRECT {direct:,} / 互換変換 {transcode:,} / 再生経路なし {no_route:,}"
+        )
+        self._append_log(f"JSON: {report.get('jsonReport', '')}")
+        self._append_log(f"CSV : {report.get('csvReport', '')}")
+        self._set_busy(False)
+        message = (
+            f"全件再生監査が完了しました。\n\n"
+            f"対象: {total:,}件\nDIRECT: {direct:,}件\n互換変換: {transcode:,}件\n再生経路なし: {no_route:,}件\n\n"
+            f"レポート: {PLAYBACK_AUDIT_OUTPUT_PATH}"
+        )
+        if no_route:
+            messagebox.showwarning(APP_NAME, message)
+        else:
+            messagebox.showinfo(APP_NAME, message + "\n\nv1.0受入条件（再生経路なし0件）を満たしています。")
+
+    def _playback_audit_failed(self, exc: Exception) -> None:
+        self.audit_thread = None
+        self.status.set("全件再生監査に失敗しました")
+        self.scan_status.set("失敗 — 全件再生監査を完了できませんでした")
+        self._append_log(f"AUDIT ERROR: {type(exc).__name__}: {exc}")
+        self._set_busy(False)
+        messagebox.showerror(APP_NAME, f"全件再生監査に失敗しました。\n{exc}")
+
     def open_data_folder(self) -> None:
         DATA_ROOT.mkdir(parents=True, exist_ok=True)
         try:
@@ -318,6 +435,7 @@ class VideoLibraryLauncher(tk.Tk):
         self.root_button.configure(state=state)
         self.meta_browse_button.configure(state=state)
         self.import_button.configure(state=state)
+        self.audit_button.configure(state=state)
         if busy:
             self.browser_button.configure(state="disabled")
             self.stop_button.configure(state="disabled")
