@@ -1,0 +1,31 @@
+name: Apply Issue 62 Cache UI
+
+on:
+  push:
+    branches: [feature/issue-62-playback-cache-management]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/issue-62-playback-cache-management
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Apply cache UI patch
+        run: python scripts/apply_issue62_cache_ui.py
+      - name: Commit applied changes
+        run: |
+          rm -f scripts/apply_issue62_cache_ui.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git reset .github/workflows/tmp-issue62-cache-ui.yml
+          git commit -m "0.9.1: 再生キャッシュ管理UIとREADMEを追加"
+          git push origin HEAD:feature/issue-62-playback-cache-management
