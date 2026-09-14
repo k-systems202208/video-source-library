@@ -191,6 +191,7 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
                 "missing": 0,
                 "newFiles": 0,
                 "unmatchedSubtitles": 0,
+                "unsupportedSubtitles": 0,
                 "errors": 0,
                 "highConfidenceFileCandidates": 0,
                 "highConfidenceSubtitleCandidates": 0,
@@ -198,6 +199,7 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
             "missing": [],
             "newFiles": [],
             "unmatchedSubtitles": [],
+            "unsupportedSubtitles": [],
             "errors": [],
         }
 
@@ -253,6 +255,27 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
             "status": row["status"],
         }
         for row in discovery_rows
+    ]
+
+    unsupported_rows = connection.execute(
+        """
+        SELECT id, relative_path, extension, file_size, modified_time_ns, status
+        FROM scan_discoveries
+        WHERE scan_run_id=? AND status='UNSUPPORTED_SUBTITLE'
+        ORDER BY relative_path
+        """,
+        (actual_run_id,),
+    ).fetchall()
+    unsupported_subtitles = [
+        {
+            "discoveryId": int(row["id"]),
+            "relativePath": row["relative_path"],
+            "extension": row["extension"],
+            "fileSize": row["file_size"],
+            "modifiedTimeNs": row["modified_time_ns"],
+            "status": row["status"],
+        }
+        for row in unsupported_rows
     ]
 
     for item in missing:
@@ -385,6 +408,7 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
             "missing": len(missing),
             "newFiles": len(new_files),
             "unmatchedSubtitles": len(unmatched_subtitles),
+            "unsupportedSubtitles": len(unsupported_subtitles),
             "errors": len(errors),
             "highConfidenceFileCandidates": high_file_candidates,
             "highConfidenceSubtitleCandidates": high_subtitle_candidates,
@@ -392,6 +416,7 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
         "missing": missing,
         "newFiles": new_files,
         "unmatchedSubtitles": unmatched_subtitles,
+        "unsupportedSubtitles": unsupported_subtitles,
         "errors": errors,
     }
 
@@ -437,6 +462,17 @@ def diagnostics_csv_bytes(value: dict[str, Any]) -> bytes:
                 ";".join(candidate.get("reasons") or []),
                 candidate.get("workTitle") or "",
             ])
+
+    for item in value.get("unsupportedSubtitles", []):
+        writer.writerow([
+            "UNSUPPORTED_SUBTITLE",
+            item.get("relativePath"),
+            "",
+            "",
+            "",
+            item.get("extension") or "",
+            item.get("fileSize") or "",
+        ])
 
     for item in value.get("errors", []):
         writer.writerow([

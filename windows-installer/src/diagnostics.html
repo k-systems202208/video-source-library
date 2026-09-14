@@ -16,18 +16,20 @@
     <div><h1>スキャン診断</h1><div class="muted" id="scanInfo">読み込み中…</div></div>
     <div class="actions"><a class="btn" href="/">← ライブラリ</a><a class="btn" href="/api/admin/scan-diagnostics.csv">CSV</a><a class="btn" href="/api/admin/scan-diagnostics.json">JSON</a><button class="btn primary" id="reload">再読込</button></div>
   </div>
-  <div class="notice">ここに表示する候補は診断用です。ファイル移動・改名・DB更新・字幕紐付けを自動実行しません。</div>
+  <div class="notice">診断候補は確認用です。MISSING/NEW_FILE候補や曖昧な字幕候補から、ファイル移動・改名・DBパス修正を自動実行しません。字幕の自動紐付けは一意に確定できる安全ルールだけを使用します。</div>
   <div class="summary" id="summary"></div>
   <div class="tabs">
     <button class="tab active" data-panel="missing">MISSING <span class="count" id="missingCount"></span></button>
     <button class="tab" data-panel="newFiles">NEW_FILE <span class="count" id="newCount"></span></button>
     <button class="tab" data-panel="subtitles">未紐付字幕 <span class="count" id="subtitleCount"></span></button>
+    <button class="tab" data-panel="unsupported">未対応字幕 <span class="count" id="unsupportedCount"></span></button>
     <button class="tab" data-panel="errors">エラー <span class="count" id="errorCount"></span></button>
   </div>
   <div id="message"></div>
   <section class="panel active" id="panel-missing"></section>
   <section class="panel" id="panel-newFiles"></section>
   <section class="panel" id="panel-subtitles"></section>
+  <section class="panel" id="panel-unsupported"></section>
   <section class="panel" id="panel-errors"></section>
 </div>
 <script>
@@ -38,12 +40,13 @@ function el(tag,cls,text){const x=document.createElement(tag);if(cls)x.className
 function confidenceBadge(value,score){const v=(value||'LOW').toLowerCase();return el('span',`badge ${v}`,`${value||'LOW'} ${score??''}`.trim())}
 function candidate(c){const box=el('div','candidate'),head=el('div','candidate-head');head.append(el('div','path',c.relativePath||'候補なし'),confidenceBadge(c.confidence,c.score));box.append(head);if(c.workTitle)box.append(el('div','meta',[c.workTitle,c.episodeOrType,c.episodeTitle].filter(Boolean).join(' · ')));box.append(el('div','reason',(c.reasons||[]).join(' / ')||'理由なし'));return box}
 function empty(text){return el('div','empty',text)}
-function renderSummary(d){const s=d.summary||{},scan=d.scan||{};$('scanInfo').textContent=scan.runId?`Scan #${scan.runId} · ${scan.completedAt||''} · 動画 ${scan.filesMatched}/${scan.filesFound} · 字幕 ${scan.subtitlesMatched}/${scan.subtitlesFound}`:'成功したスキャンがありません';const metrics=[['MISSING',s.missing||0],['NEW_FILE',s.newFiles||0],['未紐付字幕',s.unmatchedSubtitles||0],['エラー',s.errors||0],['動画 HIGH候補',s.highConfidenceFileCandidates||0],['字幕 HIGH候補',s.highConfidenceSubtitleCandidates||0]];const root=$('summary');root.replaceChildren();for(const [label,value] of metrics){const m=el('div','metric');m.append(el('strong','',label),el('span','',Number(value).toLocaleString()));root.append(m)}$('missingCount').textContent=`(${s.missing||0})`;$('newCount').textContent=`(${s.newFiles||0})`;$('subtitleCount').textContent=`(${s.unmatchedSubtitles||0})`;$('errorCount').textContent=`(${s.errors||0})`}
+function renderSummary(d){const s=d.summary||{},scan=d.scan||{};$('scanInfo').textContent=scan.runId?`Scan #${scan.runId} · ${scan.completedAt||''} · 動画 ${scan.filesMatched}/${scan.filesFound} · 字幕 ${scan.subtitlesMatched}/${scan.subtitlesFound}`:'成功したスキャンがありません';const metrics=[['MISSING',s.missing||0],['NEW_FILE',s.newFiles||0],['未紐付字幕',s.unmatchedSubtitles||0],['未対応字幕',s.unsupportedSubtitles||0],['エラー',s.errors||0],['動画 HIGH候補',s.highConfidenceFileCandidates||0],['字幕 HIGH候補',s.highConfidenceSubtitleCandidates||0]];const root=$('summary');root.replaceChildren();for(const [label,value] of metrics){const m=el('div','metric');m.append(el('strong','',label),el('span','',Number(value).toLocaleString()));root.append(m)}$('missingCount').textContent=`(${s.missing||0})`;$('newCount').textContent=`(${s.newFiles||0})`;$('subtitleCount').textContent=`(${s.unmatchedSubtitles||0})`;$('unsupportedCount').textContent=`(${s.unsupportedSubtitles||0})`;$('errorCount').textContent=`(${s.errors||0})`}
 function renderMissing(items){const root=$('panel-missing');root.replaceChildren();if(!items.length){root.append(empty('MISSINGはありません。'));return}for(const x of items){const box=el('div','item');box.append(el('div','path',x.relativePath),el('div','meta',[x.workTitle,x.episodeOrType,x.episodeTitle].filter(Boolean).join(' · ')));if(x.candidates?.length){box.append(el('div','meta','NEW_FILE側の候補'));for(const c of x.candidates)box.append(candidate(c))}else box.append(el('div','meta','候補なし'));root.append(box)}}
 function renderNew(items){const root=$('panel-newFiles');root.replaceChildren();if(!items.length){root.append(empty('NEW_FILEはありません。'));return}for(const x of items){const box=el('div','item');box.append(el('div','path',x.relativePath),el('div','meta',`${x.extension||''} · ${x.fileSize?Number(x.fileSize).toLocaleString()+' bytes':'size不明'}`));root.append(box)}}
 function renderSubtitles(items){const root=$('panel-subtitles');root.replaceChildren();if(!items.length){root.append(empty('未紐付字幕はありません。'));return}for(const x of items){const box=el('div','item');box.append(el('div','path',x.relativePath),el('div','meta',`${x.extension||''} · ${x.language||'言語不明'} · ${x.matchMethod||'UNMATCHED'}`));if(x.candidates?.length){box.append(el('div','meta','動画候補'));for(const c of x.candidates)box.append(candidate(c))}else box.append(el('div','meta','安全に提示できる候補なし'));root.append(box)}}
+function renderUnsupported(items){const root=$('panel-unsupported');root.replaceChildren();if(!items.length){root.append(empty('未対応字幕はありません。'));return}root.append(empty('IDX/SUB/SMIは現在のブラウザ字幕対象外です。通常字幕数には含めず、元ファイルも変更しません。'));for(const x of items){const box=el('div','item');box.append(el('div','path',x.relativePath),el('div','meta',`${x.extension||''} · ${x.fileSize?Number(x.fileSize).toLocaleString()+' bytes':'size不明'} · 未対応形式`));root.append(box)}}
 function renderErrors(items){const root=$('panel-errors');root.replaceChildren();if(!items.length){root.append(empty('スキャンエラーはありません。'));return}for(const x of items){const box=el('div','item');box.append(el('div','path',x.relativePath||'(全体)'),el('div','meta',x.errorType||'ERROR'),el('div','',x.message||''));root.append(box)}}
-async function load(){const msg=$('message');msg.replaceChildren();try{const d=await api('/api/admin/scan-diagnostics');renderSummary(d);renderMissing(d.missing||[]);renderNew(d.newFiles||[]);renderSubtitles(d.unmatchedSubtitles||[]);renderErrors(d.errors||[])}catch(e){msg.replaceChildren(el('div','error',`診断を読み込めませんでした: ${e.message}`))}}
+async function load(){const msg=$('message');msg.replaceChildren();try{const d=await api('/api/admin/scan-diagnostics');renderSummary(d);renderMissing(d.missing||[]);renderNew(d.newFiles||[]);renderSubtitles(d.unmatchedSubtitles||[]);renderUnsupported(d.unsupportedSubtitles||[]);renderErrors(d.errors||[])}catch(e){msg.replaceChildren(el('div','error',`診断を読み込めませんでした: ${e.message}`))}}
 for(const tab of document.querySelectorAll('.tab'))tab.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===tab));document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===`panel-${tab.dataset.panel}`))};$('reload').onclick=load;load();
 </script>
 </body>

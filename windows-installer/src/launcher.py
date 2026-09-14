@@ -24,7 +24,7 @@ from scan_runner import scan_library
 from server import create_server
 
 APP_NAME = "自宅動画ライブラリ"
-APP_VERSION = "0.7.1"
+APP_VERSION = "0.7.2"
 # Music Library uses 8765. Keep Video Library on a different localhost origin
 # so Service Worker, Cache Storage and PWA state cannot collide.
 DEFAULT_PORT = 8876
@@ -424,6 +424,9 @@ class VideoLibraryLauncher(tk.Tk):
         repaired = int(result.get("pathsRepaired") or 0)
         if repaired:
             self._append_log(f"文字化けパス修復: {repaired:,}件")
+        unsupported = int(result.get("unsupportedSubtitles") or 0)
+        if unsupported:
+            self._append_log(f"未対応字幕: {unsupported:,}件（IDX/SUB/SMI・診断のみ）")
         self.status.set("スキャン完了 — ブラウザを起動しています")
         if not self._start_http_server(root):
             self._set_busy(False)
