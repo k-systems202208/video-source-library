@@ -156,7 +156,8 @@ class OrphanSubtitleDiagnosticsTests(unittest.TestCase):
             self.assertEqual(text.count("ORPHAN_SUBTITLE"), 7)
             self.assertIn("NO_REGISTERED_VIDEO_IN_WORK", text)
             self.assertIn("SPECIAL_VIDEO_NOT_REGISTERED", text)
-            self.assertIn("UNMATCHED_SUBTITLE", text)
+            self.assertIn("SUBTITLE_CANDIDATE", text)
+            self.assertIn("movie/Control/Movie.commentary.srt", text)
 
     def test_special_is_not_orphan_when_special_video_is_registered(self):
         with tempfile.TemporaryDirectory() as temp:
