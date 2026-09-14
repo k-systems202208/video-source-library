@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def now_iso() -> str:
@@ -196,6 +196,18 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             FOREIGN KEY(scan_run_id) REFERENCES scan_runs(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS scan_discoveries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scan_run_id INTEGER NOT NULL,
+            relative_path TEXT NOT NULL,
+            extension TEXT NOT NULL,
+            file_size INTEGER,
+            modified_time_ns INTEGER,
+            status TEXT NOT NULL DEFAULT 'NEW_FILE',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(scan_run_id) REFERENCES scan_runs(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS metadata_imports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             schema_version TEXT,
@@ -220,17 +232,25 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_user_video_recent ON user_video_state(user_id, last_played_at);
         CREATE INDEX IF NOT EXISTS idx_user_video_watched ON user_video_state(user_id, watched);
         CREATE INDEX IF NOT EXISTS idx_user_video_favorite ON user_video_state(user_id, favorite);
+        CREATE INDEX IF NOT EXISTS idx_scan_discoveries_run ON scan_discoveries(scan_run_id);
         """
     )
 
-    row = connection.execute("SELECT COUNT(*) AS count FROM schema_info").fetchone()
+    row = connection.execute(
+        "SELECT schema_version FROM schema_info ORDER BY rowid LIMIT 1"
+    ).fetchone()
     stamp = now_iso()
-    if int(row["count"]) == 0:
+    if row is None:
         connection.execute(
             "INSERT INTO schema_info(schema_version, created_at, updated_at) VALUES (?, ?, ?)",
             (SCHEMA_VERSION, stamp, stamp),
         )
     else:
+        current = int(row["schema_version"])
+        if current > SCHEMA_VERSION:
+            raise RuntimeError(
+                f"Database schema {current} is newer than supported schema {SCHEMA_VERSION}"
+            )
         connection.execute(
             "UPDATE schema_info SET schema_version = ?, updated_at = ?",
             (SCHEMA_VERSION, stamp),
