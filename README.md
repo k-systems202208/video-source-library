@@ -5,7 +5,7 @@
 ## 現在の実装状況
 
 ### Phase 1: メタデータ / SQLite 基盤
-- 監査済み `video_library.json` を SQLite へUPSERT
+- 監査済み `video_library.json` をSQLiteへUPSERT
 - 作品440件 / 動画4,869件
 - 作品・動画単位の利用者状態を分離
 
@@ -24,7 +24,6 @@
 - 元動画は変更・削除・移動しない
 
 ### Phase 4: 利用者状態 / 視聴進捗
-- SQLite schema 3
 - 作品お気に入りと動画お気に入りを独立管理
 - 視聴済み / 未視聴の手動変更
 - 再生位置・再生回数・最終再生日時を保存
@@ -39,35 +38,116 @@
 - Tailscale Serveの状態確認・有効化/無効化
 - PWA manifest / service worker / offline shell
 - Service Workerは `/api/*` と `/video/*` をキャッシュしない
-- SQLite手動バックアップ
-- 復元予約 → 次回起動時復元
-- 復元前自動バックアップと失敗時ロールバック
+- SQLiteバックアップ / 復元予約 / ロールバック
 
-対象拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
+### Phase 6: ffprobe / 字幕 / Windowsインストーラー
+- SQLite schema 4
+- ffprobeによるコンテナ・Codec・解像度・再生時間取得
+- 埋込字幕stream数取得
+- 外部字幕 `.srt` / `.vtt` / `.ass` / `.ssa` を検出
+- 同名 / 言語suffix字幕を安全に動画へ紐付け
+- 字幕実パス・実ファイル名をAPIへ公開しない
+- ランチャーから監査済み `video_library.json` を初回取込
+- PyInstallerでWindowsアプリ生成
+- Inno Setupでユーザー権限インストーラー生成
+- GitHub Actionsでsetup.exeをartifact化
 
-MP4 / M4V / WebM は拡張子ベースで `DIRECT`、その他は `UNKNOWN` とします。Codec判定は後続Phaseで `ffprobe` を導入して精度を上げます。
+対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
-## 推奨起動方法
+## ffprobe
 
-監査済みJSONを初回取り込み後、Windowsランチャーを使用します。
+ffprobeは解析専用です。動画変換・トランスコードには使用しません。
 
-```powershell
-python windows-installer\src\metadata_importer.py metadata\video_library.json --database "$env:LOCALAPPDATA\VideoLibrary\library.db"
-python windows-installer\src\launcher.py
+検索順:
+
+1. `VIDEO_LIBRARY_FFPROBE` 環境変数
+2. アプリ配置先 `ffprobe.exe`
+3. アプリ配置先 `tools\ffprobe.exe`
+4. PATH
+
+ffprobeが見つからなくても動画一覧・再生・視聴状態管理は利用できます。技術情報だけ `NOT_AVAILABLE` になります。
+
+公開リポジトリにはffprobeバイナリを含めません。`windows-installer\tools\ffprobe.exe` を配置してビルドした場合はアプリへ同梱します。
+
+直接再生判定は安全側です。
+
+- MP4/M4V + H.264 + AAC/MP3 → `DIRECT`
+- WebM + VP8/VP9/AV1 + Opus/Vorbis → `DIRECT`
+- HEVC、MKV等 → `UNKNOWN`
+
+`UNKNOWN` はファイル破損ではなく「ブラウザ直接再生を保証しない」という意味です。
+
+## 字幕
+
+対象:
+
+- `.srt`
+- `.vtt`
+- `.ass`
+- `.ssa`
+
+自動紐付け例:
+
+```text
+movie.mkv
+movie.srt
+movie.ja.srt
+movie.jpn.forced.srt
+movie.en.default.vtt
 ```
 
-ランチャーで動画フォルダーを選択して「開始」を押すと、localhostサーバーを起動し、owner認証済みブラウザを開きます。
+`movie.commentary.srt` のように意味推測が必要な名前は自動紐付けしません。
 
-データ保存先:
+Phase 6では検出・紐付け・表示までです。SRT/ASS→WebVTT変換とプレーヤー字幕表示は後続機能です。
+
+## Windowsでの通常利用
+
+### インストーラー版
+
+CI / Releaseで生成された `VideoLibrary-0.6.0-setup.exe` を実行します。管理者権限は不要です。
+
+インストール先:
+
+```text
+%LOCALAPPDATA%\Programs\VideoLibrary
+```
+
+利用者データ:
 
 ```text
 %LOCALAPPDATA%\VideoLibrary
 ├─ library.db
 ├─ config.json
 ├─ runtime.json
+├─ metadata\video_library.json
 ├─ Backups\
 └─ Logs\
 ```
+
+アンインストールしても利用者データは削除しません。
+
+初回はランチャーで:
+
+1. 動画フォルダーを選択
+2. 監査済み `video_library.json` を選択
+3. 「取込」
+4. 「開始」
+
+と進めます。
+
+### ソースから起動
+
+```powershell
+python windows-installer\src\launcher.py
+```
+
+開発用直接起動:
+
+```powershell
+python windows-installer\src\server.py --database library.db --video-root "D:\Videos"
+```
+
+control secretなしの直接起動はテスト／開発用localhost owner互換モードです。通常利用はランチャーを使用してください。
 
 ## 認証と外部接続
 
@@ -95,23 +175,39 @@ PWAがキャッシュするのはHTML/manifest/icon/offline shell等のアプリ
 
 復元は稼働中DBを直接置換せず予約制です。次回ランチャー起動時に現DBを `library-pre-restore-*.db` へ退避してから復元し、失敗時はロールバックします。
 
-## 開発用直接起動
+## 実機総合検証
+
+実動画はCIへアップロードせず、PC上で次を実行します。
 
 ```powershell
-python windows-installer\src\server.py --database library.db --video-root "D:\Videos"
+python scripts\validate_real_library.py `
+  --database "$env:LOCALAPPDATA\VideoLibrary\library.db" `
+  --video-root "D:\Videos" `
+  --metadata "C:\path\video_library.json" `
+  --expected-works 440 `
+  --expected-videos 4869 `
+  --expected-subtitles 1237
 ```
 
-control secretなしの直接起動はテスト／開発用localhost owner互換モードです。通常利用は `launcher.py` を使用してください。
+440作品 / 4,869動画 / 字幕1,237件、SQLite整合性、未紐付字幕、ffprobeエラーをまとめて確認します。
 
 ## 個人データを公開しない
-実際の `video_library.json` と実動画は公開リポジトリ／CIへ含めません。CIでは同じ **440作品 / 4,869動画 / 動画0件4作品** の合成データを使用します。
+実際の `video_library.json`、実動画、実字幕は公開リポジトリ／CIへ含めません。CIでは同じ **440作品 / 4,869動画 / 動画0件4作品** の合成データを使用します。
 
 ## テスト
+
 ```powershell
 python -m unittest discover -s tests -v
 python scripts\validate_ci_fixture.py
 ```
-CIはWindows / Python 3.11・3.13です。
+
+Windowsインストーラー:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\windows-installer\build\build.ps1
+```
+
+CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsインストーラーも生成します。
 
 ## ドキュメント
 - [基本設計](docs/00-basic-design.md)
@@ -123,10 +219,11 @@ CIはWindows / Python 3.11・3.13です。
 - [Phase 3](docs/06-phase3-implementation.md)
 - [Phase 4](docs/07-phase4-implementation.md)
 - [Phase 5](docs/08-phase5-implementation.md)
+- [Phase 6](docs/09-phase6-implementation.md)
 
 ## 正本
 - 動画そのもの: ユーザー指定の動画フォルダー
 - 作品メタデータ: ローカルの `video_library.json`
 - 利用者状態: SQLite `library.db`
 
-元動画を変更・削除・移動しないことを設計原則とします。
+元動画・字幕を変更・削除・移動しないことを設計原則とします。
