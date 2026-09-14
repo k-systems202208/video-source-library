@@ -53,7 +53,6 @@ class SubtitleTests(unittest.TestCase):
         exact = match_subtitle_to_video("show/episode01.srt", videos)
         self.assertEqual(exact.video_relative_path, "show/episode01.mkv")
         self.assertEqual(exact.match_method, "EXACT_STEM")
-
         ja = match_subtitle_to_video("show/episode02.ja.forced.srt", videos)
         self.assertEqual(ja.video_relative_path, "show/episode02.mkv")
         self.assertEqual(ja.language, "ja")
@@ -78,7 +77,6 @@ class SchemaAndScannerTests(unittest.TestCase):
         self.payload = build_metadata(work_count=6, video_count=6)
         self.metadata.write_text(json.dumps(self.payload, ensure_ascii=False), encoding="utf-8")
         import_file(self.metadata, self.db)
-
         first = self.payload["works"][0]["files"][0]
         relative = normalize_relative_path(first["relative_path"])
         self.video = self.video_root.joinpath(*relative.split("/"))
@@ -91,6 +89,20 @@ class SchemaAndScannerTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    @staticmethod
+    def good_probe() -> ProbeResult:
+        return ProbeResult(
+            status="OK",
+            container_format="mov,mp4,m4a,3gp,3g2,mj2",
+            duration_ms=98765,
+            video_codec="h264",
+            audio_codec="aac",
+            width=1280,
+            height=720,
+            embedded_subtitle_count=1,
+            playback_support="DIRECT",
+        )
+
     def test_schema4_and_tables(self):
         with connect(self.db) as connection:
             initialize_database(connection)
@@ -102,18 +114,7 @@ class SchemaAndScannerTests(unittest.TestCase):
             self.assertTrue({"probe_status", "probed_at", "embedded_subtitle_count"}.issubset(columns))
 
     def test_scan_saves_probe_and_subtitles_without_paths_in_api(self):
-        probe = ProbeResult(
-            status="OK",
-            container_format="mov,mp4,m4a,3gp,3g2,mj2",
-            duration_ms=98765,
-            video_codec="h264",
-            audio_codec="aac",
-            width=1280,
-            height=720,
-            embedded_subtitle_count=1,
-            playback_support="DIRECT",
-        )
-        with patch("scanner.find_ffprobe", return_value=Path("fake-ffprobe")), patch("scanner.probe_media", return_value=probe):
+        with patch("scanner.find_ffprobe", return_value=Path("fake-ffprobe")), patch("scanner.probe_media", return_value=self.good_probe()):
             with connect(self.db) as connection:
                 result = scan_library(connection, self.video_root)
                 self.assertTrue(result["ffprobeAvailable"])
@@ -121,7 +122,6 @@ class SchemaAndScannerTests(unittest.TestCase):
                 self.assertEqual(result["subtitlesFound"], 3)
                 self.assertEqual(result["subtitlesMatched"], 2)
                 self.assertEqual(result["subtitlesUnmatched"], 1)
-
                 video_id = int(connection.execute("SELECT id FROM videos WHERE external_file_no=1").fetchone()[0])
                 detail = get_video(connection, video_id)
                 self.assertEqual(detail["file"]["videoCodec"], "h264")
@@ -133,12 +133,25 @@ class SchemaAndScannerTests(unittest.TestCase):
                 self.assertNotIn(str(self.video_root), serialized)
                 self.assertNotIn("relativePath", serialized)
                 self.assertNotIn("relative_path", serialized)
-
                 stats = library_stats(connection)
                 self.assertEqual(stats["subtitles"], 3)
                 self.assertEqual(stats["matchedSubtitles"], 2)
                 self.assertEqual(stats["unmatchedSubtitles"], 1)
                 self.assertEqual(stats["probedVideos"], 1)
+
+    def test_video_is_probed_after_ffprobe_becomes_available(self):
+        with patch("scanner.find_ffprobe", return_value=None):
+            with connect(self.db) as connection:
+                first = scan_library(connection, self.video_root)
+                self.assertFalse(first["ffprobeAvailable"])
+                status = connection.execute("SELECT probe_status FROM video_files WHERE is_available=1").fetchone()[0]
+                self.assertEqual(status, "NOT_AVAILABLE")
+        with patch("scanner.find_ffprobe", return_value=Path("fake-ffprobe")), patch("scanner.probe_media", return_value=self.good_probe()):
+            with connect(self.db) as connection:
+                second = scan_library(connection, self.video_root)
+                self.assertEqual(second["filesProbed"], 1)
+                row = connection.execute("SELECT probe_status,video_codec FROM video_files WHERE is_available=1").fetchone()
+                self.assertEqual(tuple(row), ("OK", "h264"))
 
 
 class PackagingTests(unittest.TestCase):
@@ -146,6 +159,7 @@ class PackagingTests(unittest.TestCase):
         spec = (ROOT / "windows-installer" / "build" / "VideoLibrary.spec").read_text(encoding="utf-8")
         iss = (ROOT / "windows-installer" / "installer" / "VideoLibrary.iss").read_text(encoding="utf-8")
         build = (ROOT / "windows-installer" / "build" / "build.ps1").read_text(encoding="utf-8")
+        sw = (ROOT / "windows-installer" / "src" / "service-worker.js").read_text(encoding="utf-8")
         self.assertIn("launcher.py", spec)
         self.assertIn("video-library.html", spec)
         self.assertIn("tools", spec)
@@ -154,6 +168,9 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("NOT removed", iss)
         self.assertIn("PyInstaller", build)
         self.assertIn("ISCC.exe", build)
+        self.assertIn("video-library-shell-v2", sw)
+        self.assertIn("/api/", sw)
+        self.assertIn("/video/", sw)
 
 
 if __name__ == "__main__":
