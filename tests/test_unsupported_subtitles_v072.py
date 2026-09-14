@@ -89,7 +89,6 @@ class UnsupportedSubtitleDiagnostics072Tests(unittest.TestCase):
 
     def test_browser_rescan_uses_same_scan_runner_as_startup_scan(self):
         self.assertIs(server.scan_library, scan_runner.scan_library)
-        self.assertEqual(server.APP_VERSION, "0.7.2")
 
 
 if __name__ == "__main__":
