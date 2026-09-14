@@ -17,6 +17,7 @@ from database import SCHEMA_VERSION, connect, initialize_database, quick_check
 from identity_service import local_owner_user, resolve_tailscale_user
 from library_service import get_video, get_work, library_stats, list_work_videos, list_works
 from local_auth import LocalOwnerAuth, cookie_value, session_cookie_header
+from scan_progress import ScanProgressStore
 from scanner import latest_scan_status, mime_type_for_extension, resolve_video_file, scan_library
 from tailscale_identity import parse_tailscale_identity
 from user_state import (
@@ -37,7 +38,7 @@ from user_state import (
 
 APP_NAME = "VideoLibrary"
 API_VERSION = 1
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.6.6"
 CHUNK_SIZE = 1024 * 1024
 MAX_JSON_BODY = 64 * 1024
 CONTROL_HEADER = "X-Video-Library-Control-Secret"
@@ -121,6 +122,7 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
     app_data_root = Path(data_root) if data_root is not None else db_path.parent
     backup_dir = app_data_root / "Backups"
     scan_lock = threading.Lock()
+    scan_progress = ScanProgressStore()
     playback_sessions = PlaybackSessionStore()
 
     class Handler(BaseHTTPRequestHandler):
@@ -312,7 +314,13 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                         self._json(200, {"authenticated": user is not None, "user": user}); return
                     if path == "/api/stats": self._json(200, library_stats(connection)); return
                     if path == "/api/scan/status":
-                        value = latest_scan_status(connection); value["videoRootConfigured"] = root_path is not None; self._json(200, value); return
+                        value = latest_scan_status(connection)
+                        live = scan_progress.snapshot()
+                        value["videoRootConfigured"] = root_path is not None
+                        value["progress"] = live if live["startedAt"] is not None else None
+                        if live["startedAt"] is not None:
+                            value["running"] = bool(live["running"])
+                        self._json(200, value); return
                     if path == "/api/works":
                         self._json(200, list_works(connection, user_id=user_id, q=_first(query, "q"), category=_first(query, "category"),
                                                    sort=_first(query, "sort") or "title", limit=_first(query, "limit"), offset=_first(query, "offset"))); return
@@ -403,12 +411,29 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                     self._error(409, "VIDEO_ROOT_NOT_CONFIGURED", "動画フォルダーが設定されていません。"); return
                 if not scan_lock.acquire(blocking=False):
                     self._error(409, "SCAN_ALREADY_RUNNING", "ライブラリスキャンは既に実行中です。"); return
-                try:
-                    with connect(db_path) as connection: value = scan_library(connection, root_path)
-                    self._json(200, value)
-                except FileNotFoundError as exc: self._error(400, "VIDEO_ROOT_NOT_FOUND", str(exc))
-                except Exception: self._error(500, "SCAN_FAILED", "ライブラリスキャンに失敗しました。")
-                finally: scan_lock.release()
+
+                scan_progress.start()
+
+                def scan_worker() -> None:
+                    try:
+                        with connect(db_path) as scan_connection:
+                            result = scan_library(
+                                scan_connection,
+                                root_path,
+                                progress_callback=scan_progress.update,
+                            )
+                        scan_progress.complete(result)
+                    except Exception as exc:
+                        scan_progress.fail(str(exc))
+                    finally:
+                        scan_lock.release()
+
+                threading.Thread(
+                    target=scan_worker,
+                    name="VideoLibraryScan",
+                    daemon=True,
+                ).start()
+                self._json(202, {"accepted": True, "status": "RUNNING", "progress": scan_progress.snapshot()})
                 return
             if path.startswith("/api/backups/"):
                 try:
@@ -458,7 +483,7 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
     return Handler
 
 
-def create_server(database_path: Path | str, *, host: str = "127.0.0.1", port: int = 8765,
+def create_server(database_path: Path | str, *, host: str = "127.0.0.1", port: int = 8876,
                   html_path: Path | str | None = None, video_root: Path | str | None = None,
                   config_path: Path | str | None = None, owner_control_secret: str | None = None,
                   data_root: Path | str | None = None) -> ThreadingHTTPServer:
@@ -478,7 +503,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="自宅動画ライブラリ Web server")
     parser.add_argument("--database", type=Path, default=default_database_path())
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, default=8876)
     parser.add_argument("--config", type=Path, default=default_config_path())
     parser.add_argument("--video-root", type=Path)
     args = parser.parse_args()

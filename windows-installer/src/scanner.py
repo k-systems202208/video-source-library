@@ -4,7 +4,7 @@ import os
 import sqlite3
 import time
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Callable
 
 from database import initialize_database, now_iso
 from media_probe import find_ffprobe, probe_media
@@ -25,6 +25,17 @@ MIME_TYPES = {
     ".flv": "video/x-flv",
     ".wmv": "video/x-ms-wmv",
 }
+ProgressCallback = Callable[[dict[str, Any]], None]
+
+
+def _emit_progress(callback: ProgressCallback | None, **values: Any) -> None:
+    if callback is None:
+        return
+    try:
+        callback(values)
+    except Exception:
+        # Progress reporting must never make the actual scan fail.
+        pass
 
 
 def normalize_relative_path(value: str | Path) -> str:
@@ -178,6 +189,7 @@ def scan_library(
     video_root: Path | str,
     *,
     ffprobe_path: Path | str | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     initialize_database(connection)
     root = Path(video_root).expanduser()
@@ -194,6 +206,21 @@ def scan_library(
     )
     scan_run_id = int(cursor.lastrowid)
     connection.commit()
+    errors = 0
+    probe_errors = 0
+    files_found = 0
+    files_matched = 0
+    files_new = 0
+    files_probed = 0
+    subtitles_processed = 0
+
+    _emit_progress(
+        progress_callback,
+        phase="PREPARING",
+        message="スキャン対象を準備中",
+        current=0,
+        total=0,
+    )
 
     try:
         rows = connection.execute(
@@ -205,8 +232,6 @@ def scan_library(
             """
         ).fetchall()
         expected: dict[str, sqlite3.Row] = {}
-        errors = 0
-        probe_errors = 0
         for row in rows:
             try:
                 key = _key(row["relative_path"])
@@ -227,13 +252,25 @@ def scan_library(
                 continue
             expected[key] = row
 
+        total_expected = len(rows)
         matched_ids: set[int] = set()
-        files_found = 0
-        files_matched = 0
-        files_new = 0
-        files_probed = 0
         subtitle_candidates: list[tuple[Path, str, os.stat_result]] = []
         connection.execute("UPDATE subtitles SET is_available=0, updated_at=?", (started,))
+        _emit_progress(
+            progress_callback,
+            phase="SCANNING",
+            message="動画ファイルを走査中",
+            current=0,
+            total=total_expected,
+            filesFound=0,
+            filesMatched=0,
+            filesMissing=0,
+            filesNew=0,
+            filesProbed=0,
+            subtitlesFound=0,
+            probeErrors=0,
+            errors=errors,
+        )
 
         for directory, dirnames, filenames in os.walk(root, followlinks=False):
             directory_path = Path(directory)
@@ -260,10 +297,20 @@ def scan_library(
                         connection, scan_run_id, relative_path=rel_for_error,
                         error_type="FILE_SCAN_ERROR", message=str(exc), stamp=started,
                     )
+                    _emit_progress(progress_callback, errors=errors)
                     continue
 
                 if extension in SUPPORTED_SUBTITLE_EXTENSIONS:
                     subtitle_candidates.append((resolved, relative, stat))
+                    _emit_progress(
+                        progress_callback,
+                        phase="SCANNING",
+                        message="動画ファイルを走査中",
+                        current=files_found,
+                        total=total_expected,
+                        subtitlesFound=len(subtitle_candidates),
+                        currentItem=relative,
+                    )
                     continue
 
                 files_found += 1
@@ -282,6 +329,21 @@ def scan_library(
                             int(stat.st_size), int(stat.st_mtime_ns), started,
                         ),
                     )
+                    _emit_progress(
+                        progress_callback,
+                        phase="SCANNING",
+                        message="動画ファイルを走査中",
+                        current=files_found,
+                        total=total_expected,
+                        filesFound=files_found,
+                        filesMatched=files_matched,
+                        filesNew=files_new,
+                        filesProbed=files_probed,
+                        subtitlesFound=len(subtitle_candidates),
+                        probeErrors=probe_errors,
+                        errors=errors,
+                        currentItem=relative,
+                    )
                     continue
 
                 video_file_id = int(expected_row["id"])
@@ -298,6 +360,19 @@ def scan_library(
 
                 probe = None
                 if needs_probe:
+                    _emit_progress(
+                        progress_callback,
+                        phase="PROBING",
+                        message="ffprobeで動画情報を解析中",
+                        current=files_found,
+                        total=total_expected,
+                        filesFound=files_found,
+                        filesMatched=files_matched,
+                        filesNew=files_new,
+                        filesProbed=files_probed,
+                        subtitlesFound=len(subtitle_candidates),
+                        currentItem=relative,
+                    )
                     probe = probe_media(resolved, extension=extension, ffprobe_path=ffprobe)
                     files_probed += 1
                     if probe.status == "ERROR":
@@ -369,6 +444,22 @@ def scan_library(
                         clear_technical_metadata=clear_technical,
                     )
 
+                _emit_progress(
+                    progress_callback,
+                    phase="SCANNING",
+                    message="動画ファイルを走査中",
+                    current=files_found,
+                    total=total_expected,
+                    filesFound=files_found,
+                    filesMatched=files_matched,
+                    filesNew=files_new,
+                    filesProbed=files_probed,
+                    subtitlesFound=len(subtitle_candidates),
+                    probeErrors=probe_errors,
+                    errors=errors,
+                    currentItem=relative,
+                )
+
         missing_ids = [int(row["id"]) for row in rows if int(row["id"]) not in matched_ids]
         if missing_ids:
             placeholders = ",".join("?" for _ in missing_ids)
@@ -386,6 +477,26 @@ def scan_library(
         subtitles_found = len(subtitle_candidates)
         subtitles_matched = 0
         subtitles_unmatched = 0
+        files_missing = len(missing_ids)
+        _emit_progress(
+            progress_callback,
+            phase="SUBTITLES",
+            message="字幕ファイルを照合中",
+            current=0,
+            total=subtitles_found,
+            filesFound=files_found,
+            filesMatched=files_matched,
+            filesMissing=files_missing,
+            filesNew=files_new,
+            filesProbed=files_probed,
+            subtitlesFound=subtitles_found,
+            subtitlesProcessed=0,
+            subtitlesMatched=0,
+            subtitlesUnmatched=0,
+            probeErrors=probe_errors,
+            errors=errors,
+            currentItem=None,
+        )
         for resolved, relative, stat in subtitle_candidates:
             match = match_subtitle_to_video(relative, known_video_paths)
             video_id = None
@@ -411,8 +522,27 @@ def scan_library(
                 modified_time_ns=int(stat.st_mtime_ns),
                 stamp=started,
             )
+            subtitles_processed += 1
+            _emit_progress(
+                progress_callback,
+                phase="SUBTITLES",
+                message="字幕ファイルを照合中",
+                current=subtitles_processed,
+                total=subtitles_found,
+                subtitlesProcessed=subtitles_processed,
+                subtitlesMatched=subtitles_matched,
+                subtitlesUnmatched=subtitles_unmatched,
+                currentItem=relative,
+            )
 
-        files_missing = len(missing_ids)
+        _emit_progress(
+            progress_callback,
+            phase="FINALIZING",
+            message="スキャン結果を保存中",
+            current=1,
+            total=1,
+            currentItem=None,
+        )
         completed = now_iso()
         duration_ms = int((time.monotonic() - started_perf) * 1000)
         connection.execute(
@@ -431,7 +561,7 @@ def scan_library(
             ),
         )
         connection.commit()
-        return {
+        result = {
             "runId": scan_run_id,
             "status": "SUCCESS",
             "filesFound": files_found,
@@ -447,6 +577,26 @@ def scan_library(
             "errors": errors,
             "durationMs": duration_ms,
         }
+        _emit_progress(
+            progress_callback,
+            phase="SUCCESS",
+            message="再スキャンが完了しました",
+            current=1,
+            total=1,
+            filesFound=files_found,
+            filesMatched=files_matched,
+            filesMissing=files_missing,
+            filesNew=files_new,
+            filesProbed=files_probed,
+            subtitlesFound=subtitles_found,
+            subtitlesProcessed=subtitles_found,
+            subtitlesMatched=subtitles_matched,
+            subtitlesUnmatched=subtitles_unmatched,
+            probeErrors=probe_errors,
+            errors=errors,
+            currentItem=None,
+        )
+        return result
     except Exception as exc:
         connection.rollback()
         completed = now_iso()
@@ -464,6 +614,13 @@ def scan_library(
             error_type="SCAN_FAILED", message=str(exc), stamp=completed,
         )
         connection.commit()
+        _emit_progress(
+            progress_callback,
+            phase="FAILED",
+            message="再スキャンに失敗しました",
+            errors=errors + 1,
+            currentItem=None,
+        )
         raise
 
 
