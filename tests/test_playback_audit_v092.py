@@ -138,7 +138,9 @@ class PlaybackAuditV092Tests(unittest.TestCase):
             )
             with mock.patch("playback_audit.find_ffprobe", return_value=Path("ffprobe")), mock.patch(
                 "playback_audit.find_ffmpeg", return_value=Path("ffmpeg")
-            ), mock.patch("playback_audit.probe_for_audit", return_value=fake):
+            ), mock.patch("playback_audit.probe_for_audit", return_value=fake), mock.patch(
+                "playback_audit.verify_playback_sample", return_value=(True, "")
+            ):
                 report = audit_real_library(db, root, output)
             self.assertEqual(report["summary"]["total"], 1)
             self.assertEqual(report["summary"]["direct"], 1)

@@ -5,7 +5,7 @@ import json
 import os
 import subprocess
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -20,6 +20,8 @@ class AuditProbe:
     status: str
     container_format: str = ""
     video_codec: str = ""
+    video_profile: str = ""
+    pixel_format: str = ""
     audio_codecs: tuple[str, ...] = ()
     audio_languages: tuple[str, ...] = ()
     audio_track_count: int = 0
@@ -29,6 +31,7 @@ class AuditProbe:
     preferred_audio_language: str = ""
     preferred_audio_is_first: bool = True
     embedded_subtitle_count: int = 0
+    sample_decode: str = "NOT_RUN"
     route: str = "NO_ROUTE"
     reason: str = ""
     error: str = ""
@@ -69,6 +72,8 @@ def parse_audit_probe_payload(
         )
 
     video_codec = str(videos[0].get("codec_name") or "").strip().casefold()
+    video_profile = str(videos[0].get("profile") or "").strip()
+    pixel_format = str(videos[0].get("pix_fmt") or "").strip()
     parsed_audio: list[dict[str, Any]] = []
     for position, stream in enumerate(audios):
         tags = stream.get("tags") if isinstance(stream.get("tags"), dict) else {}
@@ -108,6 +113,8 @@ def parse_audit_probe_payload(
         status="OK",
         container_format=str(format_info.get("format_name") or "").strip(),
         video_codec=video_codec,
+        video_profile=video_profile,
+        pixel_format=pixel_format,
         audio_codecs=tuple(str(item["codec"]) for item in parsed_audio),
         audio_languages=tuple(str(item["language"]) for item in parsed_audio),
         audio_track_count=len(parsed_audio),
@@ -161,6 +168,26 @@ def probe_for_audit(
     return parse_audit_probe_payload(payload, extension=extension, ffmpeg_available=ffmpeg_available)
 
 
+def verify_playback_sample(
+    source: Path,
+    *,
+    preferred_audio_index: int | None,
+    ffmpeg_path: Path,
+    timeout_seconds: float = 60.0,
+) -> tuple[bool, str]:
+    command = [str(ffmpeg_path), "-nostdin", "-v", "error", "-t", "0.5", "-i", str(source), "-map", "0:v:0"]
+    command.extend(["-map", f"0:{preferred_audio_index}"] if preferred_audio_index is not None else ["-map", "0:a:0?"])
+    command.extend(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "30", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-f", "null", "-"])
+    try:
+        completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=timeout_seconds, creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) if os.name == "nt" else 0)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"{type(exc).__name__}: {exc}"[:1000]
+    if completed.returncode != 0:
+        message = completed.stderr.decode("utf-8", errors="replace").strip()
+        return False, message[:1000] or f"ffmpeg exit code {completed.returncode}"
+    return True, ""
+
+
 def _safe_source(video_root: Path, relative_path: str) -> Path | None:
     try:
         root = video_root.resolve()
@@ -186,6 +213,7 @@ def summarize_audit(items: list[dict[str, Any]]) -> dict[str, Any]:
         "transcode": sum(1 for item in items if item.get("route") == "TRANSCODE"),
         "noRoute": sum(1 for item in items if item.get("route") == "NO_ROUTE"),
         "probeErrors": sum(1 for item in items if item.get("reason") == "PROBE_ERROR"),
+        "decodeErrors": sum(1 for item in items if item.get("reason") == "DECODE_ERROR"),
         "missing": sum(1 for item in items if item.get("reason") == "MISSING_FILE"),
         "noVideoStream": sum(1 for item in items if item.get("reason") == "NO_VIDEO_STREAM"),
         "withJapaneseAudio": sum(1 for item in items if item.get("hasJapaneseAudio")),
@@ -210,9 +238,9 @@ def write_audit_reports(output_dir: Path, report: dict[str, Any], *, stamp: str 
 
     fields = [
         "videoId", "externalFileNo", "title", "episode", "relativePath", "extension",
-        "containerFormat", "videoCodec", "audioCodecs", "audioLanguages", "audioTrackCount",
+        "containerFormat", "videoCodec", "videoProfile", "pixelFormat", "audioCodecs", "audioLanguages", "audioTrackCount",
         "hasJapaneseAudio", "preferredAudioIndex", "preferredAudioCodec", "preferredAudioLanguage",
-        "externalSubtitleCount", "embeddedSubtitleCount", "route", "reason", "error",
+        "externalSubtitleCount", "embeddedSubtitleCount", "sampleDecode", "route", "reason", "error",
     ]
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
@@ -271,6 +299,17 @@ def audit_real_library(
                 ffmpeg_available=ffmpeg is not None,
             )
 
+            if result.route != "NO_ROUTE" and ffmpeg is not None:
+                decoded, decode_error = verify_playback_sample(
+                    source,
+                    preferred_audio_index=result.preferred_audio_index,
+                    ffmpeg_path=ffmpeg,
+                )
+                if decoded:
+                    result = replace(result, sample_decode="PASS")
+                else:
+                    result = replace(result, sample_decode="FAIL", route="NO_ROUTE", reason="DECODE_ERROR", error=decode_error)
+
         title = str(row["official_title"] or "")
         episode = str(row["episode_title"] or row["episode_or_type"] or "")
         item = {
@@ -282,6 +321,8 @@ def audit_real_library(
             "extension": extension,
             "containerFormat": result.container_format,
             "videoCodec": result.video_codec,
+            "videoProfile": result.video_profile,
+            "pixelFormat": result.pixel_format,
             "audioCodecs": list(result.audio_codecs),
             "audioLanguages": list(result.audio_languages),
             "audioTrackCount": result.audio_track_count,
@@ -291,6 +332,7 @@ def audit_real_library(
             "preferredAudioLanguage": result.preferred_audio_language,
             "externalSubtitleCount": int(row["external_subtitles"] or 0),
             "embeddedSubtitleCount": result.embedded_subtitle_count,
+            "sampleDecode": result.sample_decode,
             "route": result.route,
             "reason": result.reason,
             "error": result.error,
