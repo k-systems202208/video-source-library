@@ -17,6 +17,7 @@ from database import SCHEMA_VERSION, connect, initialize_database, quick_check
 from identity_service import local_owner_user, resolve_tailscale_user
 from library_service import get_video, get_work, library_stats, list_work_videos, list_works
 from local_auth import LocalOwnerAuth, cookie_value, session_cookie_header
+from scan_diagnostics import diagnostics_csv_bytes, diagnostics_json_bytes, scan_diagnostics
 from scan_progress import ScanProgressStore
 from scanner import latest_scan_status, mime_type_for_extension, resolve_video_file, scan_library
 from tailscale_identity import parse_tailscale_identity
@@ -38,7 +39,7 @@ from user_state import (
 
 APP_NAME = "VideoLibrary"
 API_VERSION = 1
-APP_VERSION = "0.6.7"
+APP_VERSION = "0.7.0"
 CHUNK_SIZE = 1024 * 1024
 MAX_JSON_BODY = 64 * 1024
 CONTROL_HEADER = "X-Video-Library-Control-Secret"
@@ -46,6 +47,7 @@ STATIC_FILES = {
     "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json; charset=utf-8"),
     "/service-worker.js": ("service-worker.js", "text/javascript; charset=utf-8"),
     "/offline.html": ("offline.html", "text/html; charset=utf-8"),
+    "/diagnostics.html": ("diagnostics.html", "text/html; charset=utf-8"),
     "/icon.svg": ("icon.svg", "image/svg+xml"),
 }
 
@@ -143,6 +145,15 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             self.end_headers()
             self.wfile.write(body)
 
+        def _download(self, body: bytes, content_type: str, filename: str) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.send_header("Content-Length", str(len(body)))
+            self._common()
+            self.end_headers()
+            self.wfile.write(body)
+
         def _error(self, status: int, code: str, message: str) -> None:
             self._json(status, {"error": {"code": code, "message": message}})
 
@@ -162,6 +173,11 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             text = ui_path.read_text(encoding="utf-8")
             if "manifest.webmanifest" not in text:
                 text = text.replace("</head>", '<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg"></head>')
+            if "diagnostics.html" not in text:
+                text = text.replace(
+                    '<button class="ghost" id="scanButton">再スキャン</button>',
+                    '<a class="ghost" style="text-decoration:none" href="/diagnostics.html">診断</a><button class="ghost" id="scanButton">再スキャン</button>',
+                )
             if "serviceWorker.register" not in text:
                 text = text.replace("</body>", "<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js').catch(()=>{}));}</script></body>")
             body = text.encode("utf-8")
@@ -301,10 +317,6 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             if stream:
                 self._serve_video(int(stream.group(1))); return
 
-            # During an active scan, progress is runtime state. Do not touch
-            # SQLite here: the scan worker can hold a long write transaction,
-            # and opening another normal connection may wait on PRAGMA/locks.
-            # The browser must always be able to poll progress immediately.
             if path == "/api/scan/status":
                 live = scan_progress.snapshot()
                 if live["startedAt"] is not None and live["running"]:
@@ -334,6 +346,14 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                         if live["startedAt"] is not None:
                             value["running"] = bool(live["running"])
                         self._json(200, value); return
+                    if path in {"/api/admin/scan-diagnostics", "/api/admin/scan-diagnostics.json", "/api/admin/scan-diagnostics.csv"}:
+                        if self._require_owner(connection) is None: return
+                        value = scan_diagnostics(connection, run_id=_int_query(query, "runId"))
+                        if path.endswith(".json"):
+                            self._download(diagnostics_json_bytes(value), "application/json; charset=utf-8", "scan-diagnostics.json"); return
+                        if path.endswith(".csv"):
+                            self._download(diagnostics_csv_bytes(value), "text/csv; charset=utf-8", "scan-diagnostics.csv"); return
+                        self._json(200, value); return
                     if path == "/api/works":
                         self._json(200, list_works(connection, user_id=user_id, q=_first(query, "q"), category=_first(query, "category"),
                                                    sort=_first(query, "sort") or "title", limit=_first(query, "limit"), offset=_first(query, "offset"))); return
@@ -362,6 +382,10 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                     if video:
                         value = get_video(connection, int(video.group(1)), user_id=user_id)
                         self._json(200, value) if value is not None else self._error(404, "VIDEO_NOT_FOUND", "動画が見つかりません。"); return
+            except LookupError as exc:
+                if str(exc) == "SCAN_RUN_NOT_FOUND":
+                    self._error(404, "SCAN_RUN_NOT_FOUND", "指定されたスキャン結果が見つかりません。"); return
+                self._error(404, "NOT_FOUND", "指定されたデータが見つかりません。"); return
             except ValueError as exc:
                 self._error(400, "INVALID_QUERY", str(exc)); return
             except Exception:

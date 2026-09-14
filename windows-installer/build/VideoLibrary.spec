@@ -6,6 +6,7 @@ TOOLS = ROOT / "tools"
 
 assets = [
     "video-library.html",
+    "diagnostics.html",
     "manifest.webmanifest",
     "service-worker.js",
     "offline.html",
