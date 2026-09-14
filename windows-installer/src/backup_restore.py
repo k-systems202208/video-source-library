@@ -13,7 +13,7 @@ from paths import BACKUP_DIR, DATA_ROOT, DATABASE_PATH
 RESTORE_REQUEST_FILENAME = "restore-request.json"
 RESTORE_STATUS_FILENAME = "restore-status.json"
 BACKUP_NAME_PATTERN = re.compile(r"^library-[A-Za-z0-9._-]+\.db$")
-SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3})
+SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
 
 
 def _utc_now_iso() -> str:
