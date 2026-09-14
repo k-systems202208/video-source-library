@@ -22,6 +22,7 @@ from matroska_audio import apply_patch_to_chunk, preferred_japanese_audio_patch
 from scan_diagnostics import diagnostics_csv_bytes, diagnostics_json_bytes, scan_diagnostics
 from scan_progress import ScanProgressStore
 from scan_runner import scan_library
+from subtitle_stream import resolve_subtitle_file, subtitle_file_to_webvtt
 from scanner import latest_scan_status, mime_type_for_extension, resolve_video_file
 from tailscale_identity import parse_tailscale_identity
 from user_state import (
@@ -306,6 +307,35 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             except (BrokenPipeError, ConnectionResetError):
                 pass
 
+        def _serve_subtitle(self, subtitle_id: int, *, head: bool = False) -> None:
+            if root_path is None:
+                self._error(409, "VIDEO_ROOT_NOT_CONFIGURED", "動画フォルダーが設定されていません。")
+                return
+            with connect(db_path) as connection:
+                resolved = resolve_subtitle_file(connection, root_path, subtitle_id)
+            if resolved is None:
+                self._error(404, "SUBTITLE_FILE_NOT_FOUND", "字幕ファイルが見つかりません。")
+                return
+            subtitle_path, extension = resolved
+            try:
+                body = subtitle_file_to_webvtt(subtitle_path, extension)
+            except OSError:
+                self._error(404, "SUBTITLE_FILE_NOT_FOUND", "字幕ファイルが見つかりません。")
+                return
+            except ValueError:
+                self._error(415, "SUBTITLE_FORMAT_UNSUPPORTED", "この字幕形式は再生できません。")
+                return
+            except Exception:
+                self._error(500, "SUBTITLE_CONVERSION_FAILED", "字幕の変換に失敗しました。")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/vtt; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self._common(cache="no-store")
+            self.end_headers()
+            if not head:
+                self.wfile.write(body)
+
         def do_GET(self) -> None:
             parsed = urlsplit(self.path); path = parsed.path; query = parse_qs(parsed.query, keep_blank_values=True)
             if path in ("/", "/index.html"):
@@ -320,6 +350,9 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                     self._error(401, "INVALID_OWNER_TOKEN", "オーナートークンが無効または期限切れです。"); return
                 issue = owner_auth.issue_session()
                 self._redirect("/", cookie=session_cookie_header(issue)); return
+            subtitle = re.fullmatch(r"/subtitle/(\d+)\.vtt", path)
+            if subtitle:
+                self._serve_subtitle(int(subtitle.group(1))); return
             stream = re.fullmatch(r"/video/(\d+)", path)
             if stream:
                 self._serve_video(int(stream.group(1))); return
@@ -400,6 +433,9 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             self._error(404, "NOT_FOUND", "指定されたリソースが見つかりません。")
 
         def do_HEAD(self) -> None:
+            subtitle = re.fullmatch(r"/subtitle/(\d+)\.vtt", urlsplit(self.path).path)
+            if subtitle:
+                self._serve_subtitle(int(subtitle.group(1)), head=True); return
             stream = re.fullmatch(r"/video/(\d+)", urlsplit(self.path).path)
             if stream:
                 self._serve_video(int(stream.group(1)), head=True); return
