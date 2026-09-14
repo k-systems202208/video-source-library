@@ -33,19 +33,21 @@ if ($SkipInno) {
     exit 0
 }
 
-$isccCandidates = @(
+$iscc = @(
     (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
     (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
-) | Where-Object { $_ -and (Test-Path $_) }
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 
-$isccCommand = Get-Command iscc.exe -ErrorAction SilentlyContinue
-if ($isccCommand) { $isccCandidates += $isccCommand.Source }
-if (-not $isccCandidates -or $isccCandidates.Count -eq 0) {
+if (-not $iscc) {
+    $isccCommand = Get-Command iscc.exe -ErrorAction SilentlyContinue
+    if ($isccCommand) { $iscc = $isccCommand.Source }
+}
+if (-not $iscc) {
     throw 'Inno Setup 6 (ISCC.exe) was not found.'
 }
 
-$iscc = $isccCandidates[0]
 $iss = Join-Path $root 'installer\VideoLibrary.iss'
+Write-Host "Inno Setup: $iscc"
 & $iscc $iss
 if ($LASTEXITCODE -ne 0) { throw 'Inno Setup build failed.' }
 
