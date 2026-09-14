@@ -5,6 +5,7 @@ import secrets
 import shutil
 import threading
 import tkinter as tk
+import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -21,7 +22,7 @@ from remote_access import disable_remote_access, enable_remote_access, get_remot
 from server import create_server
 
 APP_NAME = "自宅動画ライブラリ"
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.6.1"
 DEFAULT_PORT = 8765
 CONTROL_HEADER = "X-Video-Library-Control-Secret"
 METADATA_PATH = DATA_ROOT / "metadata" / "video_library.json"
@@ -35,11 +36,25 @@ def atomic_write_json(path: Path, value: dict) -> None:
 
 
 def request_local_owner_browser_url(page_url: str, control_secret: str) -> str:
+    parsed = urllib.parse.urlsplit(page_url)
+    if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        raise ValueError("owner authentication endpoint must be localhost HTTP")
+
     token = secrets.token_urlsafe(32)
     endpoint = urllib.parse.urljoin(page_url, "/api/local-auth/token")
     payload = json.dumps({"token": token, "expiresInSeconds": 60}).encode("utf-8")
-    req = urllib.request.Request(endpoint, data=payload, method="POST", headers={"Content-Type": "application/json", CONTROL_HEADER: control_secret})
-    with urllib.request.urlopen(req, timeout=3.0) as response:
+    req = urllib.request.Request(
+        endpoint,
+        data=payload,
+        method="POST",
+        headers={"Content-Type": "application/json", CONTROL_HEADER: control_secret},
+    )
+
+    # This request never leaves the local machine. Do not inherit Windows,
+    # browser or corporate proxy settings; a proxy can reject 127.0.0.1 with
+    # HTTP 403 before the request reaches VideoLibrary.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(req, timeout=3.0) as response:
         if response.status != 201:
             raise RuntimeError("owner token registration failed")
     return urllib.parse.urljoin(page_url, "/api/local-auth/exchange?") + urllib.parse.urlencode({"token": token})
@@ -212,6 +227,13 @@ class VideoLibraryLauncher(tk.Tk):
         base = f"http://127.0.0.1:{self.server.server_port}/"
         try:
             webbrowser.open(request_local_owner_browser_url(base, self.control_secret))
+        except urllib.error.HTTPError as exc:
+            try:
+                detail = exc.read().decode("utf-8", errors="replace")
+            except Exception:
+                detail = ""
+            suffix = f"\n{detail}" if detail else ""
+            messagebox.showerror(APP_NAME, f"オーナーとしてブラウザを開けませんでした。\nHTTP Error {exc.code}: {exc.reason}{suffix}")
         except Exception as exc:
             messagebox.showerror(APP_NAME, f"オーナーとしてブラウザを開けませんでした。\n{exc}")
 
