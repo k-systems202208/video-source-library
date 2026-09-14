@@ -187,7 +187,14 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
     if actual_run_id is None:
         return {
             "scan": None,
-            "summary": {"missing": 0, "newFiles": 0, "unmatchedSubtitles": 0, "errors": 0},
+            "summary": {
+                "missing": 0,
+                "newFiles": 0,
+                "unmatchedSubtitles": 0,
+                "errors": 0,
+                "highConfidenceFileCandidates": 0,
+                "highConfidenceSubtitleCandidates": 0,
+            },
             "missing": [],
             "newFiles": [],
             "unmatchedSubtitles": [],
@@ -305,8 +312,13 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
     unmatched_subtitles: list[dict[str, Any]] = []
     for row in subtitle_rows:
         relative_path = str(row["relative_path"])
-        same_parent = videos_by_parent.get(str(_path(relative_path).parent).casefold(), [])
-        pool = same_parent if same_parent else videos
+        subtitle_path = _path(relative_path)
+        same_parent = videos_by_parent.get(str(subtitle_path.parent).casefold(), [])
+        parent_folder = videos_by_parent.get(str(subtitle_path.parent.parent).casefold(), [])
+        # Keep diagnostics responsive and safe: search only the same folder or
+        # the immediate parent folder (e.g. Show/Subtitles/*.srt -> Show/*.mkv).
+        # Do not compare every unmatched subtitle with all 4,869 videos.
+        pool = same_parent if same_parent else parent_folder
         scored: list[dict[str, Any]] = []
         for video in pool:
             score, reasons = _subtitle_candidate_score(relative_path, str(video["relativePath"]))
@@ -358,9 +370,13 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
         for row in error_rows
     ]
 
-    high_file_candidates = sum(1 for item in missing if item["candidates"] and item["candidates"][0]["confidence"] == "HIGH")
+    high_file_candidates = sum(
+        1 for item in missing
+        if item["candidates"] and item["candidates"][0]["confidence"] == "HIGH"
+    )
     high_subtitle_candidates = sum(
-        1 for item in unmatched_subtitles if item["candidates"] and item["candidates"][0]["confidence"] == "HIGH"
+        1 for item in unmatched_subtitles
+        if item["candidates"] and item["candidates"][0]["confidence"] == "HIGH"
     )
 
     return {
