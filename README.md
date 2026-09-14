@@ -71,7 +71,7 @@
 - `source_subfolder` は論理グループ情報として維持
 - 修復後に通常スキャンを行うため、動画再生と字幕照合も正しい実パスを利用
 
-### 0.7.2〜0.7.8: 字幕照合・診断完成と再生互換性改善
+### 0.7.2〜0.7.9: 字幕照合・診断完成と再生・外部接続互換性改善
 - 0.7.2: 同一作品内で一意に確定できる字幕だけを安全に自動紐付け
 - 0.7.3: WindowsランチャーUIを音楽ライブラリと同系統へ統一
 - 0.7.4: 残存字幕を安全条件の範囲で追加照合
@@ -79,6 +79,7 @@
 - 0.7.6: 診断ヘッダーを「字幕判定」に変更し、紐付済みと対応動画なしを明示
 - 0.7.7: 実機検証、アプリバージョン、README / Phase 6文書の整合性を整理
 - 0.7.8: MKV/WebMの複数音声で日本語が存在する場合、元ファイルを変更せず配信時に日本語を優先
+- 0.7.9: 動画版Tailscale ServeをHTTPS 8443へ分離し、Windowsランチャーに外部URLを開くボタンを追加
 
 対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
@@ -207,6 +208,8 @@ control secretなしの直接起動はテスト／開発用localhost owner互換
 ### Tailscale
 Tailscale Serveが付与する本人情報を `user_identities` へ紐付けます。利用者ごとのお気に入り・視聴位置・履歴は混ざりません。
 
+同一PCの音楽版と競合しないよう、動画版はHTTPS 8443を使用します。動画版の外部URLは `https://<PC名>.<tailnet>.ts.net:8443/` です。Windowsランチャーの「外部URLを開く」から既定ブラウザで開けます。
+
 外部公開はTailscale Serveのみを前提とします。ルーターのポート開放、DMZ、Tailscale Funnelは使用しません。
 
 ## PWA
@@ -283,6 +286,7 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 - [0.7.6 字幕判定表示](docs/26-0.7.6-diagnostics-subtitle-judgement.md)
 - [0.7.7 整合性整理](docs/27-0.7.7-consistency-cleanup.md)
 - [0.7.8 MKV複数音声の日本語優先再生](docs/28-0.7.8-japanese-audio-default.md)
+- [0.7.9 動画版Tailscale外部URLの分離](docs/29-0.7.9-video-remote-url.md)
 
 ## 正本
 - 動画そのもの: ユーザー指定の動画フォルダー
