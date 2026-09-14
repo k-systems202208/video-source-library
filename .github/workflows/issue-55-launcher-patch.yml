@@ -1,0 +1,105 @@
+name: Issue 55 launcher patch
+
+on:
+  push:
+    branches: [feature/issue-55-video-remote-8443]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/issue-55-video-remote-8443
+      - name: Patch launcher
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('windows-installer/src/launcher.py')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once(old, new):
+              global text
+              if new in text:
+                  return
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one launcher match, found {count}: {old[:80]!r}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '        self.remote = tk.StringVar(value="状態を確認しています…")\n        self.scan_status = tk.StringVar(value="起動スキャン待機中")\n',
+              '        self.remote = tk.StringVar(value="状態を確認しています…")\n        self.remote_url = ""\n        self.scan_status = tk.StringVar(value="起動スキャン待機中")\n',
+          )
+
+          replace_once(
+              '        self.remote_disable_button = ttk.Button(remote_buttons, text="外部接続を停止", command=self.disable_remote)\n        self.remote_disable_button.pack(side="left", padx=8)\n        ttk.Button(remote_buttons, text="Tailscale再確認", command=self.refresh_remote).pack(side="right")\n',
+              '        self.remote_disable_button = ttk.Button(remote_buttons, text="外部接続を停止", command=self.disable_remote)\n        self.remote_disable_button.pack(side="left", padx=8)\n        self.remote_open_button = ttk.Button(remote_buttons, text="外部URLを開く", command=self.open_remote, state="disabled")\n        self.remote_open_button.pack(side="left")\n        ttk.Button(remote_buttons, text="Tailscale再確認", command=self.refresh_remote).pack(side="right")\n',
+          )
+
+          old_remote = '''    def refresh_remote(self) -> None:
+              status = get_remote_status()
+              if not status.installed:
+                  self.remote.set("Tailscale未インストール")
+              elif not status.logged_in:
+                  self.remote.set("未ログイン")
+              elif status.serve_active:
+                  self.remote.set(f"外部接続は有効です： {status.serve_url}")
+              else:
+                  self.remote.set("Tailscaleログイン済み / 外部接続は停止中")
+
+          '''.replace('          ', '')
+          new_remote = '''    def refresh_remote(self) -> None:
+              status = get_remote_status()
+              self.remote_url = status.serve_url if status.serve_active else ""
+              self.remote_open_button.configure(state="normal" if self.remote_url else "disabled")
+              if not status.installed:
+                  self.remote.set("Tailscale未インストール")
+              elif not status.logged_in:
+                  self.remote.set("未ログイン")
+              elif status.serve_active:
+                  self.remote.set(f"動画版の外部接続は有効です： {status.serve_url}")
+              else:
+                  self.remote.set("Tailscaleログイン済み / 動画版の外部接続は停止中")
+
+              def open_remote(self) -> None:
+                  if not self.remote_url:
+                      self.refresh_remote()
+                  if not self.remote_url:
+                      messagebox.showinfo(APP_NAME, "動画版の外部接続を先に有効化してください。")
+                      return
+                  try:
+                      webbrowser.open(self.remote_url)
+                  except Exception as exc:
+                      messagebox.showerror(APP_NAME, f"外部URLを開けませんでした。\\n{exc}")
+
+          '''.replace('          ', '')
+          # The helper above intentionally preserves method indentation in source text.
+          new_remote = new_remote.replace('\n    def open_remote', '\n    def open_remote')
+          if '    def open_remote(self) -> None:\n' not in text:
+              count = text.count(old_remote)
+              if count != 1:
+                  raise SystemExit(f'expected one refresh_remote block, found {count}')
+              text = text.replace(old_remote, new_remote, 1)
+
+          path.write_text(text, encoding='utf-8')
+      - name: Verify launcher syntax and UI markers
+        shell: bash
+        run: |
+          python -m py_compile windows-installer/src/launcher.py
+          grep -F 'text="外部URLを開く"' windows-installer/src/launcher.py
+          grep -F 'def open_remote(self)' windows-installer/src/launcher.py
+      - name: Commit launcher patch
+        shell: bash
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add windows-installer/src/launcher.py
+          git commit -m "Issue #55: Windowsアプリに外部URLを開くボタンを追加"
+          git push
