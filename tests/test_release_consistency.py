@@ -17,9 +17,9 @@ import server
 from validate_real_library import build_parser, collect_validation_failures
 
 
-class ReleaseConsistencyV077Tests(unittest.TestCase):
+class ReleaseConsistencyTests(unittest.TestCase):
     def test_version_is_shared_across_python_and_installer(self):
-        self.assertEqual(APP_VERSION, "0.7.7")
+        self.assertEqual(APP_VERSION, "0.7.8")
         self.assertEqual(launcher.APP_VERSION, APP_VERSION)
         self.assertEqual(server.APP_VERSION, APP_VERSION)
         installer = (ROOT / "windows-installer" / "installer" / "VideoLibrary.iss").read_text(
