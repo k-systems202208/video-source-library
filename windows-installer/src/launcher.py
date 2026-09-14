@@ -12,7 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from app_config import load_config, save_config
 from backup_restore import apply_pending_restore, create_manual_backup
-from database import connect, initialize_database
+from database import connect, initialize_database, now_iso
 from local_auth import create_bootstrap_token
 from media_probe import find_ffprobe
 from metadata_importer import import_file
@@ -21,7 +21,7 @@ from remote_access import disable_remote_access, enable_remote_access, get_remot
 from server import create_server
 
 APP_NAME = "自宅動画ライブラリ"
-APP_VERSION = "0.6.7"
+APP_VERSION = "0.6.8"
 # Music Library uses 8765. Keep Video Library on a different localhost origin
 # so Service Worker, Cache Storage and PWA state cannot collide.
 DEFAULT_PORT = 8876
@@ -53,6 +53,32 @@ def database_counts() -> tuple[int, int]:
         works = int(connection.execute("SELECT COUNT(*) FROM works").fetchone()[0])
         videos = int(connection.execute("SELECT COUNT(*) FROM videos").fetchone()[0])
     return works, videos
+
+
+def recover_interrupted_scans(database_path: Path = DATABASE_PATH) -> int:
+    """Mark scans left RUNNING by a previous process as interrupted.
+
+    scan_runs is durable history, but the worker thread is process-local.  A
+    RUNNING row therefore cannot still be active after the Windows launcher has
+    restarted.  Leaving it untouched makes the browser believe an old scan is
+    still running forever.
+    """
+    if not database_path.is_file():
+        return 0
+    with connect(database_path) as connection:
+        initialize_database(connection)
+        stamp = now_iso()
+        cursor = connection.execute(
+            """
+            UPDATE scan_runs
+            SET status='INTERRUPTED',
+                completed_at=COALESCE(completed_at, ?)
+            WHERE status='RUNNING'
+            """,
+            (stamp,),
+        )
+        connection.commit()
+        return max(0, int(cursor.rowcount or 0))
 
 
 class VideoLibraryLauncher(tk.Tk):
@@ -185,6 +211,11 @@ class VideoLibraryLauncher(tk.Tk):
         restore = apply_pending_restore(DATA_ROOT)
         if restore and restore.get("state") == "error":
             messagebox.showwarning(APP_NAME, f"予約された復元に失敗しました。\n{restore.get('error', '')}")
+        try:
+            recover_interrupted_scans(DATABASE_PATH)
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"前回スキャン状態を回収できませんでした。\n{exc}")
+            return
         self.control_secret = secrets.token_urlsafe(48)
         try:
             self.server = create_server(
