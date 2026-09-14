@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REMOTE_APP_PATH = "/"
+REMOTE_HTTPS_PORT = 8443
 
 
 @dataclass(frozen=True)
@@ -77,7 +78,13 @@ def parse_backend_state(status_json: str) -> str:
 
 
 def parse_serve_url(text: str) -> str:
-    match = re.search(r"https://[A-Za-z0-9.-]+(?:/)?", text)
+    match = re.search(r"https://[A-Za-z0-9.-]+(?::\d+)?(?:/)?", text)
+    return match.group(0).rstrip("/") if match else ""
+
+
+def parse_app_serve_url(text: str, https_port: int = REMOTE_HTTPS_PORT) -> str:
+    pattern = rf"https://[A-Za-z0-9.-]+:{int(https_port)}(?:/)?"
+    match = re.search(pattern, text)
     return match.group(0).rstrip("/") if match else ""
 
 
@@ -94,9 +101,16 @@ def get_remote_status() -> RemoteStatus:
     backend_state = parse_backend_state(status_result.output)
     logged_in = status_result.returncode == 0 and backend_state.casefold() == "running"
     serve_result = run_tailscale(["serve", "status"], timeout=12.0)
-    url = build_remote_app_url(parse_serve_url(serve_result.output))
-    return RemoteStatus(True, logged_in, backend_state or "Unknown", serve_result.returncode == 0 and bool(url), url,
-                        str(executable), serve_result.output.strip() if serve_result.returncode else "")
+    app_url = build_remote_app_url(parse_app_serve_url(serve_result.output))
+    return RemoteStatus(
+        True,
+        logged_in,
+        backend_state or "Unknown",
+        serve_result.returncode == 0 and bool(app_url),
+        app_url,
+        str(executable),
+        serve_result.output.strip() if serve_result.returncode else "",
+    )
 
 
 def enable_remote_access(port: int) -> tuple[bool, str, str]:
@@ -105,13 +119,16 @@ def enable_remote_access(port: int) -> tuple[bool, str, str]:
         return False, "", "Tailscaleがインストールされていません。"
     if not status.logged_in:
         return False, "", "Tailscaleへのログインが必要です。"
-    result = run_tailscale(["serve", "--bg", str(int(port))], timeout=30.0)
+    result = run_tailscale(
+        ["serve", "--yes", "--bg", f"--https={REMOTE_HTTPS_PORT}", str(int(port))],
+        timeout=30.0,
+    )
     if result.returncode != 0:
         return False, "", result.output.strip() or "Tailscale Serveを有効にできませんでした。"
     current = get_remote_status()
-    url = current.serve_url or build_remote_app_url(parse_serve_url(result.output))
+    url = current.serve_url or build_remote_app_url(parse_app_serve_url(result.output))
     return bool(url), url, "外部接続を有効にしました。" if url else "HTTPS URLを取得できませんでした。"
 
 
 def disable_remote_access() -> CommandResult:
-    return run_tailscale(["serve", "off"], timeout=20.0)
+    return run_tailscale(["serve", "--yes", f"--https={REMOTE_HTTPS_PORT}", "off"], timeout=20.0)

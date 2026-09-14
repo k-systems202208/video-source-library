@@ -141,6 +141,7 @@ class VideoLibraryLauncher(tk.Tk):
         self.metadata_status = tk.StringVar(value="メタデータ未確認")
         self.probe_status = tk.StringVar(value="ffprobe未確認")
         self.remote = tk.StringVar(value="状態を確認しています…")
+        self.remote_url = ""
         self.scan_status = tk.StringVar(value="起動スキャン待機中")
         self.scan_counts = tk.StringVar(value="MATCHED 0 / MISSING 0 / NEW_FILE 0 / 字幕 0 / ffprobe 0")
         self.scan_current = tk.StringVar(value="現在処理中: —")
@@ -217,6 +218,8 @@ class VideoLibraryLauncher(tk.Tk):
         self.remote_enable_button.pack(side="left")
         self.remote_disable_button = ttk.Button(remote_buttons, text="外部接続を停止", command=self.disable_remote)
         self.remote_disable_button.pack(side="left", padx=8)
+        self.remote_open_button = ttk.Button(remote_buttons, text="外部URLを開く", command=self.open_remote, state="disabled")
+        self.remote_open_button.pack(side="left")
         ttk.Button(remote_buttons, text="Tailscale再確認", command=self.refresh_remote).pack(side="right")
 
         ttk.Label(main, textvariable=self.status, font=STATUS_FONT).pack(anchor="w", pady=(0, 6))
@@ -565,14 +568,27 @@ class VideoLibraryLauncher(tk.Tk):
 
     def refresh_remote(self) -> None:
         status = get_remote_status()
+        self.remote_url = status.serve_url if status.serve_active else ""
+        self.remote_open_button.configure(state="normal" if self.remote_url else "disabled")
         if not status.installed:
             self.remote.set("Tailscale未インストール")
         elif not status.logged_in:
             self.remote.set("未ログイン")
         elif status.serve_active:
-            self.remote.set(f"外部接続は有効です： {status.serve_url}")
+            self.remote.set(f"動画版の外部接続は有効です： {status.serve_url}")
         else:
-            self.remote.set("Tailscaleログイン済み / 外部接続は停止中")
+            self.remote.set("Tailscaleログイン済み / 動画版の外部接続は停止中")
+
+    def open_remote(self) -> None:
+        if not self.remote_url:
+            self.refresh_remote()
+        if not self.remote_url:
+            messagebox.showinfo(APP_NAME, "動画版の外部接続を先に有効化してください。")
+            return
+        try:
+            webbrowser.open(self.remote_url)
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"外部URLを開けませんでした。\n{exc}")
 
     def enable_remote(self) -> None:
         if self.server is None:
