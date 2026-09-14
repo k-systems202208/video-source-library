@@ -24,7 +24,7 @@ from scanner import scan_library
 from server import create_server
 
 APP_NAME = "自宅動画ライブラリ"
-APP_VERSION = "0.6.9"
+APP_VERSION = "0.7.0"
 # Music Library uses 8765. Keep Video Library on a different localhost origin
 # so Service Worker, Cache Storage and PWA state cannot collide.
 DEFAULT_PORT = 8876
@@ -130,8 +130,6 @@ class VideoLibraryLauncher(tk.Tk):
         self._build()
         self.after(200, self.refresh_local_status)
         self.after(300, self.refresh_remote)
-        # Music Library-compatible startup flow: if the previous settings are
-        # usable, start scanning immediately and open the browser only when done.
         self.after(800, self._auto_start_if_ready)
         self.protocol("WM_DELETE_WINDOW", self.close)
 
