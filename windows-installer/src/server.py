@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from app_config import configured_video_root, default_config_path
+from app_version import APP_VERSION
 from backup_restore import cancel_restore, create_manual_backup, list_backups, pending_restore, restore_status, schedule_restore
 from database import SCHEMA_VERSION, connect, initialize_database, quick_check
 from identity_service import local_owner_user, resolve_tailscale_user
@@ -40,7 +41,6 @@ from user_state import (
 
 APP_NAME = "VideoLibrary"
 API_VERSION = 1
-APP_VERSION = "0.7.2"
 CHUNK_SIZE = 1024 * 1024
 MAX_JSON_BODY = 64 * 1024
 CONTROL_HEADER = "X-Video-Library-Control-Secret"
