@@ -20,11 +20,11 @@ from media_probe import find_ffprobe
 from metadata_importer import import_file
 from paths import CONFIG_PATH, DATABASE_PATH, DATA_ROOT, RUNTIME_PATH
 from remote_access import disable_remote_access, enable_remote_access, get_remote_status
-from scanner import scan_library
+from scan_runner import scan_library
 from server import create_server
 
 APP_NAME = "自宅動画ライブラリ"
-APP_VERSION = "0.7.0"
+APP_VERSION = "0.7.1"
 # Music Library uses 8765. Keep Video Library on a different localhost origin
 # so Service Worker, Cache Storage and PWA state cannot collide.
 DEFAULT_PORT = 8876
@@ -421,6 +421,9 @@ class VideoLibraryLauncher(tk.Tk):
             f"一致 {result.get('filesMatched', 0):,} / 欠落 {result.get('filesMissing', 0):,} / "
             f"新規 {result.get('filesNew', 0):,} / 字幕 {result.get('subtitlesFound', 0):,}"
         )
+        repaired = int(result.get("pathsRepaired") or 0)
+        if repaired:
+            self._append_log(f"文字化けパス修復: {repaired:,}件")
         self.status.set("スキャン完了 — ブラウザを起動しています")
         if not self._start_http_server(root):
             self._set_busy(False)
