@@ -11,7 +11,9 @@ sys.path.insert(0, str(SRC))
 
 from database import connect, initialize_database, now_iso
 from scan_diagnostics import diagnostics_csv_bytes, scan_diagnostics
+import scan_runner
 from scan_runner import record_unsupported_subtitles
+import server
 
 
 class UnsupportedSubtitleDiagnostics072Tests(unittest.TestCase):
@@ -84,6 +86,10 @@ class UnsupportedSubtitleDiagnostics072Tests(unittest.TestCase):
             self.assertIn("movie.idx", exported)
             self.assertIn("movie.sub", exported)
             self.assertIn("movie.smi", exported)
+
+    def test_browser_rescan_uses_same_scan_runner_as_startup_scan(self):
+        self.assertIs(server.scan_library, scan_runner.scan_library)
+        self.assertEqual(server.APP_VERSION, "0.7.2")
 
 
 if __name__ == "__main__":
