@@ -24,7 +24,7 @@ a = Analysis(
     hiddenimports=["tkinter", "tkinter.ttk", "sqlite3"],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(ROOT / "build" / "runtime_no_console.py")],
     excludes=[],
     noarchive=False,
 )
