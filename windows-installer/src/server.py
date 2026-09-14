@@ -38,7 +38,7 @@ from user_state import (
 
 APP_NAME = "VideoLibrary"
 API_VERSION = 1
-APP_VERSION = "0.6.6"
+APP_VERSION = "0.6.7"
 CHUNK_SIZE = 1024 * 1024
 MAX_JSON_BODY = 64 * 1024
 CONTROL_HEADER = "X-Video-Library-Control-Secret"
@@ -218,9 +218,6 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             return str(self.client_address[0]) in {"127.0.0.1", "::1"}
 
         def _request_user(self, connection) -> dict[str, Any] | None:
-            # Developer mode retains the Phase 4 localhost behavior when no
-            # control secret is supplied. The Windows launcher always supplies
-            # a control secret and therefore requires a session cookie.
             if owner_auth is None:
                 return local_owner_user(connection)
             session = cookie_value(self.headers.get("Cookie"))
@@ -303,6 +300,22 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             stream = re.fullmatch(r"/video/(\d+)", path)
             if stream:
                 self._serve_video(int(stream.group(1))); return
+
+            # During an active scan, progress is runtime state. Do not touch
+            # SQLite here: the scan worker can hold a long write transaction,
+            # and opening another normal connection may wait on PRAGMA/locks.
+            # The browser must always be able to poll progress immediately.
+            if path == "/api/scan/status":
+                live = scan_progress.snapshot()
+                if live["startedAt"] is not None and live["running"]:
+                    self._json(200, {
+                        "running": True,
+                        "latest": None,
+                        "videoRootConfigured": root_path is not None,
+                        "progress": live,
+                    })
+                    return
+
             try:
                 with connect(db_path) as connection:
                     user = self._request_user(connection); user_id = int(user["id"]) if user else None
@@ -408,9 +421,10 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                 with connect(db_path) as connection:
                     if self._require_owner(connection) is None: return
                 if root_path is None:
-                    self._error(409, "VIDEO_ROOT_NOT_CONFIGURED", "動画フォルダーが設定されていません。"); return
+                    self._error(409, "VIDEO_ROOT_NOT_CONFIGURED", "動画フォルダーが設定されていません。")
+                    return
                 if not scan_lock.acquire(blocking=False):
-                    self._error(409, "SCAN_ALREADY_RUNNING", "ライブラリスキャンは既に実行中です。"); return
+                    self._error(409, "SCAN_ALREADY_RUNNING", "ライブラリスキャンは既に実行中です."); return
 
                 scan_progress.start()
 
@@ -449,7 +463,7 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                 except (ValueError, FileNotFoundError) as exc:
                     self._error(400, "BACKUP_ERROR", str(exc)); return
                 except Exception:
-                    self._error(500, "BACKUP_ERROR", "バックアップ操作に失敗しました。"); return
+                    self._error(500, "BACKUP_ERROR", "バックアップ操作に失敗しました."); return
             try:
                 match = re.fullmatch(r"/api/me/videos/(\d+)/playback/(start|progress)", path)
                 if match:
@@ -473,12 +487,12 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                         state = record_progress(connection, uid, video_id, position_ms=position, duration_ms=duration, event=event, increment_play_count=increment)
                     self._json(200, {"videoId": video_id, "state": state}); return
             except LookupError:
-                self._error(404, "VIDEO_NOT_FOUND", "動画が見つかりません。"); return
+                self._error(404, "VIDEO_NOT_FOUND", "動画が見つかりません."); return
             except ValueError as exc:
                 self._error(400, "INVALID_REQUEST", str(exc)); return
             except Exception:
-                self._error(500, "INTERNAL_ERROR", "再生状態の更新に失敗しました。"); return
-            self._error(404, "NOT_FOUND", "指定されたリソースが見つかりません。")
+                self._error(500, "INTERNAL_ERROR", "再生状態の更新に失敗しました."); return
+            self._error(404, "NOT_FOUND", "指定されたリソースが見つかりません.")
 
     return Handler
 
