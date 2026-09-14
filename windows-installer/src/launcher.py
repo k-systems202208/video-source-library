@@ -11,7 +11,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from app_config import load_config, save_config
-from backup_restore import create_manual_backup
+from backup_restore import apply_pending_restore, create_manual_backup
 from paths import CONFIG_PATH, DATABASE_PATH, DATA_ROOT, RUNTIME_PATH
 from remote_access import disable_remote_access, enable_remote_access, get_remote_status
 from server import create_server
@@ -94,6 +94,9 @@ class VideoLibraryLauncher(tk.Tk):
             return
         save_config({"videoRoot": str(root)}, CONFIG_PATH)
         DATA_ROOT.mkdir(parents=True, exist_ok=True)
+        restore = apply_pending_restore(DATA_ROOT)
+        if restore and restore.get("state") == "error":
+            messagebox.showwarning(APP_NAME, f"予約された復元に失敗しました。\n{restore.get('error', '')}")
         self.control_secret = secrets.token_urlsafe(48)
         try:
             self.server = create_server(DATABASE_PATH, host="127.0.0.1", port=DEFAULT_PORT, video_root=root,
@@ -111,8 +114,7 @@ class VideoLibraryLauncher(tk.Tk):
 
     def open_browser(self) -> None:
         if self.server is None:
-            self.start_server()
-            return
+            self.start_server(); return
         base = f"http://127.0.0.1:{self.server.server_port}/"
         try:
             webbrowser.open(request_local_owner_browser_url(base, self.control_secret))
@@ -127,30 +129,20 @@ class VideoLibraryLauncher(tk.Tk):
 
     def refresh_remote(self) -> None:
         status = get_remote_status()
-        if not status.installed:
-            self.remote.set("Tailscale未インストール")
-        elif not status.logged_in:
-            self.remote.set("未ログイン")
-        elif status.serve_active:
-            self.remote.set(f"有効  {status.serve_url}")
-        else:
-            self.remote.set("ログイン済み / Serve無効")
+        if not status.installed: self.remote.set("Tailscale未インストール")
+        elif not status.logged_in: self.remote.set("未ログイン")
+        elif status.serve_active: self.remote.set(f"有効  {status.serve_url}")
+        else: self.remote.set("ログイン済み / Serve無効")
 
     def enable_remote(self) -> None:
         if self.server is None:
-            messagebox.showinfo(APP_NAME, "先に動画ライブラリを開始してください。")
-            return
-        ok, url, message = enable_remote_access(self.server.server_port)
-        self.refresh_remote()
-        if ok:
-            messagebox.showinfo(APP_NAME, f"{message}\n{url}")
-        else:
-            messagebox.showerror(APP_NAME, message)
+            messagebox.showinfo(APP_NAME, "先に動画ライブラリを開始してください。"); return
+        ok, url, message = enable_remote_access(self.server.server_port); self.refresh_remote()
+        messagebox.showinfo(APP_NAME, f"{message}\n{url}") if ok else messagebox.showerror(APP_NAME, message)
 
     def disable_remote(self) -> None:
         result = disable_remote_access(); self.refresh_remote()
-        if result.returncode != 0:
-            messagebox.showerror(APP_NAME, result.output)
+        if result.returncode != 0: messagebox.showerror(APP_NAME, result.output)
 
     def backup(self) -> None:
         try:
