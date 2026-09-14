@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import sys
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "windows-installer" / "src"
@@ -15,6 +17,7 @@ sys.path.insert(0, str(SRC)); sys.path.insert(0, str(TESTS))
 
 from backup_restore import apply_pending_restore, create_manual_backup, list_backups, schedule_restore
 from database import connect
+from launcher import request_local_owner_browser_url
 from local_auth import LocalOwnerAuth, cookie_value, session_cookie_header
 from metadata_importer import import_file
 from remote_access import build_remote_app_url, parse_backend_state, parse_serve_url
@@ -125,6 +128,30 @@ class SecureServerTests(unittest.TestCase):
         self.assertEqual(status, 200); self.assertTrue(data["authenticated"]); self.assertTrue(data["user"]["isOwner"])
         status, _, data = self.request("PUT", "/api/me/works/1/favorite", body={"favorite": True}, headers={"Cookie": cookie})
         self.assertEqual(status, 200); self.assertTrue(data["favorite"])
+
+    def test_launcher_owner_auth_bypasses_system_proxy(self):
+        base = f"http://127.0.0.1:{self.port}/"
+        proxy_env = {
+            "http_proxy": "http://127.0.0.1:1",
+            "https_proxy": "http://127.0.0.1:1",
+            "HTTP_PROXY": "http://127.0.0.1:1",
+            "HTTPS_PROXY": "http://127.0.0.1:1",
+            "no_proxy": "",
+            "NO_PROXY": "",
+        }
+        with patch.dict(os.environ, proxy_env, clear=False):
+            exchange_url = request_local_owner_browser_url(base, self.secret)
+        self.assertTrue(exchange_url.startswith(base + "api/local-auth/exchange?token="))
+
+    def test_owner_token_endpoint_still_rejects_cross_origin_request(self):
+        status, _, data = self.request(
+            "POST",
+            "/api/local-auth/token",
+            body={"token": "T" * 43, "expiresInSeconds": 60},
+            headers={CONTROL_HEADER: self.secret, "Origin": "https://evil.example"},
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(data["error"]["code"], "ORIGIN_NOT_ALLOWED")
 
     def test_tailscale_users_are_separate_non_owner_users(self):
         alice = {"Host": "video-box.tailnet.ts.net", "Tailscale-User-Login": "alice@example.com", "Tailscale-User-Name": "Alice"}
