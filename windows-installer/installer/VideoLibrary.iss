@@ -1,5 +1,5 @@
 #define MyAppName "自宅動画ライブラリ"
-#define MyAppVersion "0.7.8"
+#define MyAppVersion "0.7.9"
 #define MyAppPublisher "k-systems202208"
 #define MyAppExeName "VideoLibrary.exe"
 
