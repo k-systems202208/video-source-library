@@ -12,7 +12,7 @@ sys.path.insert(0, str(SRC))
 from database import connect, foreign_key_error_count, initialize_database, quick_check
 from media_probe import find_ffprobe
 from metadata_importer import import_file
-from scanner import scan_library
+from scan_runner import scan_library
 
 
 def main() -> int:
