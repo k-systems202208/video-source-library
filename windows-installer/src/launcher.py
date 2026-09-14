@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import shutil
+import subprocess
 import threading
 import time
 import tkinter as tk
@@ -24,11 +26,22 @@ from scan_runner import scan_library
 from server import create_server
 
 APP_NAME = "自宅動画ライブラリ"
-APP_VERSION = "0.7.2"
+APP_VERSION = "0.7.3"
 # Music Library uses 8765. Keep Video Library on a different localhost origin
 # so Service Worker, Cache Storage and PWA state cannot collide.
 DEFAULT_PORT = 8876
 METADATA_PATH = DATA_ROOT / "metadata" / "video_library.json"
+
+# Keep the Windows launcher visually aligned with mp3-source-music-library.
+UI_FONT = "Yu Gothic UI"
+WINDOW_GEOMETRY = "780x690"
+WINDOW_MINSIZE = (700, 590)
+TITLE_FONT = (UI_FONT, 20, "bold")
+BODY_FONT = (UI_FONT, 10)
+SMALL_FONT = (UI_FONT, 9)
+STATUS_FONT = (UI_FONT, 10, "bold")
+MONO_FONT = ("Consolas", 9)
+MAIN_PADDING = 18
 
 
 def atomic_write_json(path: Path, value: dict) -> None:
@@ -105,8 +118,12 @@ class VideoLibraryLauncher(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(f"{APP_NAME} {APP_VERSION}")
-        self.geometry("820x690")
-        self.minsize(740, 620)
+        self.geometry(WINDOW_GEOMETRY)
+        self.minsize(*WINDOW_MINSIZE)
+
+        style = ttk.Style(self)
+        style.configure(".", font=BODY_FONT)
+
         self.server = None
         self.server_thread: threading.Thread | None = None
         self.scan_thread: threading.Thread | None = None
@@ -115,18 +132,20 @@ class VideoLibraryLauncher(tk.Tk):
         self._last_phase = ""
         self._last_logged_current = -1
         self._indeterminate = False
+
         config = load_config(CONFIG_PATH)
         default_metadata = str(METADATA_PATH) if METADATA_PATH.is_file() else ""
-        self.video_root = tk.StringVar(value=str(config.get("videoRoot") or ""))
-        self.metadata_path = tk.StringVar(value=str(config.get("metadataPath") or default_metadata))
-        self.status = tk.StringVar(value="停止中")
+        self.video_root = tk.StringVar(value=str(config.get("videoRoot") or "未設定"))
+        self.metadata_path = tk.StringVar(value=str(config.get("metadataPath") or default_metadata or "未設定"))
+        self.status = tk.StringVar(value="準備完了")
         self.metadata_status = tk.StringVar(value="メタデータ未確認")
         self.probe_status = tk.StringVar(value="ffprobe未確認")
-        self.remote = tk.StringVar(value="未確認")
+        self.remote = tk.StringVar(value="状態を確認しています…")
         self.scan_status = tk.StringVar(value="起動スキャン待機中")
         self.scan_counts = tk.StringVar(value="MATCHED 0 / MISSING 0 / NEW_FILE 0 / 字幕 0 / ffprobe 0")
         self.scan_current = tk.StringVar(value="現在処理中: —")
         self.scan_elapsed = tk.StringVar(value="経過: —")
+
         self._build()
         self.after(200, self.refresh_local_status)
         self.after(300, self.refresh_remote)
@@ -134,67 +153,104 @@ class VideoLibraryLauncher(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.close)
 
     def _build(self) -> None:
-        frame = ttk.Frame(self, padding=18)
-        frame.pack(fill="both", expand=True)
-        ttk.Label(frame, text=APP_NAME, font=("Segoe UI", 18, "bold")).pack(anchor="w")
-        ttk.Label(frame, text="動画フォルダーを確認・スキャンした後、ブラウザを起動します。").pack(anchor="w", pady=(2, 10))
-        ttk.Label(frame, textvariable=self.status).pack(anchor="w", pady=(0, 12))
+        main = ttk.Frame(self, padding=MAIN_PADDING)
+        main.pack(fill="both", expand=True)
 
-        row = ttk.Frame(frame)
-        row.pack(fill="x", pady=3)
-        ttk.Label(row, text="動画フォルダー", width=16).pack(side="left")
-        self.root_entry = ttk.Entry(row, textvariable=self.video_root)
-        self.root_entry.pack(side="left", fill="x", expand=True, padx=8)
-        self.root_button = ttk.Button(row, text="参照", command=self.choose_root)
-        self.root_button.pack(side="right")
+        ttk.Label(main, text=APP_NAME, font=TITLE_FONT).pack(anchor="w")
+        ttk.Label(
+            main,
+            text="動画フォルダーを選ぶだけで、スキャン後にブラウザから検索・再生できます。",
+            font=BODY_FONT,
+        ).pack(anchor="w", pady=(2, 14))
 
-        meta_row = ttk.Frame(frame)
-        meta_row.pack(fill="x", pady=3)
-        ttk.Label(meta_row, text="メタデータJSON", width=16).pack(side="left")
-        self.meta_entry = ttk.Entry(meta_row, textvariable=self.metadata_path)
-        self.meta_entry.pack(side="left", fill="x", expand=True, padx=8)
-        self.meta_browse_button = ttk.Button(meta_row, text="参照", command=self.choose_metadata)
-        self.meta_browse_button.pack(side="right")
-        self.import_button = ttk.Button(meta_row, text="取込", command=self.import_metadata)
-        self.import_button.pack(side="right", padx=(0, 8))
+        folder_frame = ttk.LabelFrame(main, text="動画フォルダー", padding=10)
+        folder_frame.pack(fill="x")
+        self.root_label = ttk.Label(
+            folder_frame,
+            textvariable=self.video_root,
+            wraplength=610,
+            font=SMALL_FONT,
+        )
+        self.root_label.pack(side="left", fill="x", expand=True)
+        self.root_button = ttk.Button(folder_frame, text="変更", command=self.choose_root)
+        self.root_button.pack(side="right", padx=(10, 0))
 
-        ttk.Label(frame, textvariable=self.metadata_status).pack(anchor="w", pady=(4, 0))
-        ttk.Label(frame, textvariable=self.probe_status).pack(anchor="w", pady=(2, 0))
+        metadata_frame = ttk.LabelFrame(main, text="メタデータJSON", padding=10)
+        metadata_frame.pack(fill="x", pady=(10, 0))
+        metadata_top = ttk.Frame(metadata_frame)
+        metadata_top.pack(fill="x")
+        self.meta_label = ttk.Label(
+            metadata_top,
+            textvariable=self.metadata_path,
+            wraplength=500,
+            font=SMALL_FONT,
+        )
+        self.meta_label.pack(side="left", fill="x", expand=True)
+        self.meta_browse_button = ttk.Button(metadata_top, text="変更", command=self.choose_metadata)
+        self.meta_browse_button.pack(side="right", padx=(8, 0))
+        self.import_button = ttk.Button(metadata_top, text="取込", command=self.import_metadata)
+        self.import_button.pack(side="right", padx=(8, 0))
+        ttk.Label(metadata_frame, textvariable=self.metadata_status, font=SMALL_FONT).pack(anchor="w", pady=(6, 0))
+        ttk.Label(metadata_frame, textvariable=self.probe_status, font=SMALL_FONT).pack(anchor="w", pady=(2, 0))
 
-        buttons = ttk.Frame(frame)
-        buttons.pack(fill="x", pady=12)
-        self.start_button = ttk.Button(buttons, text="ライブラリを開始", command=self.start_library)
+        button_frame = ttk.Frame(main)
+        button_frame.pack(fill="x", pady=14)
+        self.start_button = ttk.Button(button_frame, text="ライブラリを開始", command=self.start_library)
         self.start_button.pack(side="left")
-        self.browser_button = ttk.Button(buttons, text="ブラウザで開く", command=self.open_browser, state="disabled")
+        self.browser_button = ttk.Button(button_frame, text="ブラウザで開く", command=self.open_browser, state="disabled")
         self.browser_button.pack(side="left", padx=8)
-        self.stop_button = ttk.Button(buttons, text="停止", command=self.stop_server, state="disabled")
+        self.stop_button = ttk.Button(button_frame, text="停止", command=self.stop_server, state="disabled")
         self.stop_button.pack(side="left")
+        ttk.Button(button_frame, text="データ保存先を開く", command=self.open_data_folder).pack(side="right")
 
-        scan_box = ttk.LabelFrame(frame, text="起動スキャン", padding=10)
-        scan_box.pack(fill="both", expand=True, pady=(2, 10))
-        ttk.Label(scan_box, textvariable=self.scan_status, font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        remote_frame = ttk.LabelFrame(main, text="外部接続（Tailscale）", padding=10)
+        remote_frame.pack(fill="x", pady=(0, 12))
+        ttk.Label(
+            remote_frame,
+            textvariable=self.remote,
+            wraplength=710,
+            font=SMALL_FONT,
+        ).pack(anchor="w", fill="x")
+        remote_buttons = ttk.Frame(remote_frame)
+        remote_buttons.pack(fill="x", pady=(8, 0))
+        self.remote_enable_button = ttk.Button(remote_buttons, text="外部接続を有効化", command=self.enable_remote)
+        self.remote_enable_button.pack(side="left")
+        self.remote_disable_button = ttk.Button(remote_buttons, text="外部接続を停止", command=self.disable_remote)
+        self.remote_disable_button.pack(side="left", padx=8)
+        ttk.Button(remote_buttons, text="Tailscale再確認", command=self.refresh_remote).pack(side="right")
+
+        ttk.Label(main, textvariable=self.status, font=STATUS_FONT).pack(anchor="w", pady=(0, 6))
+
+        scan_box = ttk.LabelFrame(main, text="起動スキャン", padding=10)
+        scan_box.pack(fill="both", expand=True)
+        ttk.Label(scan_box, textvariable=self.scan_status, font=STATUS_FONT).pack(anchor="w")
         self.scan_progress = ttk.Progressbar(scan_box, mode="determinate", maximum=100)
         self.scan_progress.pack(fill="x", pady=(8, 5))
-        ttk.Label(scan_box, textvariable=self.scan_counts).pack(anchor="w")
-        ttk.Label(scan_box, textvariable=self.scan_current).pack(anchor="w", pady=(3, 0))
-        ttk.Label(scan_box, textvariable=self.scan_elapsed).pack(anchor="w", pady=(2, 6))
-        self.log_text = tk.Text(scan_box, height=10, wrap="none", font=("Consolas", 9), state="disabled")
+        ttk.Label(scan_box, textvariable=self.scan_counts, font=SMALL_FONT).pack(anchor="w")
+        ttk.Label(scan_box, textvariable=self.scan_current, font=SMALL_FONT).pack(anchor="w", pady=(3, 0))
+        ttk.Label(scan_box, textvariable=self.scan_elapsed, font=SMALL_FONT).pack(anchor="w", pady=(2, 6))
+        self.log_text = tk.Text(scan_box, height=8, wrap="none", font=MONO_FONT, state="disabled")
         self.log_text.pack(fill="both", expand=True)
 
-        ttk.Separator(frame).pack(fill="x", pady=6)
-        remote_row = ttk.Frame(frame)
-        remote_row.pack(fill="x", pady=6)
-        ttk.Label(remote_row, text="Tailscale: ").pack(side="left")
-        ttk.Label(remote_row, textvariable=self.remote).pack(side="left")
-        ttk.Button(remote_row, text="外部接続を有効化", command=self.enable_remote).pack(side="right")
-        ttk.Button(remote_row, text="無効化", command=self.disable_remote).pack(side="right", padx=8)
+        footer = ttk.Frame(main)
+        footer.pack(fill="x", pady=(8, 0))
+        ttk.Button(footer, text="バックアップ作成", command=self.backup).pack(side="left")
+        ttk.Button(footer, text="状態再確認", command=self.refresh_local_status).pack(side="left", padx=8)
+        ttk.Label(
+            footer,
+            text="この画面を閉じるとローカルサーバーも停止します。動画ファイル自体は変更しません。",
+            font=SMALL_FONT,
+        ).pack(side="right")
 
-        bottom = ttk.Frame(frame)
-        bottom.pack(fill="x", pady=8)
-        ttk.Button(bottom, text="バックアップ作成", command=self.backup).pack(side="left")
-        ttk.Button(bottom, text="Tailscale再確認", command=self.refresh_remote).pack(side="left", padx=8)
-        ttk.Button(bottom, text="状態再確認", command=self.refresh_local_status).pack(side="left")
-        ttk.Label(frame, text=f"データ保存先: {DATA_ROOT}").pack(anchor="w", pady=(8, 0))
+    def open_data_folder(self) -> None:
+        DATA_ROOT.mkdir(parents=True, exist_ok=True)
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(DATA_ROOT))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["explorer", str(DATA_ROOT)])
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"データ保存先を開けませんでした。\n{exc}")
 
     def _append_log(self, text: str) -> None:
         self.log_text.configure(state="normal")
@@ -208,8 +264,6 @@ class VideoLibraryLauncher(tk.Tk):
         self.root_button.configure(state=state)
         self.meta_browse_button.configure(state=state)
         self.import_button.configure(state=state)
-        self.root_entry.configure(state=state)
-        self.meta_entry.configure(state=state)
         if busy:
             self.browser_button.configure(state="disabled")
             self.stop_button.configure(state="disabled")
@@ -219,8 +273,10 @@ class VideoLibraryLauncher(tk.Tk):
 
     def _save_config(self) -> None:
         value = load_config(CONFIG_PATH)
-        value["videoRoot"] = self.video_root.get().strip()
-        value["metadataPath"] = self.metadata_path.get().strip()
+        root_value = self.video_root.get().strip()
+        metadata_value = self.metadata_path.get().strip()
+        value["videoRoot"] = "" if root_value == "未設定" else root_value
+        value["metadataPath"] = "" if metadata_value == "未設定" else metadata_value
         save_config(value, CONFIG_PATH)
 
     def choose_root(self) -> None:
@@ -242,7 +298,8 @@ class VideoLibraryLauncher(tk.Tk):
         if self.server is not None or self.scan_thread is not None:
             messagebox.showinfo(APP_NAME, "メタデータ取込前にライブラリを停止してください。")
             return
-        source = Path(self.metadata_path.get()).expanduser()
+        source_text = self.metadata_path.get().strip()
+        source = Path(source_text).expanduser() if source_text and source_text != "未設定" else Path()
         if not source.is_file():
             messagebox.showerror(APP_NAME, "メタデータJSONが見つかりません。")
             return
@@ -271,7 +328,11 @@ class VideoLibraryLauncher(tk.Tk):
     def _auto_start_if_ready(self) -> None:
         if self.server is not None or self.scan_thread is not None:
             return
-        root = Path(self.video_root.get()).expanduser()
+        root_text = self.video_root.get().strip()
+        if not root_text or root_text == "未設定":
+            self.status.set("動画フォルダーとメタデータを確認してください")
+            return
+        root = Path(root_text).expanduser()
         if not root.is_dir() or not DATABASE_PATH.is_file():
             self.status.set("動画フォルダーとメタデータを確認してください")
             return
@@ -288,7 +349,8 @@ class VideoLibraryLauncher(tk.Tk):
             return
         if self.scan_thread is not None:
             return
-        root = Path(self.video_root.get()).expanduser()
+        root_text = self.video_root.get().strip()
+        root = Path(root_text).expanduser() if root_text and root_text != "未設定" else Path()
         if not root.is_dir():
             if auto:
                 self.status.set("動画フォルダーを確認してください")
@@ -508,9 +570,9 @@ class VideoLibraryLauncher(tk.Tk):
         elif not status.logged_in:
             self.remote.set("未ログイン")
         elif status.serve_active:
-            self.remote.set(f"有効  {status.serve_url}")
+            self.remote.set(f"外部接続は有効です： {status.serve_url}")
         else:
-            self.remote.set("ログイン済み / Serve無効")
+            self.remote.set("Tailscaleログイン済み / 外部接続は停止中")
 
     def enable_remote(self) -> None:
         if self.server is None:
