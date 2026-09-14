@@ -57,7 +57,9 @@ def request_local_owner_browser_url(page_url: str, control_secret: str) -> str:
     with opener.open(req, timeout=3.0) as response:
         if response.status != 201:
             raise RuntimeError("owner token registration failed")
-    return urllib.parse.urljoin(page_url, "/api/local-auth/exchange?") + urllib.parse.urlencode({"token": token})
+
+    exchange = urllib.parse.urljoin(page_url, "/api/local-auth/exchange")
+    return exchange + "?" + urllib.parse.urlencode({"token": token})
 
 
 def database_counts() -> tuple[int, int]:
