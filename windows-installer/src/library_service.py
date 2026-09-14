@@ -244,20 +244,23 @@ def get_video(connection: sqlite3.Connection, video_id: int, *, user_id: int | N
         SELECT id, extension, language, is_forced, is_default, match_method
         FROM subtitles
         WHERE video_id=? AND is_available=1
-        ORDER BY is_default DESC, is_forced DESC, COALESCE(language,''), id
+        ORDER BY
+            CASE WHEN lower(COALESCE(language,'')) IN ('ja','jp','jpn','japanese') THEN 0 ELSE 1 END,
+            is_default DESC, is_forced ASC, id
         """,
         (video_id,),
     ).fetchall()
     subtitles = [
         {
             "id": int(st["id"]),
+            "preferred": index == 0,
             "extension": st["extension"],
             "language": st["language"],
             "forced": bool(st["is_forced"]),
             "default": bool(st["is_default"]),
             "matchMethod": st["match_method"],
         }
-        for st in subtitle_rows
+        for index, st in enumerate(subtitle_rows)
     ]
     return {
         "id": int(r["id"]), "externalFileNo": int(r["external_file_no"]), "work": {"id": int(r["work_id"]), "title": r["work_title"]},

@@ -38,7 +38,7 @@
 - serverはlocalhost (`127.0.0.1`) のみbind
 - Tailscale Serveの状態確認・有効化/無効化
 - PWA manifest / service worker / offline shell
-- Service Workerは `/api/*` と `/video/*` をキャッシュしない
+- Service Workerは `/api/*`、`/video/*`、`/subtitle/*` をキャッシュしない
 - SQLiteバックアップ / 復元予約 / ロールバック
 
 ### Phase 6: ffprobe / 字幕 / Windowsインストーラー
@@ -80,6 +80,12 @@
 - 0.7.7: 実機検証、アプリバージョン、README / Phase 6文書の整合性を整理
 - 0.7.8: MKV/WebMの複数音声で日本語が存在する場合、元ファイルを変更せず配信時に日本語を優先
 - 0.7.9: 動画版Tailscale ServeをHTTPS 8443へ分離し、Windowsランチャーに外部URLを開くボタンを追加
+
+### 0.8.0: 外部字幕のブラウザ再生
+- 紐付済みSRT / VTT / ASS / SSAをWebVTTとして安全に配信
+- 字幕がある動画は字幕をデフォルトON
+- 複数字幕では明示的な日本語字幕を優先
+- 元字幕ファイル・字幕マッチングロジックは変更しない
 
 対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
@@ -127,7 +133,7 @@ movie.en.default.vtt
 
 `movie.commentary.srt` のように意味推測が必要な名前は自動紐付けしません。こうした字幕はスキャン診断画面で候補を確認できますが、自動紐付けはしません。
 
-0.7.6までに字幕の検出・安全な紐付け・診断分類を実装済みです。SRT/ASS→WebVTT変換とプレーヤー字幕表示は後続機能です。
+0.8.0で紐付済み外部字幕のブラウザ再生を実装しました。SRT / ASS / SSAは配信時にWebVTTへ変換し、VTTは正規化して配信します。字幕が1件以上ある動画は優先字幕をデフォルトONにし、再生中はブラウザ標準コントロールからOFF・切替できます。元字幕ファイルは変更しません。
 
 ## Windowsでの通常利用
 
@@ -218,6 +224,7 @@ PWAがキャッシュするのはHTML/manifest/icon/offline shell等のアプリ
 以下はキャッシュ対象外です。
 - `/api/*`
 - `/video/*`
+- `/subtitle/*`
 - SQLite
 - `video_library.json`
 - 視聴履歴などの個人状態
@@ -287,6 +294,7 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 - [0.7.7 整合性整理](docs/27-0.7.7-consistency-cleanup.md)
 - [0.7.8 MKV複数音声の日本語優先再生](docs/28-0.7.8-japanese-audio-default.md)
 - [0.7.9 動画版Tailscale外部URLの分離](docs/29-0.7.9-video-remote-url.md)
+- [0.8.0 外部字幕のブラウザ再生](docs/30-0.8.0-external-subtitle-playback.md)
 
 ## 正本
 - 動画そのもの: ユーザー指定の動画フォルダー
