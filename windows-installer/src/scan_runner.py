@@ -5,6 +5,7 @@ import unicodedata
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
+from database import now_iso
 from scanner import SUPPORTED_VIDEO_EXTENSIONS, normalize_relative_path, scan_library as _scan_library
 
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -108,6 +109,7 @@ def repair_unique_metadata_paths(connection, video_root: Path | str) -> dict[str
 
     repaired_items: list[dict[str, Any]] = []
     ambiguous = 0
+    stamp = now_iso()
     for row in suspect_rows:
         row_id = int(row["id"])
         candidates = matches_by_row[row_id]
@@ -124,10 +126,10 @@ def repair_unique_metadata_paths(connection, video_root: Path | str) -> dict[str
         connection.execute(
             """
             UPDATE video_files
-            SET filename=?, relative_path=?, extension=?, updated_at=datetime('now')
+            SET filename=?, relative_path=?, extension=?, updated_at=?
             WHERE id=?
             """,
-            (actual.name, actual_path, actual.suffix.lstrip(".").upper(), row_id),
+            (actual.name, actual_path, actual.suffix.lstrip(".").upper(), stamp, row_id),
         )
         repaired_items.append(
             {
