@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from media_probe import find_ffprobe
+from playback_cache import DEFAULT_CACHE_LIMIT_BYTES, mark_playback_cache_used, prune_playback_cache
 
 REAL_LIBRARY_VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".webm", ".mpg", ".flv"}
 
@@ -189,6 +190,8 @@ def transcode_to_browser_mp4(
 
     with _target_lock(target):
         if target.is_file() and target.stat().st_size > 0:
+            mark_playback_cache_used(target)
+            prune_playback_cache(cache, limit_bytes=DEFAULT_CACHE_LIMIT_BYTES, protected=(target,))
             return target, audio_language
 
         executable = find_ffmpeg(ffmpeg_path)
@@ -231,6 +234,8 @@ def transcode_to_browser_mp4(
                 message = completed.stderr.decode("utf-8", errors="replace").strip()
                 raise RuntimeError(message[:2000] or f"ffmpeg exit code {completed.returncode}")
             temporary.replace(target)
+            mark_playback_cache_used(target)
+            prune_playback_cache(cache, limit_bytes=DEFAULT_CACHE_LIMIT_BYTES, protected=(target,))
             return target, audio_language
         finally:
             try:
