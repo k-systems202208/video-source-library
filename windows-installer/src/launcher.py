@@ -231,7 +231,7 @@ class VideoLibraryLauncher(tk.Tk):
 
     def enable_remote(self) -> None:
         if self.server is None:
-            messagebox.showinfo(APP_NAME, "先に動画ライブラリを開始してください."); return
+            messagebox.showinfo(APP_NAME, "先に動画ライブラリを開始してください。"); return
         ok, url, message = enable_remote_access(self.server.server_port); self.refresh_remote()
         messagebox.showinfo(APP_NAME, f"{message}\n{url}") if ok else messagebox.showerror(APP_NAME, message)
 
