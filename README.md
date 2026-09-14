@@ -26,6 +26,17 @@
 - HTML5 `<video>` によるブラウザ直接再生
 - 元動画は変更・削除・移動しない
 
+### Phase 4: 利用者状態 / 視聴進捗
+- SQLite schema 3
+- ローカルオーナーを既定利用者として識別
+- 作品お気に入りと動画お気に入りを独立管理
+- 視聴済み / 未視聴の手動変更
+- 再生位置・再生回数・最終再生日時を保存
+- 90%以上再生または `ended` で自動視聴済み
+- 同一play sessionで再生回数を重複加算しない
+- 「続きから見る」「次に見る」「最近見た作品」「視聴履歴」
+- Web UIからお気に入り・視聴状態・続き再生を操作
+
 対象拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
 MP4 / M4V / WebM は拡張子ベースで `DIRECT`、その他は `UNKNOWN` とします。Codec判定は後続Phaseで `ffprobe` を導入して精度を上げます。
@@ -42,6 +53,8 @@ python windows-installer\src\server.py --database library.db --video-root "D:\Vi
 ```
 
 ブラウザ: `http://127.0.0.1:8765/`
+
+Phase 4時点ではlocalhostアクセスをローカルオーナーとして扱います。Tailscale identity / owner-link / local-auth Cookieは後続Phaseで音楽版と同等方式へ移行します。
 
 ## 個人データを公開しない
 実際の `video_library.json` と実動画は公開リポジトリ／CIへ含めません。CIでは同じ **440作品 / 4,869動画 / 動画0件4作品** の合成データを使用します。
@@ -61,6 +74,7 @@ CIはWindows / Python 3.11・3.13です。
 - [Phase 1](docs/04-phase1-design.md)
 - [Phase 2](docs/05-phase2-implementation.md)
 - [Phase 3](docs/06-phase3-implementation.md)
+- [Phase 4](docs/07-phase4-implementation.md)
 
 ## 正本
 - 動画そのもの: ユーザー指定の動画フォルダー

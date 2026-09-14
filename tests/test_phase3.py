@@ -27,9 +27,9 @@ class Phase3ScannerTests(unittest.TestCase):
             entry=work['files'][0]; data=f"video-{entry['file_no']:02d}-0123456789".encode('ascii'); relative=normalize_relative_path(entry['relative_path']); path=self.video_root.joinpath(*relative.split('/')); path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(data)
         new_path=self.video_root/'sample'/'new'/'unregistered.mp4'; new_path.parent.mkdir(parents=True,exist_ok=True); new_path.write_bytes(b'new-file')
     def tearDown(self): self.temp.cleanup()
-    def test_schema2_migration_table_exists(self):
+    def test_scan_discoveries_survives_later_schema_migrations(self):
         with connect(self.db_path) as c:
-            initialize_database(c); self.assertEqual(c.execute('SELECT schema_version FROM schema_info').fetchone()[0],2); self.assertEqual(SCHEMA_VERSION,2); self.assertIsNotNone(c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='scan_discoveries'").fetchone())
+            initialize_database(c); self.assertEqual(c.execute('SELECT schema_version FROM schema_info').fetchone()[0],3); self.assertEqual(SCHEMA_VERSION,3); self.assertIsNotNone(c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='scan_discoveries'").fetchone())
     def test_scan_matched_missing_and_new(self):
         with connect(self.db_path) as c:
             r=scan_library(c,self.video_root); self.assertEqual((r['filesFound'],r['filesMatched'],r['filesMissing'],r['filesNew'],r['errors']),(6,5,1,1,0)); rows=c.execute("SELECT v.external_file_no,vf.scan_status,vf.is_available FROM videos v JOIN video_files vf ON vf.video_id=v.id ORDER BY v.external_file_no").fetchall(); self.assertEqual([x['scan_status'] for x in rows[:5]],['MATCHED']*5); self.assertEqual(rows[5]['scan_status'],'MISSING'); self.assertEqual(c.execute('SELECT COUNT(*) FROM scan_discoveries').fetchone()[0],1); self.assertEqual(latest_scan_status(c)['latest']['filesMatched'],5)
