@@ -18,6 +18,7 @@ from database import SCHEMA_VERSION, connect, initialize_database, quick_check
 from identity_service import local_owner_user, resolve_tailscale_user
 from library_service import get_video, get_work, library_stats, list_work_videos, list_works
 from local_auth import LocalOwnerAuth, cookie_value, session_cookie_header
+from matroska_audio import apply_patch_to_chunk, preferred_japanese_audio_patch
 from scan_diagnostics import diagnostics_csv_bytes, diagnostics_json_bytes, scan_diagnostics
 from scan_progress import ScanProgressStore
 from scan_runner import scan_library
@@ -270,6 +271,7 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                 self._error(404, "VIDEO_FILE_NOT_FOUND", "動画ファイルが見つかりません。")
                 return
             path, extension = resolved
+            audio_patch = preferred_japanese_audio_patch(path) if extension.casefold().lstrip(".") in {"mkv", "webm"} else None
             try:
                 size = path.stat().st_size
                 byte_range = parse_range_header(self.headers.get("Range"), size)
@@ -284,6 +286,8 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             self.send_response(status)
             self.send_header("Content-Type", mime_type_for_extension("." + extension.lstrip(".")))
             self.send_header("Accept-Ranges", "bytes"); self.send_header("Content-Length", str(length))
+            if audio_patch is not None:
+                self.send_header("X-Video-Library-Audio-Preference", "ja")
             if status == 206:
                 self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
             self._common(); self.end_headers()
@@ -293,9 +297,11 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                 with path.open("rb") as handle:
                     handle.seek(start); remaining = length
                     while remaining > 0:
+                        chunk_start = handle.tell()
                         chunk = handle.read(min(CHUNK_SIZE, remaining))
                         if not chunk:
                             break
+                        chunk = apply_patch_to_chunk(chunk, chunk_start, audio_patch)
                         self.wfile.write(chunk); remaining -= len(chunk)
             except (BrokenPipeError, ConnectionResetError):
                 pass
