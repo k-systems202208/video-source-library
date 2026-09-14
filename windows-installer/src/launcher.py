@@ -36,8 +36,8 @@ PLAYBACK_CACHE_PATH = DATA_ROOT / "PlaybackCache"
 
 # Keep the Windows launcher visually aligned with mp3-source-music-library.
 UI_FONT = "Yu Gothic UI"
-WINDOW_GEOMETRY = "780x760"
-WINDOW_MINSIZE = (700, 650)
+WINDOW_GEOMETRY = "780x690"
+WINDOW_MINSIZE = (700, 590)
 TITLE_FONT = (UI_FONT, 20, "bold")
 BODY_FONT = (UI_FONT, 10)
 SMALL_FONT = (UI_FONT, 9)
