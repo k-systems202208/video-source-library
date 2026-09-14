@@ -10,3 +10,9 @@ venv/
 
 # Private catalog data: never commit the user's real media inventory.
 metadata/video_library.json
+
+# Local Windows build outputs.
+windows-installer/dist/
+windows-installer/output/
+windows-installer/pyinstaller-work/
+windows-installer/tools/ffprobe.exe

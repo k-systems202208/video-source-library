@@ -145,10 +145,19 @@ def get_work(connection: sqlite3.Connection, work_id: int, *, user_id: int | Non
         """,
         (user_id, work_id),
     ).fetchone()
+    actual_subtitles = int(connection.execute(
+        """
+        SELECT COUNT(*) FROM subtitles st
+        JOIN videos v ON v.id=st.video_id
+        WHERE v.work_id=? AND st.is_available=1
+        """,
+        (work_id,),
+    ).fetchone()[0])
     return {
         "id": int(r["id"]), "externalWorkNo": int(r["external_work_no"]), "category": r["category"],
         "sourceTitle": r["source_title"], "title": r["official_title"], "yearOrPeriod": r["year_or_period"],
         "videoCount": int(r["media_file_count"]), "subtitleFileCount": int(r["subtitle_file_count"]),
+        "availableSubtitleCount": actual_subtitles,
         "mediaFormat": r["media_format"], "director": r["director_or_direction"], "cast": r["main_cast_or_voice_actors"],
         "verificationStatus": r["verification_status"], "creditsVerificationStatus": r["credits_verification_status"],
         "favorite": bool(r["favorite"]),
@@ -179,7 +188,9 @@ def list_work_videos(connection: sqlite3.Connection, work_id: int, *, user_id: i
         f"""
         SELECT v.id,v.external_file_no,v.series_group_id,g.display_name group_name,g.group_type,v.episode_or_type,
                v.episode_number,v.episode_title,v.content_type,v.episode_sort_key,f.extension,f.duration_ms,
-               f.playback_support,f.is_available,COALESCE(s.favorite,0) favorite,COALESCE(s.watched,0) watched,
+               f.video_codec,f.audio_codec,f.width,f.height,f.probe_status,f.playback_support,f.is_available,
+               (SELECT COUNT(*) FROM subtitles st WHERE st.video_id=v.id AND st.is_available=1) subtitle_count,
+               COALESCE(s.favorite,0) favorite,COALESCE(s.watched,0) watched,
                COALESCE(s.position_ms,0) position_ms,s.duration_ms state_duration_ms,COALESCE(s.play_count,0) play_count,s.last_played_at
         FROM videos v LEFT JOIN series_groups g ON g.id=v.series_group_id JOIN video_files f ON f.video_id=v.id
         LEFT JOIN user_video_state s ON s.video_id=v.id AND s.user_id=?
@@ -196,7 +207,12 @@ def _video_summary(r: sqlite3.Row) -> dict[str, Any]:
         "groupId": int(r["series_group_id"]) if r["series_group_id"] is not None else None,
         "groupName": r["group_name"], "groupType": r["group_type"], "episodeOrType": r["episode_or_type"],
         "episodeNumber": r["episode_number"], "episodeTitle": r["episode_title"], "contentType": r["content_type"],
-        "file": {"extension": r["extension"], "durationMs": r["duration_ms"], "playbackSupport": r["playback_support"], "available": bool(r["is_available"])},
+        "file": {
+            "extension": r["extension"], "durationMs": r["duration_ms"], "videoCodec": r["video_codec"],
+            "audioCodec": r["audio_codec"], "width": r["width"], "height": r["height"],
+            "probeStatus": r["probe_status"], "subtitleCount": int(r["subtitle_count"] or 0),
+            "playbackSupport": r["playback_support"], "available": bool(r["is_available"]),
+        },
         "state": {"favorite": bool(r["favorite"]), "watched": bool(r["watched"]), "positionMs": int(r["position_ms"] or 0),
                   "durationMs": r["state_duration_ms"], "playCount": int(r["play_count"] or 0), "lastPlayedAt": r["last_played_at"]},
     }
@@ -207,7 +223,8 @@ def get_video(connection: sqlite3.Connection, video_id: int, *, user_id: int | N
         """
         SELECT v.id,v.external_file_no,v.work_id,w.official_title work_title,v.series_group_id,g.display_name group_name,
                g.group_type,v.episode_or_type,v.episode_number,v.episode_title,v.content_type,v.episode_sort_key,v.verification_status,
-               f.extension,f.duration_ms,f.container_format,f.video_codec,f.audio_codec,f.width,f.height,f.playback_support,f.is_available,
+               f.extension,f.duration_ms,f.container_format,f.video_codec,f.audio_codec,f.width,f.height,
+               f.embedded_subtitle_count,f.probe_status,f.probed_at,f.playback_support,f.is_available,
                COALESCE(s.favorite,0) favorite,COALESCE(s.watched,0) watched,COALESCE(s.position_ms,0) position_ms,
                s.duration_ms state_duration_ms,COALESCE(s.play_count,0) play_count,s.last_played_at
         FROM videos v JOIN works w ON w.id=v.work_id LEFT JOIN series_groups g ON g.id=v.series_group_id
@@ -222,13 +239,38 @@ def get_video(connection: sqlite3.Connection, video_id: int, *, user_id: int | N
         (r["work_id"], r["series_group_id"], r["series_group_id"]),
     ).fetchall()]
     i = ids.index(video_id)
+    subtitle_rows = connection.execute(
+        """
+        SELECT id, extension, language, is_forced, is_default, match_method
+        FROM subtitles
+        WHERE video_id=? AND is_available=1
+        ORDER BY is_default DESC, is_forced DESC, COALESCE(language,''), id
+        """,
+        (video_id,),
+    ).fetchall()
+    subtitles = [
+        {
+            "id": int(st["id"]),
+            "extension": st["extension"],
+            "language": st["language"],
+            "forced": bool(st["is_forced"]),
+            "default": bool(st["is_default"]),
+            "matchMethod": st["match_method"],
+        }
+        for st in subtitle_rows
+    ]
     return {
         "id": int(r["id"]), "externalFileNo": int(r["external_file_no"]), "work": {"id": int(r["work_id"]), "title": r["work_title"]},
         "group": {"id": int(r["series_group_id"]), "name": r["group_name"], "type": r["group_type"]} if r["series_group_id"] is not None else None,
         "episodeOrType": r["episode_or_type"], "episodeNumber": r["episode_number"], "episodeTitle": r["episode_title"],
         "contentType": r["content_type"], "verificationStatus": r["verification_status"],
-        "file": {"extension": r["extension"], "durationMs": r["duration_ms"], "container": r["container_format"], "videoCodec": r["video_codec"],
-                 "audioCodec": r["audio_codec"], "width": r["width"], "height": r["height"], "playbackSupport": r["playback_support"], "available": bool(r["is_available"])},
+        "file": {
+            "extension": r["extension"], "durationMs": r["duration_ms"], "container": r["container_format"],
+            "videoCodec": r["video_codec"], "audioCodec": r["audio_codec"], "width": r["width"], "height": r["height"],
+            "embeddedSubtitleCount": int(r["embedded_subtitle_count"] or 0), "probeStatus": r["probe_status"],
+            "probedAt": r["probed_at"], "playbackSupport": r["playback_support"], "available": bool(r["is_available"]),
+        },
+        "subtitles": subtitles,
         "state": {"favorite": bool(r["favorite"]), "watched": bool(r["watched"]), "positionMs": int(r["position_ms"] or 0),
                   "durationMs": r["state_duration_ms"], "playCount": int(r["play_count"] or 0), "lastPlayedAt": r["last_played_at"]},
         "navigation": {"previousVideoId": ids[i-1] if i > 0 else None, "nextVideoId": ids[i+1] if i + 1 < len(ids) else None},
@@ -236,7 +278,24 @@ def get_video(connection: sqlite3.Connection, video_id: int, *, user_id: int | N
 
 
 def library_stats(connection: sqlite3.Connection) -> dict[str, Any]:
-    t = connection.execute("SELECT (SELECT COUNT(*) FROM works) works,(SELECT COUNT(*) FROM videos) videos,(SELECT COUNT(*) FROM video_files WHERE is_available=1) available_videos").fetchone()
+    t = connection.execute(
+        """
+        SELECT
+          (SELECT COUNT(*) FROM works) works,
+          (SELECT COUNT(*) FROM videos) videos,
+          (SELECT COUNT(*) FROM video_files WHERE is_available=1) available_videos,
+          (SELECT COUNT(*) FROM subtitles WHERE is_available=1) subtitles,
+          (SELECT COUNT(*) FROM subtitles WHERE is_available=1 AND video_id IS NOT NULL) matched_subtitles,
+          (SELECT COUNT(*) FROM subtitles WHERE is_available=1 AND video_id IS NULL) unmatched_subtitles,
+          (SELECT COUNT(*) FROM video_files WHERE probe_status='OK') probed_videos,
+          (SELECT COUNT(*) FROM video_files WHERE probe_status='ERROR') probe_errors
+        """
+    ).fetchone()
     cats = connection.execute("SELECT category,COUNT(*) work_count,COALESCE(SUM(media_file_count),0) video_count FROM works GROUP BY category ORDER BY category").fetchall()
-    return {"works": int(t["works"]), "videos": int(t["videos"]), "availableVideos": int(t["available_videos"]),
-            "categories": [{"name": r["category"], "workCount": int(r["work_count"]), "videoCount": int(r["video_count"])} for r in cats]}
+    return {
+        "works": int(t["works"]), "videos": int(t["videos"]), "availableVideos": int(t["available_videos"]),
+        "subtitles": int(t["subtitles"]), "matchedSubtitles": int(t["matched_subtitles"]),
+        "unmatchedSubtitles": int(t["unmatched_subtitles"]), "probedVideos": int(t["probed_videos"]),
+        "probeErrors": int(t["probe_errors"]),
+        "categories": [{"name": r["category"], "workCount": int(r["work_count"]), "videoCount": int(r["video_count"])} for r in cats],
+    }

@@ -26,3 +26,34 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Validate synthetic 440/4869 import
         run: python scripts/validate_ci_fixture.py
+
+  installer:
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Ensure Inno Setup 6
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --yes --no-progress
+          }
+      - name: Build Windows installer
+        shell: pwsh
+        run: .\windows-installer\build\build.ps1
+      - name: Verify installer output
+        shell: pwsh
+        run: |
+          if (-not (Test-Path '.\windows-installer\dist\VideoLibrary\VideoLibrary.exe')) { throw 'VideoLibrary.exe not found' }
+          $setup = Get-ChildItem '.\windows-installer\output\VideoLibrary-*-setup.exe' | Select-Object -First 1
+          if (-not $setup) { throw 'setup.exe not found' }
+          Write-Host "Installer: $($setup.FullName)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoLibrary-Windows-Installer
+          path: windows-installer/output/VideoLibrary-*-setup.exe
+          if-no-files-found: error

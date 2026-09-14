@@ -7,20 +7,13 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from database import initialize_database, now_iso
+from media_probe import find_ffprobe, probe_media
+from subtitle_tools import SUPPORTED_SUBTITLE_EXTENSIONS, match_subtitle_to_video
 
 SUPPORTED_VIDEO_EXTENSIONS = {
-    ".mkv",
-    ".mp4",
-    ".avi",
-    ".webm",
-    ".mpg",
-    ".flv",
-    ".m4v",
-    ".mov",
-    ".wmv",
+    ".mkv", ".mp4", ".avi", ".webm", ".mpg", ".flv", ".m4v", ".mov", ".wmv",
 }
 DIRECT_CONTAINER_EXTENSIONS = {".mp4", ".m4v", ".webm"}
-
 MIME_TYPES = {
     ".mp4": "video/mp4",
     ".m4v": "video/mp4",
@@ -67,8 +60,7 @@ def safe_video_path(video_root: Path | str, relative_path: str | Path) -> Path:
 
 
 def playback_support_for_extension(extension: str) -> str:
-    ext = extension.casefold()
-    return "DIRECT" if ext in DIRECT_CONTAINER_EXTENSIONS else "UNKNOWN"
+    return "DIRECT" if extension.casefold() in DIRECT_CONTAINER_EXTENSIONS else "UNKNOWN"
 
 
 def mime_type_for_extension(extension: str) -> str:
@@ -86,31 +78,118 @@ def _insert_scan_error(
 ) -> None:
     connection.execute(
         """
-        INSERT INTO scan_errors(
-            scan_run_id, relative_path, error_type, message, created_at
-        ) VALUES (?, ?, ?, ?, ?)
+        INSERT INTO scan_errors(scan_run_id, relative_path, error_type, message, created_at)
+        VALUES (?, ?, ?, ?, ?)
         """,
         (scan_run_id, relative_path, error_type, message[:1000], stamp),
+    )
+
+
+def _upsert_subtitle(
+    connection: sqlite3.Connection,
+    *,
+    video_id: int | None,
+    relative_path: str,
+    filename: str,
+    extension: str,
+    language: str | None,
+    is_forced: bool,
+    is_default: bool,
+    match_method: str,
+    file_size: int,
+    modified_time_ns: int,
+    stamp: str,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO subtitles(
+            video_id, relative_path, filename, extension, language,
+            is_forced, is_default, match_method, file_size, modified_time_ns,
+            is_available, last_scanned_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+        ON CONFLICT(relative_path) DO UPDATE SET
+            video_id=excluded.video_id,
+            filename=excluded.filename,
+            extension=excluded.extension,
+            language=excluded.language,
+            is_forced=excluded.is_forced,
+            is_default=excluded.is_default,
+            match_method=excluded.match_method,
+            file_size=excluded.file_size,
+            modified_time_ns=excluded.modified_time_ns,
+            is_available=1,
+            last_scanned_at=excluded.last_scanned_at,
+            updated_at=excluded.updated_at
+        """,
+        (
+            video_id, relative_path, filename, extension.lstrip(".").upper(), language,
+            int(is_forced), int(is_default), match_method, file_size, modified_time_ns,
+            stamp, stamp, stamp,
+        ),
+    )
+
+
+def _mark_matched_without_probe(
+    connection: sqlite3.Connection,
+    *,
+    video_file_id: int,
+    file_size: int,
+    modified_time_ns: int,
+    extension: str,
+    probe_status: str,
+    stamp: str,
+    clear_technical_metadata: bool,
+) -> None:
+    if clear_technical_metadata:
+        connection.execute(
+            """
+            UPDATE video_files
+            SET file_size=?, modified_time_ns=?, duration_ms=NULL,
+                container_format=NULL, video_codec=NULL, audio_codec=NULL,
+                width=NULL, height=NULL, embedded_subtitle_count=0,
+                probe_status=?, probed_at=NULL, playback_support=?,
+                is_available=1, scan_status='MATCHED',
+                last_scanned_at=?, updated_at=?
+            WHERE id=?
+            """,
+            (
+                file_size, modified_time_ns, probe_status,
+                playback_support_for_extension(extension), stamp, stamp, video_file_id,
+            ),
+        )
+        return
+    connection.execute(
+        """
+        UPDATE video_files
+        SET file_size=?, modified_time_ns=?, probe_status=?,
+            playback_support=?, is_available=1, scan_status='MATCHED',
+            last_scanned_at=?, updated_at=?
+        WHERE id=?
+        """,
+        (
+            file_size, modified_time_ns, probe_status,
+            playback_support_for_extension(extension), stamp, stamp, video_file_id,
+        ),
     )
 
 
 def scan_library(
     connection: sqlite3.Connection,
     video_root: Path | str,
+    *,
+    ffprobe_path: Path | str | None = None,
 ) -> dict[str, Any]:
     initialize_database(connection)
     root = Path(video_root).expanduser()
     if not root.exists() or not root.is_dir():
         raise FileNotFoundError("動画フォルダーが見つかりません。")
     root = root.resolve()
+    ffprobe = find_ffprobe(ffprobe_path)
 
     started = now_iso()
     started_perf = time.monotonic()
     cursor = connection.execute(
-        """
-        INSERT INTO scan_runs(started_at, status, created_at)
-        VALUES (?, 'RUNNING', ?)
-        """,
+        "INSERT INTO scan_runs(started_at, status, created_at) VALUES (?, 'RUNNING', ?)",
         (started, started),
     )
     scan_run_id = int(cursor.lastrowid)
@@ -118,33 +197,32 @@ def scan_library(
 
     try:
         rows = connection.execute(
-            "SELECT id, video_id, relative_path FROM video_files ORDER BY id"
+            """
+            SELECT id, video_id, relative_path, file_size, modified_time_ns,
+                   probe_status, duration_ms, container_format, video_codec,
+                   audio_codec, width, height, embedded_subtitle_count
+            FROM video_files ORDER BY id
+            """
         ).fetchall()
         expected: dict[str, sqlite3.Row] = {}
         errors = 0
+        probe_errors = 0
         for row in rows:
             try:
                 key = _key(row["relative_path"])
             except ValueError as exc:
                 errors += 1
                 _insert_scan_error(
-                    connection,
-                    scan_run_id,
-                    relative_path=row["relative_path"],
-                    error_type="INVALID_RELATIVE_PATH",
-                    message=str(exc),
-                    stamp=started,
+                    connection, scan_run_id, relative_path=row["relative_path"],
+                    error_type="INVALID_RELATIVE_PATH", message=str(exc), stamp=started,
                 )
                 continue
             if key in expected:
                 errors += 1
                 _insert_scan_error(
-                    connection,
-                    scan_run_id,
-                    relative_path=row["relative_path"],
+                    connection, scan_run_id, relative_path=row["relative_path"],
                     error_type="DUPLICATE_NORMALIZED_PATH",
-                    message="正規化後の相対パスが重複しています。",
-                    stamp=started,
+                    message="正規化後の相対パスが重複しています。", stamp=started,
                 )
                 continue
             expected[key] = row
@@ -153,19 +231,18 @@ def scan_library(
         files_found = 0
         files_matched = 0
         files_new = 0
+        files_probed = 0
+        subtitle_candidates: list[tuple[Path, str, os.stat_result]] = []
+        connection.execute("UPDATE subtitles SET is_available=0, updated_at=?", (started,))
 
         for directory, dirnames, filenames in os.walk(root, followlinks=False):
             directory_path = Path(directory)
-            dirnames[:] = [
-                name for name in dirnames
-                if not (directory_path / name).is_symlink()
-            ]
+            dirnames[:] = [name for name in dirnames if not (directory_path / name).is_symlink()]
             for filename in filenames:
                 path = directory_path / filename
                 extension = path.suffix.casefold()
-                if extension not in SUPPORTED_VIDEO_EXTENSIONS:
+                if extension not in SUPPORTED_VIDEO_EXTENSIONS and extension not in SUPPORTED_SUBTITLE_EXTENSIONS:
                     continue
-                files_found += 1
 
                 try:
                     resolved = path.resolve(strict=True)
@@ -175,21 +252,21 @@ def scan_library(
                     stat = resolved.stat()
                 except (OSError, ValueError) as exc:
                     errors += 1
-                    rel_for_error: str | None
                     try:
-                        rel_for_error = normalize_relative_path(path.relative_to(root))
+                        rel_for_error: str | None = normalize_relative_path(path.relative_to(root))
                     except Exception:
                         rel_for_error = None
                     _insert_scan_error(
-                        connection,
-                        scan_run_id,
-                        relative_path=rel_for_error,
-                        error_type="FILE_SCAN_ERROR",
-                        message=str(exc),
-                        stamp=started,
+                        connection, scan_run_id, relative_path=rel_for_error,
+                        error_type="FILE_SCAN_ERROR", message=str(exc), stamp=started,
                     )
                     continue
 
+                if extension in SUPPORTED_SUBTITLE_EXTENSIONS:
+                    subtitle_candidates.append((resolved, relative, stat))
+                    continue
+
+                files_found += 1
                 expected_row = expected.get(relative.casefold())
                 if expected_row is None:
                     files_new += 1
@@ -201,12 +278,8 @@ def scan_library(
                         ) VALUES (?, ?, ?, ?, ?, 'NEW_FILE', ?)
                         """,
                         (
-                            scan_run_id,
-                            relative,
-                            extension.lstrip(".").upper(),
-                            int(stat.st_size),
-                            int(stat.st_mtime_ns),
-                            started,
+                            scan_run_id, relative, extension.lstrip(".").upper(),
+                            int(stat.st_size), int(stat.st_mtime_ns), started,
                         ),
                     )
                     continue
@@ -214,45 +287,129 @@ def scan_library(
                 video_file_id = int(expected_row["id"])
                 matched_ids.add(video_file_id)
                 files_matched += 1
-                connection.execute(
-                    """
-                    UPDATE video_files
-                    SET file_size = ?,
-                        modified_time_ns = ?,
-                        playback_support = ?,
-                        is_available = 1,
-                        scan_status = 'MATCHED',
-                        last_scanned_at = ?,
-                        updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        int(stat.st_size),
-                        int(stat.st_mtime_ns),
-                        playback_support_for_extension(extension),
-                        started,
-                        started,
-                        video_file_id,
-                    ),
+                current_size = int(stat.st_size)
+                current_mtime = int(stat.st_mtime_ns)
+                previous_status = str(expected_row["probe_status"] or "NOT_PROBED")
+                file_changed = (
+                    expected_row["file_size"] != current_size
+                    or expected_row["modified_time_ns"] != current_mtime
                 )
+                needs_probe = ffprobe is not None and (file_changed or previous_status != "OK")
 
-        missing_ids = [
-            int(row["id"])
-            for row in rows
-            if int(row["id"]) not in matched_ids
-        ]
+                probe = None
+                if needs_probe:
+                    probe = probe_media(resolved, extension=extension, ffprobe_path=ffprobe)
+                    files_probed += 1
+                    if probe.status == "ERROR":
+                        probe_errors += 1
+                        _insert_scan_error(
+                            connection, scan_run_id, relative_path=relative,
+                            error_type="PROBE_ERROR", message=probe.error, stamp=started,
+                        )
+
+                if probe is not None and probe.status == "OK":
+                    connection.execute(
+                        """
+                        UPDATE video_files
+                        SET file_size=?, modified_time_ns=?, duration_ms=?,
+                            container_format=?, video_codec=?, audio_codec=?,
+                            width=?, height=?, embedded_subtitle_count=?,
+                            probe_status='OK', probed_at=?, playback_support=?,
+                            is_available=1, scan_status='MATCHED',
+                            last_scanned_at=?, updated_at=?
+                        WHERE id=?
+                        """,
+                        (
+                            current_size, current_mtime, probe.duration_ms,
+                            probe.container_format, probe.video_codec, probe.audio_codec,
+                            probe.width, probe.height, probe.embedded_subtitle_count,
+                            started, probe.playback_support, started, started, video_file_id,
+                        ),
+                    )
+                elif probe is not None and probe.status == "ERROR":
+                    _mark_matched_without_probe(
+                        connection,
+                        video_file_id=video_file_id,
+                        file_size=current_size,
+                        modified_time_ns=current_mtime,
+                        extension=extension,
+                        probe_status="ERROR",
+                        stamp=started,
+                        clear_technical_metadata=file_changed,
+                    )
+                    connection.execute(
+                        "UPDATE video_files SET probed_at=? WHERE id=?",
+                        (started, video_file_id),
+                    )
+                elif probe is not None and probe.status == "NOT_AVAILABLE":
+                    _mark_matched_without_probe(
+                        connection,
+                        video_file_id=video_file_id,
+                        file_size=current_size,
+                        modified_time_ns=current_mtime,
+                        extension=extension,
+                        probe_status="NOT_AVAILABLE",
+                        stamp=started,
+                        clear_technical_metadata=file_changed,
+                    )
+                else:
+                    next_status = previous_status
+                    clear_technical = False
+                    if ffprobe is None and (file_changed or previous_status != "OK"):
+                        next_status = "NOT_AVAILABLE"
+                        clear_technical = file_changed
+                    _mark_matched_without_probe(
+                        connection,
+                        video_file_id=video_file_id,
+                        file_size=current_size,
+                        modified_time_ns=current_mtime,
+                        extension=extension,
+                        probe_status=next_status,
+                        stamp=started,
+                        clear_technical_metadata=clear_technical,
+                    )
+
+        missing_ids = [int(row["id"]) for row in rows if int(row["id"]) not in matched_ids]
         if missing_ids:
             placeholders = ",".join("?" for _ in missing_ids)
             connection.execute(
                 f"""
                 UPDATE video_files
-                SET is_available = 0,
-                    scan_status = 'MISSING',
-                    last_scanned_at = ?,
-                    updated_at = ?
+                SET is_available=0, scan_status='MISSING',
+                    last_scanned_at=?, updated_at=?
                 WHERE id IN ({placeholders})
                 """,
                 [started, started, *missing_ids],
+            )
+
+        known_video_paths = [str(row["relative_path"]) for row in rows]
+        subtitles_found = len(subtitle_candidates)
+        subtitles_matched = 0
+        subtitles_unmatched = 0
+        for resolved, relative, stat in subtitle_candidates:
+            match = match_subtitle_to_video(relative, known_video_paths)
+            video_id = None
+            if match.video_relative_path is not None:
+                matched_row = expected.get(_key(match.video_relative_path))
+                if matched_row is not None:
+                    video_id = int(matched_row["video_id"])
+            if video_id is None:
+                subtitles_unmatched += 1
+            else:
+                subtitles_matched += 1
+            _upsert_subtitle(
+                connection,
+                video_id=video_id,
+                relative_path=relative,
+                filename=resolved.name,
+                extension=resolved.suffix,
+                language=match.language,
+                is_forced=match.is_forced,
+                is_default=match.is_default,
+                match_method=match.match_method if video_id is not None else "UNMATCHED",
+                file_size=int(stat.st_size),
+                modified_time_ns=int(stat.st_mtime_ns),
+                stamp=started,
             )
 
         files_missing = len(missing_ids)
@@ -261,25 +418,16 @@ def scan_library(
         connection.execute(
             """
             UPDATE scan_runs
-            SET completed_at = ?,
-                status = 'SUCCESS',
-                files_found = ?,
-                files_matched = ?,
-                files_missing = ?,
-                files_new = ?,
-                errors = ?,
-                duration_ms = ?
-            WHERE id = ?
+            SET completed_at=?, status='SUCCESS',
+                files_found=?, files_matched=?, files_missing=?, files_new=?,
+                subtitles_found=?, subtitles_matched=?, subtitles_unmatched=?,
+                probe_errors=?, errors=?, duration_ms=?
+            WHERE id=?
             """,
             (
-                completed,
-                files_found,
-                files_matched,
-                files_missing,
-                files_new,
-                errors,
-                duration_ms,
-                scan_run_id,
+                completed, files_found, files_matched, files_missing, files_new,
+                subtitles_found, subtitles_matched, subtitles_unmatched,
+                probe_errors, errors, duration_ms, scan_run_id,
             ),
         )
         connection.commit()
@@ -290,6 +438,12 @@ def scan_library(
             "filesMatched": files_matched,
             "filesMissing": files_missing,
             "filesNew": files_new,
+            "filesProbed": files_probed,
+            "ffprobeAvailable": ffprobe is not None,
+            "subtitlesFound": subtitles_found,
+            "subtitlesMatched": subtitles_matched,
+            "subtitlesUnmatched": subtitles_unmatched,
+            "probeErrors": probe_errors,
             "errors": errors,
             "durationMs": duration_ms,
         }
@@ -300,21 +454,14 @@ def scan_library(
         connection.execute(
             """
             UPDATE scan_runs
-            SET completed_at = ?,
-                status = 'FAILED',
-                errors = errors + 1,
-                duration_ms = ?
-            WHERE id = ?
+            SET completed_at=?, status='FAILED', errors=errors+1, duration_ms=?
+            WHERE id=?
             """,
             (completed, duration_ms, scan_run_id),
         )
         _insert_scan_error(
-            connection,
-            scan_run_id,
-            relative_path=None,
-            error_type="SCAN_FAILED",
-            message=str(exc),
-            stamp=completed,
+            connection, scan_run_id, relative_path=None,
+            error_type="SCAN_FAILED", message=str(exc), stamp=completed,
         )
         connection.commit()
         raise
@@ -325,15 +472,14 @@ def latest_scan_status(connection: sqlite3.Connection) -> dict[str, Any]:
         """
         SELECT id, started_at, completed_at, status,
                files_found, files_matched, files_missing, files_new,
-               errors, duration_ms
+               subtitles_found, subtitles_matched, subtitles_unmatched,
+               probe_errors, errors, duration_ms
         FROM scan_runs
-        ORDER BY id DESC
-        LIMIT 1
+        ORDER BY id DESC LIMIT 1
         """
     ).fetchone()
     if row is None:
         return {"running": False, "latest": None}
-
     return {
         "running": row["status"] == "RUNNING",
         "latest": {
@@ -345,6 +491,10 @@ def latest_scan_status(connection: sqlite3.Connection) -> dict[str, Any]:
             "filesMatched": int(row["files_matched"]),
             "filesMissing": int(row["files_missing"]),
             "filesNew": int(row["files_new"]),
+            "subtitlesFound": int(row["subtitles_found"]),
+            "subtitlesMatched": int(row["subtitles_matched"]),
+            "subtitlesUnmatched": int(row["subtitles_unmatched"]),
+            "probeErrors": int(row["probe_errors"]),
             "errors": int(row["errors"]),
             "durationMs": row["duration_ms"],
         },
@@ -360,7 +510,7 @@ def resolve_video_file(
         """
         SELECT vf.relative_path, vf.extension, vf.is_available
         FROM video_files vf
-        WHERE vf.video_id = ?
+        WHERE vf.video_id=?
         """,
         (video_id,),
     ).fetchone()

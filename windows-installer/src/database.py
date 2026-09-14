@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def now_iso() -> str:
@@ -30,6 +30,16 @@ def connect(path: Path | str) -> Iterator[sqlite3.Connection]:
 
 def _column_names(connection: sqlite3.Connection, table: str) -> set[str]:
     return {str(row["name"]) for row in connection.execute(f"PRAGMA table_info({table})")}
+
+
+def _add_column_if_missing(
+    connection: sqlite3.Connection,
+    table: str,
+    column: str,
+    definition: str,
+) -> None:
+    if column not in _column_names(connection, table):
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def initialize_database(connection: sqlite3.Connection) -> None:
@@ -115,6 +125,9 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             audio_codec TEXT,
             width INTEGER,
             height INTEGER,
+            embedded_subtitle_count INTEGER NOT NULL DEFAULT 0,
+            probe_status TEXT NOT NULL DEFAULT 'NOT_PROBED',
+            probed_at TEXT,
             playback_support TEXT NOT NULL DEFAULT 'UNKNOWN',
             is_available INTEGER NOT NULL DEFAULT 0,
             scan_status TEXT NOT NULL DEFAULT 'NOT_SCANNED',
@@ -122,6 +135,25 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS subtitles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            video_id INTEGER,
+            relative_path TEXT NOT NULL UNIQUE,
+            filename TEXT NOT NULL,
+            extension TEXT NOT NULL,
+            language TEXT,
+            is_forced INTEGER NOT NULL DEFAULT 0 CHECK(is_forced IN (0, 1)),
+            is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0, 1)),
+            match_method TEXT NOT NULL DEFAULT 'UNMATCHED',
+            file_size INTEGER,
+            modified_time_ns INTEGER,
+            is_available INTEGER NOT NULL DEFAULT 1 CHECK(is_available IN (0, 1)),
+            last_scanned_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE SET NULL
         );
 
         CREATE TABLE IF NOT EXISTS users (
@@ -186,6 +218,10 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             files_matched INTEGER NOT NULL DEFAULT 0,
             files_missing INTEGER NOT NULL DEFAULT 0,
             files_new INTEGER NOT NULL DEFAULT 0,
+            subtitles_found INTEGER NOT NULL DEFAULT 0,
+            subtitles_matched INTEGER NOT NULL DEFAULT 0,
+            subtitles_unmatched INTEGER NOT NULL DEFAULT 0,
+            probe_errors INTEGER NOT NULL DEFAULT 0,
             errors INTEGER NOT NULL DEFAULT 0,
             duration_ms INTEGER,
             created_at TEXT NOT NULL
@@ -234,6 +270,8 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_videos_episode
             ON videos(work_id, series_group_id, episode_sort_key);
         CREATE INDEX IF NOT EXISTS idx_video_files_available ON video_files(is_available);
+        CREATE INDEX IF NOT EXISTS idx_subtitles_video ON subtitles(video_id);
+        CREATE INDEX IF NOT EXISTS idx_subtitles_available ON subtitles(is_available);
         CREATE INDEX IF NOT EXISTS idx_user_work_favorite
             ON user_work_state(user_id, favorite);
         CREATE INDEX IF NOT EXISTS idx_user_video_recent
@@ -247,14 +285,19 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         """
     )
 
-    if "watched_override" not in _column_names(connection, "user_video_state"):
-        connection.execute(
-            """
-            ALTER TABLE user_video_state
-            ADD COLUMN watched_override INTEGER
-            CHECK(watched_override IN (0, 1) OR watched_override IS NULL)
-            """
-        )
+    _add_column_if_missing(
+        connection,
+        "user_video_state",
+        "watched_override",
+        "INTEGER CHECK(watched_override IN (0, 1) OR watched_override IS NULL)",
+    )
+    _add_column_if_missing(connection, "video_files", "embedded_subtitle_count", "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(connection, "video_files", "probe_status", "TEXT NOT NULL DEFAULT 'NOT_PROBED'")
+    _add_column_if_missing(connection, "video_files", "probed_at", "TEXT")
+    _add_column_if_missing(connection, "scan_runs", "subtitles_found", "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(connection, "scan_runs", "subtitles_matched", "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(connection, "scan_runs", "subtitles_unmatched", "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(connection, "scan_runs", "probe_errors", "INTEGER NOT NULL DEFAULT 0")
 
     row = connection.execute(
         "SELECT schema_version FROM schema_info ORDER BY rowid LIMIT 1"
