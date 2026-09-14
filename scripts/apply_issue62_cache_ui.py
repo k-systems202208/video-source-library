@@ -115,10 +115,4 @@ readme_replacement = '''- プレイヤーをモーダル化し、変換中の経
 
 対象動画拡張子:'''
 readme = replace_once(readme, readme_anchor, readme_replacement, "README 0.9.1")
-readme = replace_once(
-    readme,
-    '├─ Backups\\\\\n└─ Logs\\\\\n',
-    '├─ Backups\\\\\n├─ PlaybackCache\\\\  # 互換再生用。20GB上限・削除可能\n└─ Logs\\\\\n',
-    "README data tree",
-)
 readme_path.write_text(readme, encoding="utf-8")
