@@ -35,6 +35,13 @@ def _cache_files(cache_dir: Path | str) -> list[Path]:
     return result
 
 
+def _managed_files(cache_dir: Path | str) -> list[Path]:
+    root = Path(cache_dir)
+    if not root.is_dir():
+        return []
+    return [path for path in root.glob("*.mp4") if path.is_file()]
+
+
 def playback_cache_stats(cache_dir: Path | str) -> PlaybackCacheStats:
     total = 0
     count = 0
@@ -119,7 +126,7 @@ def clear_playback_cache(cache_dir: Path | str) -> PlaybackCacheCleanup:
     removed_files = 0
     removed_bytes = 0
     failed_files = 0
-    for path in _cache_files(root):
+    for path in _managed_files(root):
         try:
             size = int(path.stat().st_size)
             path.unlink()
