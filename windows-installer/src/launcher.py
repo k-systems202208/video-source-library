@@ -5,9 +5,7 @@ import secrets
 import shutil
 import threading
 import tkinter as tk
-import urllib.error
 import urllib.parse
-import urllib.request
 import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -15,6 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 from app_config import load_config, save_config
 from backup_restore import apply_pending_restore, create_manual_backup
 from database import connect, initialize_database
+from local_auth import create_bootstrap_token
 from media_probe import find_ffprobe
 from metadata_importer import import_file
 from paths import CONFIG_PATH, DATABASE_PATH, DATA_ROOT, RUNTIME_PATH
@@ -22,9 +21,8 @@ from remote_access import disable_remote_access, enable_remote_access, get_remot
 from server import create_server
 
 APP_NAME = "自宅動画ライブラリ"
-APP_VERSION = "0.6.1"
+APP_VERSION = "0.6.2"
 DEFAULT_PORT = 8765
-CONTROL_HEADER = "X-Video-Library-Control-Secret"
 METADATA_PATH = DATA_ROOT / "metadata" / "video_library.json"
 
 
@@ -40,24 +38,10 @@ def request_local_owner_browser_url(page_url: str, control_secret: str) -> str:
     if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("owner authentication endpoint must be localhost HTTP")
 
-    token = secrets.token_urlsafe(32)
-    endpoint = urllib.parse.urljoin(page_url, "/api/local-auth/token")
-    payload = json.dumps({"token": token, "expiresInSeconds": 60}).encode("utf-8")
-    req = urllib.request.Request(
-        endpoint,
-        data=payload,
-        method="POST",
-        headers={"Content-Type": "application/json", CONTROL_HEADER: control_secret},
-    )
-
-    # This request never leaves the local machine. Do not inherit Windows,
-    # browser or corporate proxy settings; a proxy can reject 127.0.0.1 with
-    # HTTP 403 before the request reaches VideoLibrary.
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(req, timeout=3.0) as response:
-        if response.status != 201:
-            raise RuntimeError("owner token registration failed")
-
+    # Launcher and server share the same per-process control secret. Generate a
+    # signed one-time token in-process instead of registering it over localhost
+    # HTTP. This avoids interception by Windows/corporate local web filters.
+    token = create_bootstrap_token(control_secret, ttl_seconds=60)
     exchange = urllib.parse.urljoin(page_url, "/api/local-auth/exchange")
     return exchange + "?" + urllib.parse.urlencode({"token": token})
 
@@ -229,13 +213,6 @@ class VideoLibraryLauncher(tk.Tk):
         base = f"http://127.0.0.1:{self.server.server_port}/"
         try:
             webbrowser.open(request_local_owner_browser_url(base, self.control_secret))
-        except urllib.error.HTTPError as exc:
-            try:
-                detail = exc.read().decode("utf-8", errors="replace")
-            except Exception:
-                detail = ""
-            suffix = f"\n{detail}" if detail else ""
-            messagebox.showerror(APP_NAME, f"オーナーとしてブラウザを開けませんでした。\nHTTP Error {exc.code}: {exc.reason}{suffix}")
         except Exception as exc:
             messagebox.showerror(APP_NAME, f"オーナーとしてブラウザを開けませんでした。\n{exc}")
 
