@@ -53,6 +53,15 @@
 - Inno Setupでユーザー権限インストーラー生成
 - GitHub Actionsでsetup.exeをartifact化
 
+### 0.7.0: 実機スキャン診断
+- Owner専用の `/diagnostics.html`
+- 最新SUCCESSスキャンの `MISSING` / `NEW_FILE` / 未紐付字幕 / scan error を一覧化
+- MISSINGとNEW_FILEを、サイズ・拡張子・ファイル名・親フォルダー類似度から候補提示
+- 未紐付字幕に対し、安全側の動画候補を提示
+- 候補にはスコア・HIGH / MEDIUM / LOW・判定理由を表示
+- JSON / UTF-8 BOM付きCSVで診断結果をエクスポート
+- 診断は読み取り専用。動画・字幕・DBのパスや紐付けを自動変更しない
+
 対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
 ## ffprobe
@@ -97,7 +106,7 @@ movie.jpn.forced.srt
 movie.en.default.vtt
 ```
 
-`movie.commentary.srt` のように意味推測が必要な名前は自動紐付けしません。
+`movie.commentary.srt` のように意味推測が必要な名前は自動紐付けしません。こうした字幕はスキャン診断画面で候補を確認できますが、自動紐付けはしません。
 
 Phase 6では検出・紐付け・表示までです。SRT/ASS→WebVTT変換とプレーヤー字幕表示は後続機能です。
 
@@ -139,6 +148,22 @@ CI / Releaseで生成された `VideoLibrary-<version>-setup.exe` を実行し�
 と進めます。
 
 2回目以降は動画フォルダーとDBが有効なら、ランチャー起動後に自動で起動スキャンを開始します。ブラウザはスキャン完了前には開きません。起動後の追加・変更確認には、ブラウザ側の「再スキャン」と進捗モーダルを利用できます。
+
+### スキャン診断
+
+メイン画面右上の「診断」からOwner専用診断画面を開けます。最新の成功スキャンについて、MISSING / NEW_FILE / 未紐付字幕 / エラーと候補を確認できます。
+
+診断画面は読み取り専用です。候補を見つけてもファイル移動、ファイル名変更、DBパス更新、字幕紐付けは自動実行しません。必要な修正ルールを人が確認してから別工程で適用します。
+
+診断API:
+
+```text
+GET /api/admin/scan-diagnostics
+GET /api/admin/scan-diagnostics.json
+GET /api/admin/scan-diagnostics.csv
+```
+
+3つともOwner専用です。
 
 ### ソースから起動
 
@@ -226,6 +251,7 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 - [Phase 5](docs/08-phase5-implementation.md)
 - [Phase 6](docs/09-phase6-implementation.md)
 - [0.6.9 起動時スキャンフロー](docs/20-0.6.9-startup-scan-flow.md)
+- [0.7.0 スキャン診断](docs/21-0.7.0-scan-diagnostics.md)
 
 ## 正本
 - 動画そのもの: ユーザー指定の動画フォルダー
