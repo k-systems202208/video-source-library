@@ -1,15 +1,13 @@
 name: Issue 47 one-shot edit
 
-on:
-  push:
-    branches:
-      - feature/issue-47-diagnostics-subtitle-judgement
+on: [push]
 
 permissions:
   contents: write
 
 jobs:
   edit:
+    if: github.ref == 'refs/heads/feature/issue-47-diagnostics-subtitle-judgement'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,7 +19,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-
+          import base64
           diagnostics = Path('windows-installer/src/diagnostics.html')
           text = diagnostics.read_text(encoding='utf-8')
           old = "function renderSummary(d){const s=d.summary||{},scan=d.scan||{};$('scanInfo').textContent=scan.runId?`Scan #${scan.runId} · ${scan.completedAt||''} · 動画 ${scan.filesMatched}/${scan.filesFound} · 字幕 ${scan.subtitlesMatched}/${scan.subtitlesFound}`:'成功したスキャンがありません';"
@@ -29,118 +27,21 @@ jobs:
           if old not in text:
               raise SystemExit('diagnostics renderSummary target not found')
           diagnostics.write_text(text.replace(old, new, 1), encoding='utf-8')
-
           launcher = Path('windows-installer/src/launcher.py')
           text = launcher.read_text(encoding='utf-8')
-          old = 'APP_VERSION = "0.7.5"'
-          new = 'APP_VERSION = "0.7.6"'
-          if old not in text:
+          if 'APP_VERSION = "0.7.5"' not in text:
               raise SystemExit('launcher version target not found')
-          launcher.write_text(text.replace(old, new, 1), encoding='utf-8')
-
+          launcher.write_text(text.replace('APP_VERSION = "0.7.5"', 'APP_VERSION = "0.7.6"', 1), encoding='utf-8')
           installer = Path('windows-installer/installer/VideoLibrary.iss')
           text = installer.read_text(encoding='utf-8')
-          old = '#define MyAppVersion "0.7.5"'
-          new = '#define MyAppVersion "0.7.6"'
-          if old not in text:
+          if '#define MyAppVersion "0.7.5"' not in text:
               raise SystemExit('installer version target not found')
-          installer.write_text(text.replace(old, new, 1), encoding='utf-8')
-
-          test = Path('tests/test_diagnostics_ui_v076.py')
-          test.write_text(r'''from __future__ import annotations
-
-import unittest
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "windows-installer" / "src"
-
-
-class DiagnosticsUiV076Tests(unittest.TestCase):
-    def test_scan_header_counts_orphans_as_judged_subtitles(self):
-        html = (SRC / "diagnostics.html").read_text(encoding="utf-8")
-        self.assertIn(
-            "const judged=(Number(scan.subtitlesMatched)||0)+(Number(s.orphanSubtitles)||0);",
-            html,
-        )
-        self.assertIn(
-            "字幕判定 ${judged}/${scan.subtitlesFound}（紐付 ${scan.subtitlesMatched}・対応動画なし ${s.orphanSubtitles||0}）",
-            html,
-        )
-        self.assertNotIn(
-            "· 字幕 ${scan.subtitlesMatched}/${scan.subtitlesFound}",
-            html,
-        )
-
-    def test_windows_version_is_076(self):
-        launcher = (SRC / "launcher.py").read_text(encoding="utf-8")
-        installer = (ROOT / "windows-installer" / "installer" / "VideoLibrary.iss").read_text(encoding="utf-8")
-        self.assertIn('APP_VERSION = "0.7.6"', launcher)
-        self.assertIn('#define MyAppVersion "0.7.6"', installer)
-
-
-if __name__ == "__main__":
-    unittest.main()
-''', encoding='utf-8')
-
-          doc = Path('docs/26-0.7.6-diagnostics-subtitle-judgement.md')
-          doc.write_text('''# 0.7.6 診断ヘッダーの字幕判定表示を明確化
-
-## 背景
-
-0.7.5 の実機確認では、対応字幕 1,234 件のうち 1,227 件が動画へ紐付き、残り 7 件は「対応動画なし」として正常系へ分離できた。
-
-従来の診断ヘッダーは `字幕 1227/1234` と表示していたため、7件が未解決に見える余地があった。
-
-## 変更内容
-
-診断画面上部を次の形式へ変更する。
-
-```text
-動画 4869/4869・字幕判定 1234/1234（紐付 1227・対応動画なし 7）
-```
-
-字幕判定済み件数は次の式で表示する。
-
-```text
-subtitlesMatched + orphanSubtitles
-```
-
-総数は従来どおり `subtitlesFound` を使用する。
-
-## 変更しないもの
-
-- 字幕マッチング処理
-- `subtitles.video_id` の更新ロジック
-- 対応動画なし判定ロジック
-- MISSING / NEW_FILE / 未対応字幕 / エラーの分類
-- 元の動画・字幕ファイル
-
-したがって 0.7.6 は診断表示のみの改善である。
-
-## 実機期待値
-
-0.7.5 で確認済みのライブラリでは次の表示を期待する。
-
-- 動画: 4,869 / 4,869
-- 字幕判定: 1,234 / 1,234
-  - 紐付: 1,227
-  - 対応動画なし: 7
-- 未紐付字幕: 0
-- 未対応字幕: 3
-- エラー: 0
-
-## テスト
-
-`tests/test_diagnostics_ui_v076.py` で以下を固定する。
-
-- 判定済み字幕が `subtitlesMatched + orphanSubtitles` であること
-- ヘッダーに「字幕判定」「紐付」「対応動画なし」を表示すること
-- 旧 `字幕 matched/found` 表示へ戻らないこと
-- Windows版とインストーラーのバージョンが 0.7.6 で一致すること
-''', encoding='utf-8')
+          installer.write_text(text.replace('#define MyAppVersion "0.7.5"', '#define MyAppVersion "0.7.6"', 1), encoding='utf-8')
+          test_b64 = 'ZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKaW1wb3J0IHVuaXR0ZXN0CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKUk9PVCA9IFBhdGgoX19maWxlX18pLnJlc29sdmUoKS5wYXJlbnRzWzFdClNSQyA9IFJPT1QgLyAid2luZG93cy1pbnN0YWxsZXIiIC8gInNyYyIKCgpjbGFzcyBEaWFnbm9zdGljc1VpVjA3NlRlc3RzKHVuaXR0ZXN0LlRlc3RDYXNlKToKICAgIGRlZiB0ZXN0X3NjYW5faGVhZGVyX2NvdW50c19vcnBoYW5zX2FzX2p1ZGdlZF9zdWJ0aXRsZXMoc2VsZik6CiAgICAgICAgaHRtbCA9IChTUkMgLyAiZGlhZ25vc3RpY3MuaHRtbCIpLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQogICAgICAgIHNlbGYuYXNzZXJ0SW4oCiAgICAgICAgICAgICJjb25zdCBqdWRnZWQ9KE51bWJlcihzY2FuLnN1YnRpdGxlc01hdGNoZWQpfHwwKSsoTnVtYmVyKHMub3JwaGFuU3VidGl0bGVzKXx8MCk7IiwKICAgICAgICAgICAgaHRtbCwKICAgICAgICApCiAgICAgICAgc2VsZi5hc3NlcnRJbigKICAgICAgICAgICAgIuWtl+W5leWIpOWumiAke2p1ZGdlZH0vJHtzY2FuLnN1YnRpdGxlc0ZvdW5kfe+8iOe0kOS7mCAke3NjYW4uc3VidGl0bGVzTWF0Y2hlZH3jg7vlr77lv5zli5XnlLvjgarjgZcgJHtzLm9ycGhhblN1YnRpdGxlc3x8MH3vvIkiLAogICAgICAgICAgICBodG1sLAogICAgICAgICkKICAgICAgICBzZWxmLmFzc2VydE5vdEluKAogICAgICAgICAgICAiwrcg5a2X5bmVICR7c2Nhbi5zdWJ0aXRsZXNNYXRjaGVkfS8ke3NjYW4uc3VidGl0bGVzRm91bmR9IiwKICAgICAgICAgICAgaHRtbCwKICAgICAgICApCgogICAgZGVmIHRlc3Rfd2luZG93c192ZXJzaW9uX2lzXzA3NihzZWxmKToKICAgICAgICBsYXVuY2hlciA9IChTUkMgLyAibGF1bmNoZXIucHkiKS5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04IikKICAgICAgICBpbnN0YWxsZXIgPSAoUk9PVCAvICJ3aW5kb3dzLWluc3RhbGxlciIgLyAiaW5zdGFsbGVyIiAvICJWaWRlb0xpYnJhcnkuaXNzIikucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCiAgICAgICAgc2VsZi5hc3NlcnRJbignQVBQX1ZFUlNJT04gPSAiMC43LjYiJywgbGF1bmNoZXIpCiAgICAgICAgc2VsZi5hc3NlcnRJbignI2RlZmluZSBNeUFwcFZlcnNpb24gIjAuNy42IicsIGluc3RhbGxlcikKCgppZiBfX25hbWVfXyA9PSAiX19tYWluX18iOgogICAgdW5pdHRlc3QubWFpbigpCg=='
+          doc_b64 = 'IyAwLjcuNiDoqLrmlq3jg5jjg4Pjg4Djg7zjga7lrZfluZXliKTlrprooajnpLrjgpLmmI7norrljJYKCiMjIOiDjOaZrwoKMC43LjUg44Gu5a6f5qmf56K66KqN44Gn44Gv44CB5a++5b+c5a2X5bmVIDEsMjM0IOS7tuOBruOBhuOBoSAxLDIyNyDku7bjgYzli5XnlLvjgbjntJDku5jjgY3jgIHmrovjgoogNyDku7bjga/jgIzlr77lv5zli5XnlLvjgarjgZfjgI3jgajjgZfjgabmraPluLjns7vjgbjliIbpm6LjgafjgY3jgZ/jgIIKCuW+k+adpeOBruiouuaWreODmOODg+ODgOODvOOBryBg5a2X5bmVIDEyMjcvMTIzNGAg44Go6KGo56S644GX44Gm44GE44Gf44Gf44KB44CBN+S7tuOBjOacquino+axuuOBq+imi+OBiOOCi+S9meWcsOOBjOOBguOBo+OBn+OAggoKIyMg5aSJ5pu05YaF5a65CgroqLrmlq3nlLvpnaLkuIrpg6jjgpLmrKHjga7lvaLlvI/jgbjlpInmm7TjgZnjgovjgIIKCmBgYHRleHQK5YuV55S7IDQ4NjkvNDg2OeODu+Wtl+W5leWIpOWumiAxMjM0LzEyMzTvvIjntJDku5ggMTIyN+ODu+WvvuW/nOWLleeUu+OBquOBlyA377yJCmBgYAoK5a2X5bmV5Yik5a6a5riI44G/5Lu25pWw44Gv5qyh44Gu5byP44Gn6KGo56S644GZ44KL44CCCgpgYGB0ZXh0CnN1YnRpdGxlc01hdGNoZWQgKyBvcnBoYW5TdWJ0aXRsZXMKYGBgCgrnt4/mlbDjga/lvpPmnaXjganjgYrjgoogYHN1YnRpdGxlc0ZvdW5kYCDjgpLkvb/nlKjjgZnjgovjgIIKCiMjIOWkieabtOOBl+OBquOBhOOCguOBrgoKLSDlrZfluZXjg57jg4Pjg4Hjg7PjgrDlh6bnkIYKLSBgc3VidGl0bGVzLnZpZGVvX2lkYCDjga7mm7TmlrDjg63jgrjjg4Pjgq8KLSDlr77lv5zli5XnlLvjgarjgZfliKTlrprjg63jgrjjg4Pjgq8KLSBNSVNTSU5HIC8gTkVXX0ZJTEUgLyDmnKrlr77lv5zlrZfluZUgLyDjgqjjg6njg7zjga7liIbpoZ4KLSDlhYPjga7li5XnlLvjg7vlrZfluZXjg5XjgqHjgqTjg6sKCuOBl+OBn+OBjOOBo+OBpiAwLjcuNiDjga/oqLrmlq3ooajnpLrjga7jgb/jga7mlLnlloTjgafjgYLjgovjgIIKCiMjIOWun+apn+acn+W+heWApAoKMC43LjUg44Gn56K66KqN5riI44G/44Gu44Op44Kk44OW44Op44Oq44Gn44Gv5qyh44Gu6KGo56S644KS5pyf5b6F44GZ44KL44CCCgotIOWLleeUuzogNCw4NjkgLyA0LDg2OQotIOWtl+W5leWIpOWumjogMSwyMzQgLyAxLDIzNAogIC0g57SQ5LuYOiAxLDIyNwogIC0g5a++5b+c5YuV55S744Gq44GXOiA3Ci0g5pyq57SQ5LuY5a2X5bmVOiAwCi0g5pyq5a++5b+c5a2X5bmVOiAzCi0g44Ko44Op44O8OiAwCgojIyDjg4bjgrnjg4gKCmB0ZXN0cy90ZXN0X2RpYWdub3N0aWNzX3VpX3YwNzYucHlgIOOBp+S7peS4i+OCkuWbuuWumuOBmeOCi+OAggoKLSDliKTlrprmuIjjgb/lrZfluZXjgYwgYHN1YnRpdGxlc01hdGNoZWQgKyBvcnBoYW5TdWJ0aXRsZXNgIOOBp+OBguOCi+OBk+OBqAotIOODmOODg+ODgOODvOOBq+OAjOWtl+W5leWIpOWumuOAjeOAjOe0kOS7mOOAjeOAjOWvvuW/nOWLleeUu+OBquOBl+OAjeOCkuihqOekuuOBmeOCi+OBk+OBqAotIOaXpyBg5a2X5bmVIG1hdGNoZWQvZm91bmRgIOihqOekuuOBuOaIu+OCieOBquOBhOOBk+OBqAotIFdpbmRvd3PniYjjgajjgqTjg7Pjgrnjg4jjg7zjg6njg7zjga7jg5Djg7zjgrjjg6fjg7PjgYwgMC43LjYg44Gn5LiA6Ie044GZ44KL44GT44GoCg=='
+          Path('tests/test_diagnostics_ui_v076.py').write_bytes(base64.b64decode(test_b64))
+          Path('docs/26-0.7.6-diagnostics-subtitle-judgement.md').write_bytes(base64.b64decode(doc_b64))
           PY
-
           rm .github/workflows/issue-47-edit.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
