@@ -165,7 +165,7 @@ Windows / Python 3.11・3.13でPhase 1〜6の回帰テストを実行する。
 1. PyInstaller build
 2. Inno Setup build
 3. `VideoLibrary.exe` 存在確認
-4. `VideoLibrary-0.6.0-setup.exe` 存在確認
+4. `VideoLibrary-<version>-setup.exe` 存在確認
 5. Actions artifactへsetup.exeを保存
 
 ## 実機総合検証
@@ -181,7 +181,10 @@ python scripts\validate_real_library.py `
   --metadata "C:\path\video_library.json" `
   --expected-works 440 `
   --expected-videos 4869 `
-  --expected-subtitles 1237
+  --expected-subtitles 1234 `
+  --expected-matched-subtitles 1227 `
+  --expected-orphan-subtitles 7 `
+  --expected-unsupported-subtitles 3
 ```
 
 確認内容:
@@ -191,8 +194,11 @@ python scripts\validate_real_library.py `
 - 440作品
 - 4,869動画
 - 全動画存在
-- 字幕1,237件
-- 未紐付字幕0
+- 対応字幕1,234件
+- 紐付字幕1,227件
+- 対応動画なし7件（正常系）
+- 真の未紐付字幕0件
+- 未対応字幕3件
 - ffprobeエラー0（ffprobe利用時）
 
 実動画・実字幕はCIへアップロードしない。

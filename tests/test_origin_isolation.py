@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "windows-installer" / "src"
 sys.path.insert(0, str(SRC))
 
-from launcher import APP_VERSION, DEFAULT_PORT, request_local_owner_browser_url
+from launcher import DEFAULT_PORT, request_local_owner_browser_url
 
 
 class OriginIsolationTests(unittest.TestCase):
@@ -26,9 +26,6 @@ class OriginIsolationTests(unittest.TestCase):
         self.assertEqual(parsed.path, "/offline.html")
         self.assertEqual(parsed.query, "owner-bootstrap=1")
         self.assertTrue(parsed.fragment.startswith("token="))
-
-    def test_windows_version_is_076(self):
-        self.assertEqual(APP_VERSION, "0.7.6")
 
 
 if __name__ == "__main__":

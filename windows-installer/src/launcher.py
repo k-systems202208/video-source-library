@@ -15,6 +15,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable
 
 from app_config import load_config, save_config
+from app_version import APP_VERSION
 from backup_restore import apply_pending_restore, create_manual_backup
 from database import connect, initialize_database, now_iso
 from local_auth import create_bootstrap_token
@@ -26,7 +27,6 @@ from scan_runner import scan_library
 from server import create_server
 
 APP_NAME = "自宅動画ライブラリ"
-APP_VERSION = "0.7.6"
 # Music Library uses 8765. Keep Video Library on a different localhost origin
 # so Service Worker, Cache Storage and PWA state cannot collide.
 DEFAULT_PORT = 8876
