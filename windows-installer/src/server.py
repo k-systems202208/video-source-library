@@ -19,7 +19,8 @@ from library_service import get_video, get_work, library_stats, list_work_videos
 from local_auth import LocalOwnerAuth, cookie_value, session_cookie_header
 from scan_diagnostics import diagnostics_csv_bytes, diagnostics_json_bytes, scan_diagnostics
 from scan_progress import ScanProgressStore
-from scanner import latest_scan_status, mime_type_for_extension, resolve_video_file, scan_library
+from scan_runner import scan_library
+from scanner import latest_scan_status, mime_type_for_extension, resolve_video_file
 from tailscale_identity import parse_tailscale_identity
 from user_state import (
     PlaybackSessionStore,
@@ -39,7 +40,7 @@ from user_state import (
 
 APP_NAME = "VideoLibrary"
 API_VERSION = 1
-APP_VERSION = "0.7.0"
+APP_VERSION = "0.7.2"
 CHUNK_SIZE = 1024 * 1024
 MAX_JSON_BODY = 64 * 1024
 CONTROL_HEADER = "X-Video-Library-Control-Secret"
