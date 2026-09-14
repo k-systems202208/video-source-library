@@ -9,6 +9,14 @@ from pathlib import PurePosixPath
 from typing import Any
 
 
+_SPECIAL_YEAR_RE = re.compile(
+    r"(?i)(?:^|[^a-z0-9])(?:sp|special)[^0-9]*(19\d{2}|20\d{2})(?:[^0-9]|$)"
+)
+_SPECIAL_LABEL_RE = re.compile(
+    r"(?i)(?:^|[^a-z0-9])(?:sp|special)(?:[^a-z0-9]|$)|スペシャル|特別"
+)
+
+
 def _path(value: str) -> PurePosixPath:
     return PurePosixPath(str(value or "").replace("\\", "/"))
 
@@ -25,6 +33,13 @@ def _stem(value: str) -> str:
 def _parent(value: str) -> str:
     parent = str(_path(value).parent)
     return "" if parent == "." else parent
+
+
+def _work_key(value: str) -> str:
+    parts = _path(value).parts
+    if len(parts) < 2:
+        return ""
+    return "/".join(str(part).casefold() for part in parts[:2])
 
 
 def _basename_similarity(a: str, b: str) -> float:
@@ -45,6 +60,38 @@ def _parent_similarity(a: str, b: str) -> float:
     if aa == bb:
         return 1.0
     return SequenceMatcher(None, aa, bb).ratio()
+
+
+def _orphan_subtitle_reason(
+    subtitle_path: str,
+    work: dict[str, Any] | None,
+    work_videos: list[dict[str, Any]],
+) -> str | None:
+    """Return a conservative diagnostic-only reason for a subtitle with no target.
+
+    This never changes matching. It only separates cases where the registered
+    catalog itself has no corresponding video from genuinely ambiguous subtitles.
+    """
+    if work is None:
+        return None
+    if not work_videos:
+        return "NO_REGISTERED_VIDEO_IN_WORK"
+
+    special = _SPECIAL_YEAR_RE.search(_path(subtitle_path).stem)
+    if special is None:
+        return None
+    year = special.group(1)
+    for video in work_videos:
+        video_stem = _path(str(video.get("relativePath") or "")).stem
+        metadata = " ".join(
+            str(video.get(key) or "")
+            for key in ("episodeOrType", "episodeTitle")
+        )
+        if year in video_stem:
+            return None
+        if _SPECIAL_LABEL_RE.search(video_stem) or _SPECIAL_LABEL_RE.search(metadata):
+            return None
+    return "SPECIAL_VIDEO_NOT_REGISTERED"
 
 
 def _confidence(score: int) -> str:
@@ -191,6 +238,7 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
                 "missing": 0,
                 "newFiles": 0,
                 "unmatchedSubtitles": 0,
+                "orphanSubtitles": 0,
                 "unsupportedSubtitles": 0,
                 "errors": 0,
                 "highConfidenceFileCandidates": 0,
@@ -199,6 +247,7 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
             "missing": [],
             "newFiles": [],
             "unmatchedSubtitles": [],
+            "orphanSubtitles": [],
             "unsupportedSubtitles": [],
             "errors": [],
         }
@@ -298,10 +347,29 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
         scored.sort(key=lambda value: (-int(value["score"]), str(value["relativePath"]).casefold()))
         item["candidates"] = scored[: max(1, candidate_limit)]
 
+    work_rows = connection.execute(
+        """
+        SELECT id, official_title, relative_path, media_file_count
+        FROM works
+        ORDER BY id
+        """
+    ).fetchall()
+    works_by_key: dict[str, dict[str, Any]] = {}
+    for row in work_rows:
+        key = _work_key(str(row["relative_path"] or ""))
+        if key:
+            works_by_key[key] = {
+                "workId": int(row["id"]),
+                "workTitle": row["official_title"],
+                "relativePath": row["relative_path"],
+                "mediaFileCount": int(row["media_file_count"] or 0),
+            }
+
     video_rows = connection.execute(
         """
         SELECT vf.video_id, vf.relative_path, vf.extension, vf.is_available,
-               v.episode_or_type, v.episode_title, w.official_title AS work_title
+               v.episode_or_type, v.episode_title,
+               w.id AS work_id, w.official_title AS work_title
         FROM video_files vf
         JOIN videos v ON v.id=vf.video_id
         JOIN works w ON w.id=v.work_id
@@ -311,6 +379,7 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
     videos = [
         {
             "videoId": int(row["video_id"]),
+            "workId": int(row["work_id"]),
             "relativePath": row["relative_path"],
             "extension": row["extension"],
             "available": bool(row["is_available"]),
@@ -321,8 +390,10 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
         for row in video_rows
     ]
     videos_by_parent: dict[str, list[dict[str, Any]]] = {}
+    videos_by_work_id: dict[int, list[dict[str, Any]]] = {}
     for video in videos:
         videos_by_parent.setdefault(str(_path(video["relativePath"]).parent).casefold(), []).append(video)
+        videos_by_work_id.setdefault(int(video["workId"]), []).append(video)
 
     subtitle_rows = connection.execute(
         """
@@ -333,6 +404,7 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
         """
     ).fetchall()
     unmatched_subtitles: list[dict[str, Any]] = []
+    orphan_subtitles: list[dict[str, Any]] = []
     for row in subtitle_rows:
         relative_path = str(row["relative_path"])
         subtitle_path = _path(relative_path)
@@ -361,17 +433,25 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
                 }
             )
         scored.sort(key=lambda value: (-int(value["score"]), str(value["relativePath"]).casefold()))
-        unmatched_subtitles.append(
-            {
-                "subtitleId": int(row["id"]),
-                "relativePath": relative_path,
-                "extension": row["extension"],
-                "language": row["language"],
-                "matchMethod": row["match_method"],
-                "fileSize": row["file_size"],
-                "candidates": scored[: max(1, candidate_limit)],
-            }
-        )
+        item = {
+            "subtitleId": int(row["id"]),
+            "relativePath": relative_path,
+            "extension": row["extension"],
+            "language": row["language"],
+            "matchMethod": row["match_method"],
+            "fileSize": row["file_size"],
+            "candidates": scored[: max(1, candidate_limit)],
+        }
+        work = works_by_key.get(_work_key(relative_path))
+        work_videos = videos_by_work_id.get(int(work["workId"]), []) if work else []
+        orphan_reason = _orphan_subtitle_reason(relative_path, work, work_videos)
+        if orphan_reason is not None:
+            item["orphanReason"] = orphan_reason
+            item["workId"] = work["workId"] if work else None
+            item["workTitle"] = work["workTitle"] if work else None
+            orphan_subtitles.append(item)
+        else:
+            unmatched_subtitles.append(item)
 
     error_rows = connection.execute(
         """
@@ -408,6 +488,7 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
             "missing": len(missing),
             "newFiles": len(new_files),
             "unmatchedSubtitles": len(unmatched_subtitles),
+            "orphanSubtitles": len(orphan_subtitles),
             "unsupportedSubtitles": len(unsupported_subtitles),
             "errors": len(errors),
             "highConfidenceFileCandidates": high_file_candidates,
@@ -416,6 +497,7 @@ def scan_diagnostics(connection, *, run_id: int | None = None, candidate_limit: 
         "missing": missing,
         "newFiles": new_files,
         "unmatchedSubtitles": unmatched_subtitles,
+        "orphanSubtitles": orphan_subtitles,
         "unsupportedSubtitles": unsupported_subtitles,
         "errors": errors,
     }
@@ -447,6 +529,17 @@ def diagnostics_csv_bytes(value: dict[str, Any]) -> bytes:
 
     for item in value.get("newFiles", []):
         writer.writerow(["NEW_FILE", item.get("relativePath"), "", "", "", "", item.get("fileSize") or ""])
+
+    for item in value.get("orphanSubtitles", []):
+        writer.writerow([
+            "ORPHAN_SUBTITLE",
+            item.get("relativePath"),
+            "",
+            "",
+            "",
+            item.get("orphanReason") or "",
+            item.get("workTitle") or "",
+        ])
 
     for item in value.get("unmatchedSubtitles", []):
         candidates = item.get("candidates") or []
