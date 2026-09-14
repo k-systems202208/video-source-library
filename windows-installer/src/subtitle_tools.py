@@ -22,6 +22,30 @@ _PREFIX_BOUNDARIES = {".", " ", "_", "-", "[", "(", "（"}
 # The existing product intentionally refuses semantic alternate tracks such as
 # movie.commentary.srt. Keep that guarantee even when a work has one video.
 _NON_PRIMARY_TOKENS = {"commentary"}
+_SUBTITLE_BRANCH_NAMES = {"sub", "subs", "subtitle", "subtitles", "subsextracted"}
+_RELEASE_NOISE_TOKENS = {
+    "x264",
+    "x265",
+    "h264",
+    "h265",
+    "hevc",
+    "aac",
+    "dts",
+    "ac3",
+    "eac3",
+    "hdtv",
+    "webdl",
+    "webrip",
+    "bluray",
+    "bdrip",
+    "dvdrip",
+    "hdrip",
+    "proper",
+    "repack",
+}
+_RELEASE_RESOLUTION_RE = re.compile(r"^(?:\d{3,4}[pi]|\d{3,4}x\d{3,4})$")
+_SPLIT_VIDEO_RE = re.compile(r"^(.*?)(?:[\s._-]+(?:trim|part|cd|disc)[\s._-]*(\d{1,2}))$", re.IGNORECASE)
+_SPLIT_SUBTITLE_RE = re.compile(r"^(.*?)(\d{1,2})$")
 
 
 @dataclass(frozen=True)
@@ -43,6 +67,14 @@ def _normalized_text(value: str) -> str:
 
 def _normalized_stem(value: str) -> str:
     return _normalized_text(_path(value).stem)
+
+
+def _canonical_text(value: str) -> str:
+    return "".join(character for character in _normalized_text(value) if character.isalnum())
+
+
+def _canonical_stem(value: str) -> str:
+    return _canonical_text(_path(value).stem)
 
 
 def _work_root(value: str) -> tuple[str, ...]:
@@ -105,6 +137,59 @@ def _is_non_primary_track(subtitle_stem: str, work_videos: list[str]) -> bool:
         if remainder is not None and any(token in _NON_PRIMARY_TOKENS for token in _suffix_tokens(remainder)):
             return True
     return False
+
+
+def _branch_key(value: str) -> str | None:
+    """Return the first content branch below category/work, excluding subtitle packs."""
+    parts = _path(value).parts
+    if len(parts) < 4:
+        return None
+    key = _normalized_text(parts[2])
+    return None if key in _SUBTITLE_BRANCH_NAMES else key
+
+
+def _common_branch_depth(left: str, right: str) -> int:
+    """Count identical directory parts below category/work.
+
+    This lets a subtitle nested under e.g. ``Season 5/subpack/episode 2`` prefer the
+    actual Season 5 episode over a same-numbered making-of clip in another branch.
+    """
+    left_parts = [_normalized_text(part) for part in _path(left).parent.parts[2:]]
+    right_parts = [_normalized_text(part) for part in _path(right).parent.parts[2:]]
+    depth = 0
+    for left_part, right_part in zip(left_parts, right_parts):
+        if left_part != right_part:
+            break
+        depth += 1
+    return depth
+
+
+def _release_key(value: str) -> tuple[str, ...]:
+    """Normalize release-name noise without discarding semantic title tokens."""
+    tokens = [
+        token
+        for token in re.split(r"[\W_]+", _normalized_stem(value), flags=re.UNICODE)
+        if token
+    ]
+    return tuple(
+        token
+        for token in tokens
+        if token not in _RELEASE_NOISE_TOKENS and not _RELEASE_RESOLUTION_RE.fullmatch(token)
+    )
+
+
+def _video_split_key(value: str) -> tuple[str, int] | None:
+    match = _SPLIT_VIDEO_RE.match(_normalized_stem(value))
+    if not match:
+        return None
+    return _canonical_text(match.group(1)), int(match.group(2))
+
+
+def _subtitle_split_key(value: str) -> tuple[str, int] | None:
+    match = _SPLIT_SUBTITLE_RE.match(_normalized_stem(value))
+    if not match:
+        return None
+    return _canonical_text(match.group(1)), int(match.group(2))
 
 
 def _episode_key(value: str) -> tuple[int | None, int] | None:
@@ -269,5 +354,73 @@ def match_subtitle_to_video(
         if episode_video is not None:
             language, is_forced, is_default = _metadata_for_match(subtitle_stem)
             return SubtitleMatch(episode_video, language, is_forced, is_default, "EPISODE_NUMBER")
+
+        # 0.7.4: the same episode number can legitimately exist in main episodes,
+        # making-of clips, spin-offs, or another season. Prefer a candidate only
+        # when one video shares a strictly deeper content branch with the subtitle.
+        unique_episode_candidates = list(dict.fromkeys(episode_candidates))
+        if len(unique_episode_candidates) > 1:
+            depth_candidates = [
+                (_common_branch_depth(subtitle_relative_path, video), video)
+                for video in unique_episode_candidates
+            ]
+            max_depth = max(depth for depth, _ in depth_candidates)
+            best_branch = [video for depth, video in depth_candidates if depth == max_depth]
+            if max_depth >= 1 and len(best_branch) == 1:
+                language, is_forced, is_default = _metadata_for_match(subtitle_stem)
+                return SubtitleMatch(best_branch[0], language, is_forced, is_default, "EPISODE_BRANCH")
+
+    # 6. Release collections frequently differ only in separators such as spaces,
+    # dots, dashes, and underscores. Ignore separators only; all alphanumeric
+    # title/episode characters must still be identical and the candidate unique.
+    canonical_stem = _canonical_stem(subtitle_relative_path)
+    if canonical_stem:
+        canonical_video = _single([
+            video for video in work_videos
+            if _canonical_stem(video) == canonical_stem
+        ])
+        if canonical_video is not None:
+            language, is_forced, is_default = _metadata_for_match(subtitle_stem)
+            return SubtitleMatch(canonical_video, language, is_forced, is_default, "WORK_CANONICAL_STEM")
+
+    # 7. When a work is divided into explicit content branches (movie/season/etc.)
+    # and the subtitle sits under one such branch, a branch containing exactly one
+    # registered video is as unambiguous as WORK_SINGLE_VIDEO. Subtitle-only
+    # containers named Subs/Subtitles/etc. are deliberately excluded as branches.
+    subtitle_branch = _branch_key(subtitle_relative_path)
+    if subtitle_branch is not None:
+        branch_video = _single([
+            video for video in work_videos
+            if _branch_key(video) == subtitle_branch
+        ])
+        if branch_video is not None:
+            language, is_forced, is_default = _metadata_for_match(subtitle_stem)
+            return SubtitleMatch(branch_video, language, is_forced, is_default, "BRANCH_SINGLE_VIDEO")
+
+    # 8. Allow release strings that differ only by technical encoding/quality
+    # tokens (720p, x264, AAC, HDTV, ...). Semantic title tokens and release-group
+    # tokens remain part of the key, and more than one candidate stays unmatched.
+    release_key = _release_key(subtitle_relative_path)
+    if release_key:
+        release_video = _single([
+            video for video in work_videos
+            if _release_key(video) == release_key
+        ])
+        if release_video is not None:
+            language, is_forced, is_default = _metadata_for_match(subtitle_stem)
+            return SubtitleMatch(release_video, language, is_forced, is_default, "WORK_RELEASE_KEY")
+
+    # 9. Some movies are physically split into Trim1/Trim2 (or Part/CD/Disc),
+    # while subtitles use only a trailing 1/2. Require the exact canonical title
+    # base and part number to match a unique explicitly-marked video.
+    subtitle_split = _subtitle_split_key(subtitle_relative_path)
+    if subtitle_split is not None:
+        split_video = _single([
+            video for video in work_videos
+            if _video_split_key(video) == subtitle_split
+        ])
+        if split_video is not None:
+            language, is_forced, is_default = _metadata_for_match(subtitle_stem)
+            return SubtitleMatch(split_video, language, is_forced, is_default, "SPLIT_PART_NUMBER")
 
     return SubtitleMatch(None, None, False, False, "UNMATCHED")

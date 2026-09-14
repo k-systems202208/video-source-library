@@ -27,8 +27,8 @@ class OriginIsolationTests(unittest.TestCase):
         self.assertEqual(parsed.query, "owner-bootstrap=1")
         self.assertTrue(parsed.fragment.startswith("token="))
 
-    def test_windows_version_is_073(self):
-        self.assertEqual(APP_VERSION, "0.7.3")
+    def test_windows_version_is_074(self):
+        self.assertEqual(APP_VERSION, "0.7.4")
 
 
 if __name__ == "__main__":
