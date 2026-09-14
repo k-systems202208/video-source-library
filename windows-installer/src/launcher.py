@@ -21,8 +21,10 @@ from remote_access import disable_remote_access, enable_remote_access, get_remot
 from server import create_server
 
 APP_NAME = "自宅動画ライブラリ"
-APP_VERSION = "0.6.3"
-DEFAULT_PORT = 8765
+APP_VERSION = "0.6.4"
+# Music Library uses 8765. Keep Video Library on a different localhost origin
+# so Service Worker, Cache Storage and PWA state cannot collide.
+DEFAULT_PORT = 8876
 METADATA_PATH = DATA_ROOT / "metadata" / "video_library.json"
 
 
@@ -38,9 +40,6 @@ def request_local_owner_browser_url(page_url: str, control_secret: str) -> str:
     if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("owner authentication endpoint must be localhost HTTP")
 
-    # Keep the signed bootstrap token in the URL fragment. Fragments are not
-    # transmitted in the initial HTTP request, so URL scanners/prefetchers
-    # cannot consume the one-time token before browser JavaScript runs.
     token = create_bootstrap_token(control_secret, ttl_seconds=60)
     bootstrap = urllib.parse.urljoin(page_url, "/offline.html") + "?owner-bootstrap=1"
     return bootstrap + "#token=" + urllib.parse.quote(token, safe="")
