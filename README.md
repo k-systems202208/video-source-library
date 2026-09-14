@@ -32,6 +32,7 @@
 
 ### Phase 5: Windows運用 / Tailscale / PWA / Backup
 - Windows Tkinterランチャー
+- 通常起動はランチャーで実ファイルスキャンを完了してからHTTPサーバーとブラウザを起動
 - local owner one-time token → `HttpOnly; SameSite=Strict` Cookie
 - Tailscale Serve identityで利用者を個別識別
 - serverはlocalhost (`127.0.0.1`) のみbind
@@ -104,7 +105,7 @@ Phase 6では検出・紐付け・表示までです。SRT/ASS→WebVTT変換と
 
 ### インストーラー版
 
-CI / Releaseで生成された `VideoLibrary-0.6.0-setup.exe` を実行します。管理者権限は不要です。
+CI / Releaseで生成された `VideoLibrary-<version>-setup.exe` を実行します。管理者権限は不要です。
 
 インストール先:
 
@@ -131,9 +132,13 @@ CI / Releaseで生成された `VideoLibrary-0.6.0-setup.exe` を実行します
 1. 動画フォルダーを選択
 2. 監査済み `video_library.json` を選択
 3. 「取込」
-4. 「開始」
+4. 「ライブラリを開始」
+5. Windowsランチャー上で動画・字幕・ffprobeの起動スキャン進捗を確認
+6. スキャン完了後にブラウザが自動起動
 
 と進めます。
+
+2回目以降は動画フォルダーとDBが有効なら、ランチャー起動後に自動で起動スキャンを開始します。ブラウザはスキャン完了前には開きません。起動後の追加・変更確認には、ブラウザ側の「再スキャン」と進捗モーダルを利用できます。
 
 ### ソースから起動
 
@@ -220,6 +225,7 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 - [Phase 4](docs/07-phase4-implementation.md)
 - [Phase 5](docs/08-phase5-implementation.md)
 - [Phase 6](docs/09-phase6-implementation.md)
+- [0.6.9 起動時スキャンフロー](docs/20-0.6.9-startup-scan-flow.md)
 
 ## 正本
 - 動画そのもの: ユーザー指定の動画フォルダー
