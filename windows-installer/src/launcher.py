@@ -21,7 +21,7 @@ from remote_access import disable_remote_access, enable_remote_access, get_remot
 from server import create_server
 
 APP_NAME = "自宅動画ライブラリ"
-APP_VERSION = "0.6.2"
+APP_VERSION = "0.6.3"
 DEFAULT_PORT = 8765
 METADATA_PATH = DATA_ROOT / "metadata" / "video_library.json"
 
@@ -38,12 +38,12 @@ def request_local_owner_browser_url(page_url: str, control_secret: str) -> str:
     if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("owner authentication endpoint must be localhost HTTP")
 
-    # Launcher and server share the same per-process control secret. Generate a
-    # signed one-time token in-process instead of registering it over localhost
-    # HTTP. This avoids interception by Windows/corporate local web filters.
+    # Keep the signed bootstrap token in the URL fragment. Fragments are not
+    # transmitted in the initial HTTP request, so URL scanners/prefetchers
+    # cannot consume the one-time token before browser JavaScript runs.
     token = create_bootstrap_token(control_secret, ttl_seconds=60)
-    exchange = urllib.parse.urljoin(page_url, "/api/local-auth/exchange")
-    return exchange + "?" + urllib.parse.urlencode({"token": token})
+    bootstrap = urllib.parse.urljoin(page_url, "/offline.html") + "?owner-bootstrap=1"
+    return bootstrap + "#token=" + urllib.parse.quote(token, safe="")
 
 
 def database_counts() -> tuple[int, int]:
