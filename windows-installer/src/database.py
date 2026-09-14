@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def now_iso() -> str:
@@ -26,6 +26,10 @@ def connect(path: Path | str) -> Iterator[sqlite3.Connection]:
         yield connection
     finally:
         connection.close()
+
+
+def _column_names(connection: sqlite3.Connection, table: str) -> set[str]:
+    return {str(row["name"]) for row in connection.execute(f"PRAGMA table_info({table})")}
 
 
 def initialize_database(connection: sqlite3.Connection) -> None:
@@ -160,6 +164,7 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             video_id INTEGER NOT NULL,
             favorite INTEGER NOT NULL DEFAULT 0 CHECK(favorite IN (0, 1)),
             watched INTEGER NOT NULL DEFAULT 0 CHECK(watched IN (0, 1)),
+            watched_override INTEGER CHECK(watched_override IN (0, 1) OR watched_override IS NULL),
             play_count INTEGER NOT NULL DEFAULT 0 CHECK(play_count >= 0),
             position_ms INTEGER NOT NULL DEFAULT 0 CHECK(position_ms >= 0),
             duration_ms INTEGER,
@@ -226,15 +231,30 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_series_work ON series_groups(work_id);
         CREATE INDEX IF NOT EXISTS idx_videos_work ON videos(work_id);
         CREATE INDEX IF NOT EXISTS idx_videos_series ON videos(series_group_id);
-        CREATE INDEX IF NOT EXISTS idx_videos_episode ON videos(work_id, series_group_id, episode_sort_key);
+        CREATE INDEX IF NOT EXISTS idx_videos_episode
+            ON videos(work_id, series_group_id, episode_sort_key);
         CREATE INDEX IF NOT EXISTS idx_video_files_available ON video_files(is_available);
-        CREATE INDEX IF NOT EXISTS idx_user_work_favorite ON user_work_state(user_id, favorite);
-        CREATE INDEX IF NOT EXISTS idx_user_video_recent ON user_video_state(user_id, last_played_at);
-        CREATE INDEX IF NOT EXISTS idx_user_video_watched ON user_video_state(user_id, watched);
-        CREATE INDEX IF NOT EXISTS idx_user_video_favorite ON user_video_state(user_id, favorite);
-        CREATE INDEX IF NOT EXISTS idx_scan_discoveries_run ON scan_discoveries(scan_run_id);
+        CREATE INDEX IF NOT EXISTS idx_user_work_favorite
+            ON user_work_state(user_id, favorite);
+        CREATE INDEX IF NOT EXISTS idx_user_video_recent
+            ON user_video_state(user_id, last_played_at);
+        CREATE INDEX IF NOT EXISTS idx_user_video_watched
+            ON user_video_state(user_id, watched);
+        CREATE INDEX IF NOT EXISTS idx_user_video_favorite
+            ON user_video_state(user_id, favorite);
+        CREATE INDEX IF NOT EXISTS idx_scan_discoveries_run
+            ON scan_discoveries(scan_run_id);
         """
     )
+
+    if "watched_override" not in _column_names(connection, "user_video_state"):
+        connection.execute(
+            """
+            ALTER TABLE user_video_state
+            ADD COLUMN watched_override INTEGER
+            CHECK(watched_override IN (0, 1) OR watched_override IS NULL)
+            """
+        )
 
     row = connection.execute(
         "SELECT schema_version FROM schema_info ORDER BY rowid LIMIT 1"
