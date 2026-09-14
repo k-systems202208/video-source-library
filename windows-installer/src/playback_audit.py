@@ -129,6 +129,19 @@ def parse_audit_probe_payload(
     )
 
 
+def _sanitize_process_error(text: str, source: Path) -> str:
+    sanitized = str(text or "")
+    candidates = {str(source), source.as_posix()}
+    try:
+        candidates.add(str(source.resolve()))
+        candidates.add(source.resolve().as_posix())
+    except OSError:
+        pass
+    for candidate in sorted((value for value in candidates if value), key=len, reverse=True):
+        sanitized = sanitized.replace(candidate, "<video>")
+    return sanitized[:1000]
+
+
 def probe_for_audit(
     source: Path,
     *,
@@ -155,10 +168,10 @@ def probe_for_audit(
             creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) if os.name == "nt" else 0,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return AuditProbe(status="ERROR", route="NO_ROUTE", reason="PROBE_ERROR", error=f"{type(exc).__name__}: {exc}"[:1000])
+        return AuditProbe(status="ERROR", route="NO_ROUTE", reason="PROBE_ERROR", error=_sanitize_process_error(f"{type(exc).__name__}: {exc}", source))
     if completed.returncode != 0:
         error = completed.stderr.decode("utf-8", errors="replace").strip()
-        return AuditProbe(status="ERROR", route="NO_ROUTE", reason="PROBE_ERROR", error=error[:1000] or f"ffprobe exit code {completed.returncode}")
+        return AuditProbe(status="ERROR", route="NO_ROUTE", reason="PROBE_ERROR", error=_sanitize_process_error(error, source) or f"ffprobe exit code {completed.returncode}")
     try:
         payload = json.loads(completed.stdout.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -181,10 +194,10 @@ def verify_playback_sample(
     try:
         completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=timeout_seconds, creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) if os.name == "nt" else 0)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return False, f"{type(exc).__name__}: {exc}"[:1000]
+        return False, _sanitize_process_error(f"{type(exc).__name__}: {exc}", source)
     if completed.returncode != 0:
         message = completed.stderr.decode("utf-8", errors="replace").strip()
-        return False, message[:1000] or f"ffmpeg exit code {completed.returncode}"
+        return False, _sanitize_process_error(message, source) or f"ffmpeg exit code {completed.returncode}"
     return True, ""
 
 
@@ -215,6 +228,7 @@ def summarize_audit(items: list[dict[str, Any]]) -> dict[str, Any]:
         "probeErrors": sum(1 for item in items if item.get("reason") == "PROBE_ERROR"),
         "decodeErrors": sum(1 for item in items if item.get("reason") == "DECODE_ERROR"),
         "missing": sum(1 for item in items if item.get("reason") == "MISSING_FILE"),
+        "pathEscapes": sum(1 for item in items if item.get("reason") == "PATH_ESCAPE"),
         "noVideoStream": sum(1 for item in items if item.get("reason") == "NO_VIDEO_STREAM"),
         "withJapaneseAudio": sum(1 for item in items if item.get("hasJapaneseAudio")),
         "multiAudio": sum(1 for item in items if int(item.get("audioTrackCount") or 0) > 1),

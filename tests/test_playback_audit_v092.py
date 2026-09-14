@@ -12,10 +12,17 @@ SRC = ROOT / "windows-installer" / "src"
 sys.path.insert(0, str(SRC))
 
 from database import connect, initialize_database
-from playback_audit import AuditProbe, audit_real_library, parse_audit_probe_payload, summarize_audit, write_audit_reports
+from playback_audit import AuditProbe, _sanitize_process_error, audit_real_library, parse_audit_probe_payload, summarize_audit, write_audit_reports
 
 
 class PlaybackAuditV092Tests(unittest.TestCase):
+    def test_process_errors_do_not_expose_absolute_source_path(self) -> None:
+        source = Path(r"Z:\Files\shared\動画\secret.mkv")
+        message = f"{source}: Invalid data found when processing input"
+        sanitized = _sanitize_process_error(message, source)
+        self.assertNotIn(str(source), sanitized)
+        self.assertIn("<video>", sanitized)
+
     def test_second_japanese_audio_requires_transcode(self) -> None:
         payload = {
             "format": {"format_name": "matroska,webm"},
