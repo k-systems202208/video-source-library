@@ -140,8 +140,8 @@ class SecureServerTests(unittest.TestCase):
             "NO_PROXY": "",
         }
         with patch.dict(os.environ, proxy_env, clear=False):
-            exchange_url = request_local_owner_browser_url(base, self.secret)
-        self.assertTrue(exchange_url.startswith(base + "api/local-auth/exchange?token="))
+            browser_url = request_local_owner_browser_url(base, self.secret)
+        self.assertTrue(browser_url.startswith(base + "offline.html?owner-bootstrap=1#token="))
 
     def test_owner_token_endpoint_still_rejects_cross_origin_request(self):
         status, _, data = self.request(
