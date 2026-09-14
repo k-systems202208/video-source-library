@@ -1,0 +1,12 @@
+{
+  "source": "video_library_list.xlsx (2026-09-11, 4869 video files)",
+  "total": 4869,
+  "extensions": {
+    ".mkv": 2786,
+    ".mp4": 1898,
+    ".avi": 172,
+    ".webm": 11,
+    ".mpg": 1,
+    ".flv": 1
+  }
+}
