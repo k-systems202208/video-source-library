@@ -15,12 +15,9 @@
 - PC / スマートフォン向けレスポンシブUI
 
 ### Phase 3: 実ファイルスキャン / Range動画配信
-- SQLite schema 2
 - `scan_discoveries` で未登録動画 (`NEW_FILE`) を記録
 - 動画ルート再帰スキャン
 - `MATCHED` / `MISSING` / `NEW_FILE`
-- `GET /api/scan/status` / `POST /api/scan`
-- `GET /video/{videoId}`
 - HTTP Range (`206`, `416`)
 - パストラバーサル／ルート外symlink防止
 - HTML5 `<video>` によるブラウザ直接再生
@@ -28,33 +25,83 @@
 
 ### Phase 4: 利用者状態 / 視聴進捗
 - SQLite schema 3
-- ローカルオーナーを既定利用者として識別
 - 作品お気に入りと動画お気に入りを独立管理
 - 視聴済み / 未視聴の手動変更
 - 再生位置・再生回数・最終再生日時を保存
 - 90%以上再生または `ended` で自動視聴済み
-- 同一play sessionで再生回数を重複加算しない
 - 「続きから見る」「次に見る」「最近見た作品」「視聴履歴」
-- Web UIからお気に入り・視聴状態・続き再生を操作
+
+### Phase 5: Windows運用 / Tailscale / PWA / Backup
+- Windows Tkinterランチャー
+- local owner one-time token → `HttpOnly; SameSite=Strict` Cookie
+- Tailscale Serve identityで利用者を個別識別
+- serverはlocalhost (`127.0.0.1`) のみbind
+- Tailscale Serveの状態確認・有効化/無効化
+- PWA manifest / service worker / offline shell
+- Service Workerは `/api/*` と `/video/*` をキャッシュしない
+- SQLite手動バックアップ
+- 復元予約 → 次回起動時復元
+- 復元前自動バックアップと失敗時ロールバック
 
 対象拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
 MP4 / M4V / WebM は拡張子ベースで `DIRECT`、その他は `UNKNOWN` とします。Codec判定は後続Phaseで `ffprobe` を導入して精度を上げます。
 
-## ローカル起動
+## 推奨起動方法
+
+監査済みJSONを初回取り込み後、Windowsランチャーを使用します。
+
 ```powershell
-python windows-installer\src\metadata_importer.py metadata\video_library.json --database library.db
+python windows-installer\src\metadata_importer.py metadata\video_library.json --database "$env:LOCALAPPDATA\VideoLibrary\library.db"
+python windows-installer\src\launcher.py
+```
+
+ランチャーで動画フォルダーを選択して「開始」を押すと、localhostサーバーを起動し、owner認証済みブラウザを開きます。
+
+データ保存先:
+
+```text
+%LOCALAPPDATA%\VideoLibrary
+├─ library.db
+├─ config.json
+├─ runtime.json
+├─ Backups\
+└─ Logs\
+```
+
+## 認証と外部接続
+
+### localhost owner
+ランチャーが短寿命ワンタイムトークンを作成し、ブラウザで1回だけ交換してowner Cookieを発行します。control secretはブラウザへ渡しません。
+
+### Tailscale
+Tailscale Serveが付与する本人情報を `user_identities` へ紐付けます。利用者ごとのお気に入り・視聴位置・履歴は混ざりません。
+
+外部公開はTailscale Serveのみを前提とします。ルーターのポート開放、DMZ、Tailscale Funnelは使用しません。
+
+## PWA
+PWAがキャッシュするのはHTML/manifest/icon/offline shell等のアプリシェルのみです。
+
+以下はキャッシュ対象外です。
+- `/api/*`
+- `/video/*`
+- SQLite
+- `video_library.json`
+- 視聴履歴などの個人状態
+
+## バックアップ・復元
+
+ランチャーまたはAPIからSQLiteバックアップを作成できます。バックアップ作成後は `PRAGMA quick_check` とschemaを検証します。
+
+復元は稼働中DBを直接置換せず予約制です。次回ランチャー起動時に現DBを `library-pre-restore-*.db` へ退避してから復元し、失敗時はロールバックします。
+
+## 開発用直接起動
+
+```powershell
 python windows-installer\src\server.py --database library.db --video-root "D:\Videos"
 ```
 
-または `%LOCALAPPDATA%\VideoLibrary\config.json`:
-```json
-{"videoRoot":"D:\\Videos"}
-```
-
-ブラウザ: `http://127.0.0.1:8765/`
-
-Phase 4時点ではlocalhostアクセスをローカルオーナーとして扱います。Tailscale identity / owner-link / local-auth Cookieは後続Phaseで音楽版と同等方式へ移行します。
+control secretなしの直接起動はテスト／開発用localhost owner互換モードです。通常利用は `launcher.py` を使用してください。
 
 ## 個人データを公開しない
 実際の `video_library.json` と実動画は公開リポジトリ／CIへ含めません。CIでは同じ **440作品 / 4,869動画 / 動画0件4作品** の合成データを使用します。
@@ -75,6 +122,7 @@ CIはWindows / Python 3.11・3.13です。
 - [Phase 2](docs/05-phase2-implementation.md)
 - [Phase 3](docs/06-phase3-implementation.md)
 - [Phase 4](docs/07-phase4-implementation.md)
+- [Phase 5](docs/08-phase5-implementation.md)
 
 ## 正本
 - 動画そのもの: ユーザー指定の動画フォルダー
