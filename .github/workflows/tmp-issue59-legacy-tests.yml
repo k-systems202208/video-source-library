@@ -1,0 +1,31 @@
+name: Apply Issue 59 Legacy Test Fix
+
+on:
+  push:
+    branches: [feature/issue-59-playback-runtime]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/issue-59-playback-runtime
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Apply legacy test fixes
+        run: python scripts/fix_issue59_legacy_tests.py
+      - name: Commit non-workflow changes
+        run: |
+          rm -f scripts/fix_issue59_legacy_tests.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git reset .github/workflows/tmp-issue59-legacy-tests.yml
+          git commit -m "0.9.0: 旧HTTPテストを互換再生レイヤーから分離"
+          git push origin HEAD:feature/issue-59-playback-runtime
