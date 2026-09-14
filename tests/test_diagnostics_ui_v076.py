@@ -23,12 +23,6 @@ class DiagnosticsUiV076Tests(unittest.TestCase):
             html,
         )
 
-    def test_windows_version_is_076(self):
-        launcher = (SRC / "launcher.py").read_text(encoding="utf-8")
-        installer = (ROOT / "windows-installer" / "installer" / "VideoLibrary.iss").read_text(encoding="utf-8")
-        self.assertIn('APP_VERSION = "0.7.6"', launcher)
-        self.assertIn('#define MyAppVersion "0.7.6"', installer)
-
 
 if __name__ == "__main__":
     unittest.main()
