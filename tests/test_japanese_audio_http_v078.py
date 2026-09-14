@@ -84,7 +84,7 @@ class JapaneseAudioHttpV078Tests(unittest.TestCase):
         self.video_root = base / "videos"
         self.video_root.mkdir()
         metadata_path = base / "fixture.json"
-        payload = build_metadata(work_count=1, video_count=1)
+        payload = build_metadata(work_count=4, video_count=4)
         metadata_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         import_file(metadata_path, self.db_path)
 
