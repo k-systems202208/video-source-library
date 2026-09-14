@@ -1,16 +1,14 @@
 # tools
 
-`ffprobe.exe` をこのフォルダーへ置くと、PyInstallerビルド時にWindowsアプリへ同梱されます。
+`ffmpeg.exe` と `ffprobe.exe` をこのフォルダーへ置くと、PyInstallerビルド時にWindowsアプリへ同梱されます。
 
-公開リポジトリにはFFmpeg/ffprobeの実行バイナリを含めません。理由は、配布元・ビルド構成・ライセンス条件をアプリ側で固定しないためです。
+公開リポジトリにはFFmpeg/ffprobeの実行バイナリをコミットしません。GitHub ActionsのWindows InstallerジョブではChocolateyのFFmpegパッケージから実バイナリを一時配置し、生成するインストーラーへ同梱します。
 
 実行時の検索順は以下です。
 
-1. `VIDEO_LIBRARY_FFPROBE` 環境変数
-2. アプリ配置先の `ffprobe.exe`
-3. アプリ配置先の `tools/ffprobe.exe`
-4. PATH上の `ffprobe.exe` / `ffprobe`
+1. `VIDEO_LIBRARY_FFMPEG` / `VIDEO_LIBRARY_FFPROBE` 環境変数
+2. アプリ配置先の `ffmpeg.exe` / `ffprobe.exe`
+3. アプリ配置先の `tools/ffmpeg.exe` / `tools/ffprobe.exe`
+4. PATH上のFFmpeg / ffprobe
 
-ffprobeが見つからない場合もアプリは動作します。動画の存在確認・Range配信・視聴状態管理は継続し、技術情報の `probeStatus` が `NOT_AVAILABLE` になります。
-
-ffprobeは解析専用です。Phase 6では動画変換・トランスコードには使用しません。
+ffprobeは動画Codec解析に使用します。ffmpegはAVI / MKV / MPG / FLVなど、ブラウザが直接再生できない動画や非対応音声を、元動画を変更せずH.264 + AAC MP4の再生キャッシュへ変換するために使用します。
