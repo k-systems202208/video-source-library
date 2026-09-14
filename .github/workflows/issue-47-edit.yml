@@ -1,0 +1,149 @@
+name: Issue 47 one-shot edit
+
+on:
+  push:
+    branches:
+      - feature/issue-47-diagnostics-subtitle-judgement
+
+permissions:
+  contents: write
+
+jobs:
+  edit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/issue-47-diagnostics-subtitle-judgement
+          fetch-depth: 0
+      - name: Apply 0.7.6 diagnostics display change
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          diagnostics = Path('windows-installer/src/diagnostics.html')
+          text = diagnostics.read_text(encoding='utf-8')
+          old = "function renderSummary(d){const s=d.summary||{},scan=d.scan||{};$('scanInfo').textContent=scan.runId?`Scan #${scan.runId} · ${scan.completedAt||''} · 動画 ${scan.filesMatched}/${scan.filesFound} · 字幕 ${scan.subtitlesMatched}/${scan.subtitlesFound}`:'成功したスキャンがありません';"
+          new = "function renderSummary(d){const s=d.summary||{},scan=d.scan||{};const judged=(Number(scan.subtitlesMatched)||0)+(Number(s.orphanSubtitles)||0);$('scanInfo').textContent=scan.runId?`Scan #${scan.runId} · ${scan.completedAt||''} · 動画 ${scan.filesMatched}/${scan.filesFound} · 字幕判定 ${judged}/${scan.subtitlesFound}（紐付 ${scan.subtitlesMatched}・対応動画なし ${s.orphanSubtitles||0}）`:'成功したスキャンがありません';"
+          if old not in text:
+              raise SystemExit('diagnostics renderSummary target not found')
+          diagnostics.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          launcher = Path('windows-installer/src/launcher.py')
+          text = launcher.read_text(encoding='utf-8')
+          old = 'APP_VERSION = "0.7.5"'
+          new = 'APP_VERSION = "0.7.6"'
+          if old not in text:
+              raise SystemExit('launcher version target not found')
+          launcher.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          installer = Path('windows-installer/installer/VideoLibrary.iss')
+          text = installer.read_text(encoding='utf-8')
+          old = '#define MyAppVersion "0.7.5"'
+          new = '#define MyAppVersion "0.7.6"'
+          if old not in text:
+              raise SystemExit('installer version target not found')
+          installer.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          test = Path('tests/test_diagnostics_ui_v076.py')
+          test.write_text(r'''from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "windows-installer" / "src"
+
+
+class DiagnosticsUiV076Tests(unittest.TestCase):
+    def test_scan_header_counts_orphans_as_judged_subtitles(self):
+        html = (SRC / "diagnostics.html").read_text(encoding="utf-8")
+        self.assertIn(
+            "const judged=(Number(scan.subtitlesMatched)||0)+(Number(s.orphanSubtitles)||0);",
+            html,
+        )
+        self.assertIn(
+            "字幕判定 ${judged}/${scan.subtitlesFound}（紐付 ${scan.subtitlesMatched}・対応動画なし ${s.orphanSubtitles||0}）",
+            html,
+        )
+        self.assertNotIn(
+            "· 字幕 ${scan.subtitlesMatched}/${scan.subtitlesFound}",
+            html,
+        )
+
+    def test_windows_version_is_076(self):
+        launcher = (SRC / "launcher.py").read_text(encoding="utf-8")
+        installer = (ROOT / "windows-installer" / "installer" / "VideoLibrary.iss").read_text(encoding="utf-8")
+        self.assertIn('APP_VERSION = "0.7.6"', launcher)
+        self.assertIn('#define MyAppVersion "0.7.6"', installer)
+
+
+if __name__ == "__main__":
+    unittest.main()
+''', encoding='utf-8')
+
+          doc = Path('docs/26-0.7.6-diagnostics-subtitle-judgement.md')
+          doc.write_text('''# 0.7.6 診断ヘッダーの字幕判定表示を明確化
+
+## 背景
+
+0.7.5 の実機確認では、対応字幕 1,234 件のうち 1,227 件が動画へ紐付き、残り 7 件は「対応動画なし」として正常系へ分離できた。
+
+従来の診断ヘッダーは `字幕 1227/1234` と表示していたため、7件が未解決に見える余地があった。
+
+## 変更内容
+
+診断画面上部を次の形式へ変更する。
+
+```text
+動画 4869/4869・字幕判定 1234/1234（紐付 1227・対応動画なし 7）
+```
+
+字幕判定済み件数は次の式で表示する。
+
+```text
+subtitlesMatched + orphanSubtitles
+```
+
+総数は従来どおり `subtitlesFound` を使用する。
+
+## 変更しないもの
+
+- 字幕マッチング処理
+- `subtitles.video_id` の更新ロジック
+- 対応動画なし判定ロジック
+- MISSING / NEW_FILE / 未対応字幕 / エラーの分類
+- 元の動画・字幕ファイル
+
+したがって 0.7.6 は診断表示のみの改善である。
+
+## 実機期待値
+
+0.7.5 で確認済みのライブラリでは次の表示を期待する。
+
+- 動画: 4,869 / 4,869
+- 字幕判定: 1,234 / 1,234
+  - 紐付: 1,227
+  - 対応動画なし: 7
+- 未紐付字幕: 0
+- 未対応字幕: 3
+- エラー: 0
+
+## テスト
+
+`tests/test_diagnostics_ui_v076.py` で以下を固定する。
+
+- 判定済み字幕が `subtitlesMatched + orphanSubtitles` であること
+- ヘッダーに「字幕判定」「紐付」「対応動画なし」を表示すること
+- 旧 `字幕 matched/found` 表示へ戻らないこと
+- Windows版とインストーラーのバージョンが 0.7.6 で一致すること
+''', encoding='utf-8')
+          PY
+
+          rm .github/workflows/issue-47-edit.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Issue #47: 診断ヘッダーの字幕判定表示を明確化"
+          git push origin HEAD:feature/issue-47-diagnostics-subtitle-judgement
