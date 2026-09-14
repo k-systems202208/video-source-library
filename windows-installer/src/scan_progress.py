@@ -55,7 +55,7 @@ class ScanProgressStore:
             self._state.update(
                 running=True,
                 phase="PREPARING",
-                message="スキャンを準備中",
+                message="初期化中（DB・動画フォルダーを確認しています）",
                 startedAt=_now_iso(),
             )
 
@@ -108,6 +108,8 @@ class ScanProgressStore:
         eta_ms = None
         if value["running"] and current > 0 and total > current and elapsed_ms > 0:
             eta_ms = int(elapsed_ms * (total - current) / current)
+        if value["running"] and value.get("phase") == "PREPARING" and elapsed_ms >= 5000:
+            value["message"] = "初期化中（ネットワークドライブまたはDBの応答を待っています）"
         value["elapsedMs"] = elapsed_ms
         value["percent"] = percent
         value["etaMs"] = eta_ms
