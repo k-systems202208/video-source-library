@@ -7,6 +7,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -19,6 +20,8 @@ from database import SCHEMA_VERSION, connect, initialize_database
 from metadata_importer import import_file
 from sample_metadata import build_metadata
 from scanner import latest_scan_status, normalize_relative_path, resolve_video_file, scan_library
+from playback_compat import PlaybackPreparation
+import server as server_module
 from server import create_server, parse_range_header
 
 class Phase3ScannerTests(unittest.TestCase):
@@ -59,8 +62,9 @@ class Phase3HttpTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(); base=Path(self.temp.name); self.db_path=base/'library.db'; self.video_root=base/'videos'; self.video_root.mkdir(); p=base/'fixture.json'; payload=build_metadata(work_count=6,video_count=6); p.write_text(json.dumps(payload,ensure_ascii=False),encoding='utf-8'); import_file(p,self.db_path); first=payload['works'][0]['files'][0]; self.data=b'0123456789abcdef'; rel=normalize_relative_path(first['relative_path']); f=self.video_root.joinpath(*rel.split('/')); f.parent.mkdir(parents=True,exist_ok=True); f.write_bytes(self.data)
         with connect(self.db_path) as c: scan_library(c,self.video_root); self.video_id=int(c.execute('SELECT id FROM videos WHERE external_file_no=1').fetchone()[0])
+        self.playback_patch=mock.patch.object(server_module,'prepare_browser_playback',side_effect=lambda source,extension,video_codec,audio_codec,cache_dir,**kwargs:PlaybackPreparation(path=Path(source),content_type='video/mp4',transcoded=False)); self.playback_patch.start()
         self.server=create_server(self.db_path,host='127.0.0.1',port=0,video_root=self.video_root); self.thread=threading.Thread(target=self.server.serve_forever,daemon=True); self.thread.start(); self.base_url=f'http://127.0.0.1:{self.server.server_port}'
-    def tearDown(self): self.server.shutdown(); self.server.server_close(); self.thread.join(timeout=2); self.temp.cleanup()
+    def tearDown(self): self.server.shutdown(); self.server.server_close(); self.thread.join(timeout=2); self.playback_patch.stop(); self.temp.cleanup()
     def test_full_and_range_video_delivery(self):
         with urlopen(f'{self.base_url}/video/{self.video_id}') as r: self.assertEqual(r.status,200); self.assertEqual(r.headers['Accept-Ranges'],'bytes'); self.assertEqual(r.read(),self.data)
         req=Request(f'{self.base_url}/video/{self.video_id}',headers={'Range':'bytes=2-5'})

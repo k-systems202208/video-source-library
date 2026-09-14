@@ -19,6 +19,7 @@ from identity_service import local_owner_user, resolve_tailscale_user
 from library_service import get_video, get_work, library_stats, list_work_videos, list_works
 from local_auth import LocalOwnerAuth, cookie_value, session_cookie_header
 from matroska_audio import apply_patch_to_chunk, preferred_japanese_audio_patch
+from playback_compat import prepare_browser_playback
 from scan_diagnostics import diagnostics_csv_bytes, diagnostics_json_bytes, scan_diagnostics
 from scan_progress import ScanProgressStore
 from scan_runner import scan_library
@@ -268,11 +269,30 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                 return
             with connect(db_path) as connection:
                 resolved = resolve_video_file(connection, root_path, video_id)
+                video = get_video(connection, video_id)
             if resolved is None:
                 self._error(404, "VIDEO_FILE_NOT_FOUND", "動画ファイルが見つかりません。")
                 return
             path, extension = resolved
-            audio_patch = preferred_japanese_audio_patch(path) if extension.casefold().lstrip(".") in {"mkv", "webm"} else None
+            file_info = (video or {}).get("file") or {}
+            try:
+                prepared = prepare_browser_playback(
+                    path,
+                    "." + extension.lstrip("."),
+                    file_info.get("videoCodec"),
+                    file_info.get("audioCodec"),
+                    app_data_root / "PlaybackCache",
+                )
+            except RuntimeError as exc:
+                self._error(503, "PLAYBACK_PREPARATION_FAILED", f"再生用動画の準備に失敗しました。 {exc}")
+                return
+            path = prepared.path
+            extension = path.suffix
+            audio_patch = (
+                preferred_japanese_audio_patch(path)
+                if not prepared.transcoded and extension.casefold() in {".mkv", ".webm"}
+                else None
+            )
             try:
                 size = path.stat().st_size
                 byte_range = parse_range_header(self.headers.get("Range"), size)
@@ -285,7 +305,10 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             start, end = (0, size - 1) if byte_range is None else byte_range
             length = end - start + 1
             self.send_response(status)
-            self.send_header("Content-Type", mime_type_for_extension("." + extension.lstrip(".")))
+            self.send_header("Content-Type", prepared.content_type)
+            self.send_header("X-Video-Library-Playback", "transcoded" if prepared.transcoded else "direct")
+            if prepared.audio_language:
+                self.send_header("X-Video-Library-Audio-Language", prepared.audio_language)
             self.send_header("Accept-Ranges", "bytes"); self.send_header("Content-Length", str(length))
             if audio_patch is not None:
                 self.send_header("X-Video-Library-Audio-Preference", "ja")

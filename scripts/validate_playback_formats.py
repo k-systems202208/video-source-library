@@ -132,6 +132,45 @@ def main() -> int:
             mode = "TRANSCODE" if prepared.transcoded else "DIRECT"
             results.append(f"{extension.upper():5} {extension_counts[extension]:4} files -> {mode:9} {out_video}+{out_audio}")
 
+        dual = root / "dual-audio-japanese-second.mkv"
+        _run([
+            ffmpeg,
+            "-nostdin", "-y", "-v", "error",
+            "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=12",
+            "-f", "lavfi", "-i", "sine=frequency=330:sample_rate=48000",
+            "-f", "lavfi", "-i", "sine=frequency=660:sample_rate=48000",
+            "-t", "0.7",
+            "-map", "0:v:0", "-map", "1:a:0", "-map", "2:a:0",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "flac",
+            "-metadata:s:a:0", "language=eng",
+            "-metadata:s:a:1", "language=jpn",
+            str(dual),
+        ])
+        dual_video, dual_audio = _probe(ffprobe_path, dual)
+        dual_prepared = prepare_browser_playback(
+            dual, ".mkv", dual_video, dual_audio, cache, ffmpeg_path=ffmpeg
+        )
+        out_video, out_audio = _probe(ffprobe_path, dual_prepared.path)
+        if out_video != "h264" or out_audio != "aac" or dual_prepared.audio_language != "ja":
+            raise AssertionError(
+                f"Japanese second audio was not selected/transcoded: {out_video}+{out_audio} lang={dual_prepared.audio_language}"
+            )
+        language_payload = json.loads(_run([
+            ffprobe_path, "-v", "error", "-select_streams", "a:0",
+            "-show_entries", "stream_tags=language", "-of", "json",
+            str(dual_prepared.path),
+        ]).stdout.decode("utf-8"))
+        audio_streams = language_payload.get("streams") or []
+        language = str(((audio_streams[0].get("tags") or {}).get("language") if audio_streams else "") or "").casefold()
+        if language not in {"jpn", "ja"}:
+            raise AssertionError(f"Japanese language tag missing after transcode: {language!r}")
+        _run([
+            ffmpeg, "-nostdin", "-v", "error", "-i", str(dual_prepared.path),
+            "-map", "0:v:0", "-map", "0:a:0", "-t", "0.2", "-f", "null", "-",
+        ])
+        results.append("DUAL  Japanese second audio -> TRANSCODE h264+aac (jpn)")
+
         print("Playback format CI: all real-library extensions are playable")
         for line in results:
             print("  " + line)

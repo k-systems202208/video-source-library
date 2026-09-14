@@ -13,9 +13,10 @@ assets = [
     "icon.svg",
 ]
 datas = [(str(SRC / name), ".") for name in assets]
-ffprobe = TOOLS / "ffprobe.exe"
-if ffprobe.is_file():
-    datas.append((str(ffprobe), "tools"))
+for tool_name in ("ffprobe.exe", "ffmpeg.exe"):
+    tool = TOOLS / tool_name
+    if tool.is_file():
+        datas.append((str(tool), "tools"))
 
 a = Analysis(
     [str(SRC / "launcher.py")],

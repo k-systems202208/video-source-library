@@ -56,6 +56,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Stage FFmpeg and ffprobe for installer
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:ChocolateyInstall\lib\ffmpeg")) {
+            choco install ffmpeg --yes --no-progress
+          }
+          $ffmpegRoot = Join-Path $env:ChocolateyInstall 'lib\ffmpeg\tools'
+          $ffmpeg = Get-ChildItem $ffmpegRoot -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          $ffprobe = Get-ChildItem $ffmpegRoot -Recurse -Filter ffprobe.exe | Select-Object -First 1
+          if (-not $ffmpeg -or -not $ffprobe) { throw 'real FFmpeg binaries were not found' }
+          $target = '.\windows-installer\tools'
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          Copy-Item $ffmpeg.FullName (Join-Path $target 'ffmpeg.exe') -Force
+          Copy-Item $ffprobe.FullName (Join-Path $target 'ffprobe.exe') -Force
+          Write-Host "FFmpeg staged: $($ffmpeg.FullName)"
+          Write-Host "ffprobe staged: $($ffprobe.FullName)"
       - name: Ensure Inno Setup 6
         shell: pwsh
         run: |
@@ -70,6 +86,8 @@ jobs:
         shell: pwsh
         run: |
           if (-not (Test-Path '.\windows-installer\dist\VideoLibrary\VideoLibrary.exe')) { throw 'VideoLibrary.exe not found' }
+          if (-not (Test-Path '.\windows-installer\dist\VideoLibrary\_internal\tools\ffmpeg.exe') -and -not (Test-Path '.\windows-installer\dist\VideoLibrary\tools\ffmpeg.exe')) { throw 'bundled ffmpeg.exe not found' }
+          if (-not (Test-Path '.\windows-installer\dist\VideoLibrary\_internal\tools\ffprobe.exe') -and -not (Test-Path '.\windows-installer\dist\VideoLibrary\tools\ffprobe.exe')) { throw 'bundled ffprobe.exe not found' }
           $setup = Get-ChildItem '.\windows-installer\output\VideoLibrary-*-setup.exe' | Select-Object -First 1
           if (-not $setup) { throw 'setup.exe not found' }
           Write-Host "Installer: $($setup.FullName)"
