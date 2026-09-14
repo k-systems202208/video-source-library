@@ -27,9 +27,30 @@ jobs:
       - name: Validate synthetic 440/4869 import
         run: python scripts/validate_ci_fixture.py
 
+  playback-formats:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Ensure FFmpeg and ffprobe
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg --yes --no-progress
+            $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+            $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+            $env:Path = "$machinePath;$userPath"
+          }
+          ffmpeg -version | Select-Object -First 1
+          ffprobe -version | Select-Object -First 1
+      - name: Validate all real-library video formats
+        run: python scripts/validate_playback_formats.py
+
   installer:
     runs-on: windows-latest
-    needs: test
+    needs: [test, playback-formats]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
