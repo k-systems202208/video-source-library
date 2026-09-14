@@ -19,6 +19,9 @@ LANGUAGE_ALIASES = {
 }
 FLAG_TOKENS = {"forced", "default", "sdh", "cc"}
 _PREFIX_BOUNDARIES = {".", " ", "_", "-", "[", "(", "（"}
+# The existing product intentionally refuses semantic alternate tracks such as
+# movie.commentary.srt. Keep that guarantee even when a work has one video.
+_NON_PRIMARY_TOKENS = {"commentary"}
 
 
 @dataclass(frozen=True)
@@ -49,12 +52,16 @@ def _work_root(value: str) -> tuple[str, ...]:
     return tuple(_normalized_text(part) for part in parts[:-1])
 
 
-def _metadata_from_suffix(suffix: str) -> tuple[str | None, bool, bool]:
-    tokens = [
+def _suffix_tokens(value: str) -> list[str]:
+    return [
         token.casefold()
-        for token in re.split(r"[.\s_\-\[\]()（）]+", suffix)
+        for token in re.split(r"[.\s_\-\[\]()（）]+", value)
         if token
     ]
+
+
+def _metadata_from_suffix(suffix: str) -> tuple[str | None, bool, bool]:
+    tokens = _suffix_tokens(suffix)
     language = None
     is_forced = False
     is_default = False
@@ -90,6 +97,14 @@ def _prefix_remainder(subtitle_stem: str, video_stem: str) -> str | None:
     if subtitle_stem[len(video_stem)] not in _PREFIX_BOUNDARIES:
         return None
     return subtitle_stem[len(video_stem) :]
+
+
+def _is_non_primary_track(subtitle_stem: str, work_videos: list[str]) -> bool:
+    for video in work_videos:
+        remainder = _prefix_remainder(subtitle_stem, _normalized_stem(video))
+        if remainder is not None and any(token in _NON_PRIMARY_TOKENS for token in _suffix_tokens(remainder)):
+            return True
+    return False
 
 
 def _episode_key(value: str) -> tuple[int | None, int] | None:
@@ -148,11 +163,10 @@ def _metadata_for_match(subtitle_stem: str, suffix: str = "") -> tuple[str | Non
     # Prefer an explicit suffix, but also inspect the subtitle stem so names like
     # ``jpn.srt`` in a one-video work still keep the language metadata.
     language, is_forced, is_default = _metadata_from_suffix(suffix)
-    if language is None or not (is_forced and is_default):
-        stem_language, stem_forced, stem_default = _metadata_from_suffix(subtitle_stem)
-        language = language or stem_language
-        is_forced = is_forced or stem_forced
-        is_default = is_default or stem_default
+    stem_language, stem_forced, stem_default = _metadata_from_suffix(subtitle_stem)
+    language = language or stem_language
+    is_forced = is_forced or stem_forced
+    is_default = is_default or stem_default
     return language, is_forced, is_default
 
 
@@ -192,6 +206,11 @@ def match_subtitle_to_video(
 
     work_videos = _work_videos(subtitle_relative_path, video_relative_paths)
     if not work_videos:
+        return SubtitleMatch(None, None, False, False, "UNMATCHED")
+
+    # Semantic alternate tracks remain manual even when another structural rule
+    # below could otherwise identify a single video.
+    if _is_non_primary_track(subtitle_stem, work_videos):
         return SubtitleMatch(None, None, False, False, "UNMATCHED")
 
     # 2. Subtitle packs are commonly stored under Subs/Subtitles/SubsExtracted.
