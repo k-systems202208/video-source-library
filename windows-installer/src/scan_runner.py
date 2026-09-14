@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from database import now_iso
 from scanner import SUPPORTED_VIDEO_EXTENSIONS, normalize_relative_path, scan_library as _scan_library
+from subtitle_tools import UNSUPPORTED_SUBTITLE_EXTENSIONS
 
 ProgressCallback = Callable[[dict[str, Any]], None]
 
@@ -151,6 +152,52 @@ def repair_unique_metadata_paths(connection, video_root: Path | str) -> dict[str
     }
 
 
+def record_unsupported_subtitles(connection, video_root: Path | str, scan_run_id: int) -> int:
+    """Record subtitle formats known to exist but not supported by the web player.
+
+    The files are not inserted into the normal subtitles table and therefore do
+    not change subtitles_found/matched/unmatched. They are diagnostics only.
+    """
+    root = Path(video_root).expanduser().resolve()
+    count = 0
+    stamp = now_iso()
+    for directory, dirnames, filenames in os.walk(root, followlinks=False):
+        directory_path = Path(directory)
+        dirnames[:] = [name for name in dirnames if not (directory_path / name).is_symlink()]
+        for filename in filenames:
+            path = directory_path / filename
+            extension = path.suffix.casefold()
+            if extension not in UNSUPPORTED_SUBTITLE_EXTENSIONS:
+                continue
+            try:
+                resolved = path.resolve(strict=True)
+                resolved.relative_to(root)
+                relative = normalize_relative_path(path.relative_to(root))
+                stat = resolved.stat()
+            except (OSError, ValueError):
+                continue
+            connection.execute(
+                """
+                INSERT INTO scan_discoveries(
+                    scan_run_id, relative_path, extension,
+                    file_size, modified_time_ns, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, 'UNSUPPORTED_SUBTITLE', ?)
+                """,
+                (
+                    scan_run_id,
+                    relative,
+                    extension.lstrip(".").upper(),
+                    int(stat.st_size),
+                    int(stat.st_mtime_ns),
+                    stamp,
+                ),
+            )
+            count += 1
+    if count:
+        connection.commit()
+    return count
+
+
 def scan_library(
     connection,
     video_root: Path | str,
@@ -181,4 +228,9 @@ def scan_library(
     )
     result["pathsRepaired"] = int(repair["repaired"])
     result["pathRepairAmbiguous"] = int(repair["ambiguous"])
+    result["unsupportedSubtitles"] = record_unsupported_subtitles(
+        connection,
+        video_root,
+        int(result["runId"]),
+    )
     return result
