@@ -1,0 +1,65 @@
+name: Apply Issue 64 Playback Audit Launcher
+
+on:
+  push:
+    branches: [feature/issue-64-v092-playback-audit]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/issue-64-v092-playback-audit
+      - name: Patch launcher
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('windows-installer/src/launcher.py')
+          s = p.read_text(encoding='utf-8')
+
+          def rep(old, new, count=1):
+              global s
+              actual = s.count(old)
+              if actual != count:
+                  raise SystemExit(f'anchor count mismatch: expected {count}, got {actual}: {old[:80]!r}')
+              s = s.replace(old, new, count)
+
+          rep(
+              'from playback_cache import DEFAULT_CACHE_LIMIT_BYTES, clear_playback_cache, format_bytes, playback_cache_stats\n',
+              'from playback_audit import audit_real_library\nfrom playback_cache import DEFAULT_CACHE_LIMIT_BYTES, clear_playback_cache, format_bytes, playback_cache_stats\n',
+          )
+          rep(
+              'PLAYBACK_CACHE_PATH = DATA_ROOT / "PlaybackCache"\n',
+              'PLAYBACK_CACHE_PATH = DATA_ROOT / "PlaybackCache"\nPLAYBACK_AUDIT_OUTPUT_PATH = DATA_ROOT / "diagnostics"\n',
+          )
+          rep(
+              '        self.scan_thread: threading.Thread | None = None\n',
+              '        self.scan_thread: threading.Thread | None = None\n        self.audit_thread: threading.Thread | None = None\n        self.audit_started_monotonic: float | None = None\n',
+          )
+          rep(
+              '        ttk.Button(footer, text="バックアップ作成", command=self.backup).pack(side="left")\n        ttk.Button(footer, text="状態再確認", command=self.refresh_local_status).pack(side="left", padx=8)\n',
+              '        ttk.Button(footer, text="バックアップ作成", command=self.backup).pack(side="left")\n        self.audit_button = ttk.Button(footer, text="全件再生監査", command=self.start_playback_audit)\n        self.audit_button.pack(side="left", padx=8)\n        ttk.Button(footer, text="状態再確認", command=self.refresh_local_status).pack(side="left")\n',
+          )
+          rep(
+              '        self.import_button.configure(state=state)\n',
+              '        self.import_button.configure(state=state)\n        self.audit_button.configure(state=state)\n',
+          )
+          rep(
+              '    def open_data_folder(self) -> None:\n',
+              '''    def start_playback_audit(self) -> None:\n        if self.server is not None or self.scan_thread is not None or self.audit_thread is not None:\n            messagebox.showinfo(APP_NAME, "全件再生監査の前にライブラリを停止してください。")\n            return\n        root_text = self.video_root.get().strip()\n        root = Path(root_text).expanduser() if root_text and root_text != "未設定" else Path()\n        if not root.is_dir() or not DATABASE_PATH.is_file():\n            messagebox.showerror(APP_NAME, "動画フォルダーまたはライブラリDBを確認してください。")\n            return\n        if find_ffprobe() is None:\n            messagebox.showerror(APP_NAME, "ffprobeが見つからないため全件再生監査を実行できません。")\n            return\n        if not messagebox.askyesno(\n            APP_NAME,\n            "登録済み動画を全件ffprobe解析します。\\n数分以上かかる場合があります。開始しますか？",\n        ):\n            return\n\n        self._set_busy(True)\n        self.audit_started_monotonic = time.monotonic()\n        self.status.set("全件再生監査を実行中です")\n        self.scan_status.set("再生監査中 — ffprobeで登録動画を確認しています")\n        self.scan_counts.set("DIRECT 0 / 互換変換 0 / 再生経路なし 0")\n        self.scan_current.set("現在処理中: —")\n        self.scan_elapsed.set("経過: 0:00")\n        self.scan_progress.configure(mode="determinate", maximum=1)\n        self.scan_progress["value"] = 0\n        self._append_log("=" * 72)\n        self._append_log("v1.0前 全件再生監査を開始します。元動画は変更しません。")\n        self.audit_thread = threading.Thread(\n            target=self._playback_audit_worker,\n            args=(root,),\n            daemon=True,\n            name="VideoLibraryPlaybackAudit",\n        )\n        self.audit_thread.start()\n\n    def _playback_audit_worker(self, root: Path) -> None:\n        try:\n            report = audit_real_library(\n                DATABASE_PATH,\n                root,\n                PLAYBACK_AUDIT_OUTPUT_PATH,\n                progress_callback=self._audit_progress_from_worker,\n            )\n        except Exception as exc:\n            self.after(0, lambda e=exc: self._playback_audit_failed(e))\n            return\n        self.after(0, lambda r=report: self._playback_audit_succeeded(r))\n\n    def _audit_progress_from_worker(self, progress: dict[str, Any]) -> None:\n        snapshot = dict(progress)\n        self.after(0, lambda p=snapshot: self._apply_audit_progress(p))\n\n    def _apply_audit_progress(self, progress: dict[str, Any]) -> None:\n        current = int(progress.get("current") or 0)\n        total = int(progress.get("total") or 0)\n        direct = int(progress.get("direct") or 0)\n        transcode = int(progress.get("transcode") or 0)\n        no_route = int(progress.get("noRoute") or 0)\n        current_item = str(progress.get("currentItem") or "—")\n        self.scan_status.set(f"再生監査中 — {current:,} / {total:,}")\n        self.scan_counts.set(f"DIRECT {direct:,} / 互換変換 {transcode:,} / 再生経路なし {no_route:,}")\n        self.scan_current.set(f"現在処理中: {current_item}")\n        self.scan_progress.configure(mode="determinate", maximum=max(1, total))\n        self.scan_progress["value"] = min(current, total)\n        if self.audit_started_monotonic is not None:\n            seconds = max(0, int(time.monotonic() - self.audit_started_monotonic))\n            self.scan_elapsed.set(f"経過: {seconds // 60}:{seconds % 60:02d}")\n        if current and (current % 250 == 0 or current == total):\n            self._append_log(\n                f"監査 {current:,}/{total:,}: DIRECT {direct:,} / 互換変換 {transcode:,} / 再生経路なし {no_route:,}"\n            )\n\n    def _playback_audit_succeeded(self, report: dict[str, Any]) -> None:\n        self.audit_thread = None\n        summary = report.get("summary") or {}\n        total = int(summary.get("total") or 0)\n        direct = int(summary.get("direct") or 0)\n        transcode = int(summary.get("transcode") or 0)\n        no_route = int(summary.get("noRoute") or 0)\n        self.scan_progress.configure(mode="determinate", maximum=max(1, total))\n        self.scan_progress["value"] = total\n        self.scan_status.set("完了 — 全件再生監査が完了しました")\n        self.scan_counts.set(f"DIRECT {direct:,} / 互換変換 {transcode:,} / 再生経路なし {no_route:,}")\n        self.scan_current.set("現在処理中: 完了")\n        self.status.set("全件再生監査が完了しました")\n        self._append_log(\n            f"全件再生監査完了: {total:,}件 / DIRECT {direct:,} / 互換変換 {transcode:,} / 再生経路なし {no_route:,}"\n        )\n        self._append_log(f"JSON: {report.get('jsonReport', '')}")\n        self._append_log(f"CSV : {report.get('csvReport', '')}")\n        self._set_busy(False)\n        message = (\n            f"全件再生監査が完了しました。\\n\\n"\n            f"対象: {total:,}件\\nDIRECT: {direct:,}件\\n互換変換: {transcode:,}件\\n再生経路なし: {no_route:,}件\\n\\n"\n            f"レポート: {PLAYBACK_AUDIT_OUTPUT_PATH}"\n        )\n        if no_route:\n            messagebox.showwarning(APP_NAME, message)\n        else:\n            messagebox.showinfo(APP_NAME, message + "\\n\\nv1.0受入条件（再生経路なし0件）を満たしています。")\n\n    def _playback_audit_failed(self, exc: Exception) -> None:\n        self.audit_thread = None\n        self.status.set("全件再生監査に失敗しました")\n        self.scan_status.set("失敗 — 全件再生監査を完了できませんでした")\n        self._append_log(f"AUDIT ERROR: {type(exc).__name__}: {exc}")\n        self._set_busy(False)\n        messagebox.showerror(APP_NAME, f"全件再生監査に失敗しました。\\n{exc}")\n\n    def open_data_folder(self) -> None:\n''',
+          )
+
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Commit launcher
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add windows-installer/src/launcher.py
+          git commit -m "0.9.2: Windowsランチャーに全件再生監査を追加"
+          git push origin HEAD:feature/issue-64-v092-playback-audit
