@@ -24,11 +24,16 @@ def load_config(path: Path | str | None = None) -> dict[str, Any]:
     return payload
 
 
-def configured_video_root(
-    *,
-    config_path: Path | str | None = None,
-    override: Path | str | None = None,
-) -> Path | None:
+def save_config(payload: dict[str, Any], path: Path | str | None = None) -> Path:
+    config_path = Path(path) if path is not None else default_config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    temp = config_path.with_suffix(config_path.suffix + ".tmp")
+    temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temp, config_path)
+    return config_path
+
+
+def configured_video_root(*, config_path: Path | str | None = None, override: Path | str | None = None) -> Path | None:
     if override is not None:
         text = str(override).strip()
         return Path(text).expanduser() if text else None
