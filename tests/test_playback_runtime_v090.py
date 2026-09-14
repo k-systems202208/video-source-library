@@ -61,14 +61,13 @@ class PlaybackRuntimeV090Tests(unittest.TestCase):
         self.assertIn("Copy-Item $ffmpeg.FullName", ci)
         self.assertIn("Copy-Item $ffprobe.FullName", ci)
 
-    def test_version_is_090(self) -> None:
-        spec = importlib.util.spec_from_file_location("app_version_v090", SRC / "app_version.py")
+    def test_runtime_and_installer_versions_match(self) -> None:
+        spec = importlib.util.spec_from_file_location("app_version_runtime", SRC / "app_version.py")
         module = importlib.util.module_from_spec(spec)
         assert spec and spec.loader
         spec.loader.exec_module(module)
-        self.assertEqual(module.APP_VERSION, "0.9.0")
         installer = (ROOT / "windows-installer" / "installer" / "VideoLibrary.iss").read_text(encoding="utf-8")
-        self.assertIn('#define MyAppVersion "0.9.0"', installer)
+        self.assertIn(f'#define MyAppVersion "{module.APP_VERSION}"', installer)
 
 
 if __name__ == "__main__":
