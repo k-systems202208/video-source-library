@@ -1,0 +1,35 @@
+name: tmp-issue91-ci-fix
+
+on:
+  push:
+    branches:
+      - feature/issue-91-tmdb-foundation
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/issue-91-tmdb-foundation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Apply schema 5 CI fixes
+        run: python scripts/tmp_issue91_fix_ci.py
+      - name: Run affected and TMDb tests
+        shell: pwsh
+        run: |
+          python -m unittest tests.test_phase3 tests.test_phase4 tests.test_phase5 tests.test_phase6 tests.test_tmdb_foundation_v110 -v
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/test_phase3.py tests/test_phase4.py windows-installer/src/backup_restore.py
+          git commit -m "fix: schema 5のバックアップと回帰テストを更新"
+          git push origin HEAD:feature/issue-91-tmdb-foundation
