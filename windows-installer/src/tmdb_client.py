@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -8,6 +11,7 @@ from urllib.request import Request, urlopen
 
 TMDB_API_BASE = "https://api.themoviedb.org/3"
 _CREDENTIAL_QUERY_NAMES = {"api_key", "access_token", "token", "authorization"}
+_RETRYABLE_HTTP_STATUS = {429, 502, 503, 504}
 
 
 class TmdbError(RuntimeError):
@@ -21,13 +25,51 @@ class TmdbClient:
         *,
         opener: Callable[..., Any] = urlopen,
         timeout: float = 15.0,
+        max_retries: int = 3,
+        retry_base_seconds: float = 1.0,
+        sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         token = str(access_token or "").strip()
         if not token:
             raise ValueError("TMDb API Read Access Token is required")
+        if int(max_retries) < 0:
+            raise ValueError("max_retries must be 0 or greater")
+        if float(retry_base_seconds) < 0:
+            raise ValueError("retry_base_seconds must be 0 or greater")
         self._access_token = token
         self._opener = opener
         self._timeout = timeout
+        self._max_retries = int(max_retries)
+        self._retry_base_seconds = float(retry_base_seconds)
+        self._sleeper = sleeper
+
+    def _retry_after_seconds(self, error: HTTPError) -> float | None:
+        headers = getattr(error, "headers", None)
+        if headers is None:
+            return None
+        value = headers.get("Retry-After")
+        if value in (None, ""):
+            return None
+        text = str(value).strip()
+        try:
+            return max(0.0, float(text))
+        except ValueError:
+            pass
+        try:
+            retry_at = parsedate_to_datetime(text)
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            return max(0.0, (retry_at.astimezone(timezone.utc) - now).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    def _retry_delay(self, retry_index: int, error: HTTPError | None = None) -> float:
+        if error is not None:
+            retry_after = self._retry_after_seconds(error)
+            if retry_after is not None:
+                return retry_after
+        return self._retry_base_seconds * (2 ** retry_index)
 
     def get_json(self, path: str, params: Mapping[str, Any] | None = None) -> Any:
         endpoint = str(path or "").strip()
@@ -46,18 +88,36 @@ class TmdbClient:
             },
             method="GET",
         )
-        try:
-            response = self._opener(request, timeout=self._timeout)
+
+        last_http_code: int | None = None
+        last_connection_error = False
+        for attempt in range(self._max_retries + 1):
             try:
-                body = response.read()
-            finally:
-                close = getattr(response, "close", None)
-                if callable(close):
-                    close()
-        except HTTPError as exc:
-            raise TmdbError(f"TMDb API returned HTTP {exc.code}") from None
-        except (URLError, TimeoutError, OSError):
-            raise TmdbError("TMDb API connection failed") from None
+                response = self._opener(request, timeout=self._timeout)
+                try:
+                    body = response.read()
+                finally:
+                    close = getattr(response, "close", None)
+                    if callable(close):
+                        close()
+                break
+            except HTTPError as exc:
+                last_http_code = int(exc.code)
+                if last_http_code not in _RETRYABLE_HTTP_STATUS or attempt >= self._max_retries:
+                    raise TmdbError(f"TMDb API returned HTTP {last_http_code}") from None
+                self._sleeper(self._retry_delay(attempt, exc))
+            except (URLError, TimeoutError, OSError):
+                last_connection_error = True
+                if attempt >= self._max_retries:
+                    raise TmdbError("TMDb API connection failed") from None
+                self._sleeper(self._retry_delay(attempt))
+        else:
+            if last_http_code is not None:
+                raise TmdbError(f"TMDb API returned HTTP {last_http_code}")
+            if last_connection_error:
+                raise TmdbError("TMDb API connection failed")
+            raise TmdbError("TMDb API request failed")
+
         try:
             return json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
