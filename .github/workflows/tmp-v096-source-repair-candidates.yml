@@ -1,0 +1,294 @@
+name: tmp-v096-source-repair-candidates
+
+on:
+  push:
+    branches:
+      - feature/issue-72-source-repair-candidates
+    paths:
+      - .github/workflows/tmp-v096-source-repair-candidates.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/issue-72-source-repair-candidates
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply 0.9.6 patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('windows-installer/src/playback_audit.py')
+          text = p.read_text(encoding='utf-8')
+          text = text.replace('import os\nimport subprocess\n', 'import os\nimport re\nimport subprocess\nfrom difflib import SequenceMatcher\n')
+          text = text.replace('from playback_compat import browser_direct_playback, browser_transcode_codec_args, find_ffmpeg\n', 'from playback_compat import REAL_LIBRARY_VIDEO_EXTENSIONS, browser_direct_playback, browser_transcode_codec_args, find_ffmpeg\n')
+          text = text.replace('SUBTITLE_ONLY_CONTAINER_FORMATS = {"ass", "ssa", "srt", "subrip", "webvtt", "vtt"}\n', 'SUBTITLE_ONLY_CONTAINER_FORMATS = {"ass", "ssa", "srt", "subrip", "webvtt", "vtt"}\nSOURCE_DATA_ERROR_REASONS = {"SUBTITLE_CONTENT_REGISTERED_AS_VIDEO", "MISSING_FILE", "NO_VIDEO_STREAM", "PATH_ESCAPE"}\nAUDIT_VIDEO_EXTENSIONS = REAL_LIBRARY_VIDEO_EXTENSIONS | {".m4v", ".mov", ".wmv"}\n')
+
+          anchor = '''def _safe_source(video_root: Path, relative_path: str) -> Path | None:\n    try:\n        root = video_root.resolve()\n        source = (root / Path(relative_path)).resolve()\n        source.relative_to(root)\n        return source\n    except (OSError, ValueError):\n        return None\n\n\n'''
+          addition = r'''def _candidate_name_key(path: Path) -> str:
+              stem = path.stem.casefold()
+              stem = re.sub(r"[\[\](){}._-]+", " ", stem)
+              stem = re.sub(r"\b(?:720p|1080p|2160p|x264|x265|h264|h265|hevc|aac|flac|web[- ]?dl|bluray|hdtv)\b", " ", stem)
+              return " ".join(stem.split())
+
+
+def _episode_numbers(path: Path) -> set[int]:
+              stem = path.stem.casefold()
+              values: set[int] = set()
+              patterns = [
+                  r"(?:^|[^a-z0-9])(?:ep|e|episode)[ ._-]*0*(\d{1,3})(?:[^0-9]|$)",
+                  r"(?:^|[^a-z0-9])0*(\d{1,3})(?:[^0-9]|$)",
+              ]
+              for pattern in patterns:
+                  for raw in re.findall(pattern, stem):
+                      try:
+                          values.add(int(raw))
+                      except ValueError:
+                          pass
+                  if values:
+                      break
+              return values
+
+
+def _repair_candidate_score(target: Path, candidate: Path) -> tuple[float, str]:
+              target_key = _candidate_name_key(target)
+              candidate_key = _candidate_name_key(candidate)
+              ratio = SequenceMatcher(None, target_key, candidate_key).ratio()
+              target_eps = _episode_numbers(target)
+              candidate_eps = _episode_numbers(candidate)
+              if target_eps and candidate_eps and target_eps & candidate_eps:
+                  return min(1.0, ratio + 0.40), "EPISODE_MATCH"
+              if target_eps and candidate_eps and not (target_eps & candidate_eps):
+                  return max(0.0, ratio - 0.35), "EPISODE_MISMATCH"
+              return ratio, "NAME_SIMILARITY"
+
+
+def _find_repair_candidates(
+              source: Path,
+              *,
+              video_root: Path,
+              ffprobe_path: Path,
+              ffmpeg_available: bool,
+              directory_cache: dict[Path, list[dict[str, Any]]],
+              limit: int = 3,
+          ) -> list[dict[str, Any]]:
+              parent = source.parent
+              try:
+                  parent.relative_to(video_root)
+              except ValueError:
+                  return []
+              if not parent.is_dir():
+                  return []
+
+              viable = directory_cache.get(parent)
+              if viable is None:
+                  viable = []
+                  try:
+                      entries = sorted(parent.iterdir(), key=lambda item: item.name.casefold())
+                  except OSError:
+                      entries = []
+                  for candidate in entries:
+                      if not candidate.is_file() or candidate.suffix.casefold() not in AUDIT_VIDEO_EXTENSIONS:
+                          continue
+                      if candidate == source:
+                          continue
+                      probe = probe_for_audit(
+                          candidate,
+                          extension=candidate.suffix,
+                          ffprobe_path=ffprobe_path,
+                          ffmpeg_available=ffmpeg_available,
+                      )
+                      if not probe.video_codec or probe.reason in SOURCE_DATA_ERROR_REASONS or probe.reason == "PROBE_ERROR":
+                          continue
+                      try:
+                          relative = candidate.relative_to(video_root).as_posix()
+                      except ValueError:
+                          continue
+                      viable.append(
+                          {
+                              "path": candidate,
+                              "relativePath": relative,
+                              "containerFormat": probe.container_format,
+                              "videoCodec": probe.video_codec,
+                          }
+                      )
+                  directory_cache[parent] = viable
+
+              ranked: list[dict[str, Any]] = []
+              for candidate in viable:
+                  path = candidate["path"]
+                  if path == source:
+                      continue
+                  score, reason = _repair_candidate_score(source, path)
+                  ranked.append(
+                      {
+                          "relativePath": candidate["relativePath"],
+                          "score": round(score, 4),
+                          "reason": reason,
+                          "containerFormat": candidate["containerFormat"],
+                          "videoCodec": candidate["videoCodec"],
+                      }
+                  )
+              ranked.sort(key=lambda item: (-float(item["score"]), str(item["relativePath"]).casefold()))
+              return ranked[: max(0, limit)]
+
+
+'''
+          if anchor not in text:
+              raise SystemExit('safe_source anchor not found')
+          text = text.replace(anchor, anchor + addition)
+          text = text.replace('''    source_data_error_reasons = {\n        "SUBTITLE_CONTENT_REGISTERED_AS_VIDEO",\n        "MISSING_FILE",\n        "NO_VIDEO_STREAM",\n        "PATH_ESCAPE",\n    }\n''', '')
+          text = text.replace('source_data_errors = sum(1 for item in items if item.get("reason") in source_data_error_reasons)', 'source_data_errors = sum(1 for item in items if item.get("reason") in SOURCE_DATA_ERROR_REASONS)')
+          text = text.replace('if item.get("route") == "NO_ROUTE" and item.get("reason") not in source_data_error_reasons', 'if item.get("route") == "NO_ROUTE" and item.get("reason") not in SOURCE_DATA_ERROR_REASONS')
+          text = text.replace('''        "sourceDataErrors": source_data_errors,\n''', '''        "sourceDataErrors": source_data_errors,\n        "sourceDataErrorsWithCandidates": sum(1 for item in items if item.get("reason") in SOURCE_DATA_ERROR_REASONS and int(item.get("repairCandidateCount") or 0) > 0),\n        "sourceDataErrorsWithoutCandidates": sum(1 for item in items if item.get("reason") in SOURCE_DATA_ERROR_REASONS and int(item.get("repairCandidateCount") or 0) == 0),\n''')
+          text = text.replace('''        "externalSubtitleCount", "embeddedSubtitleCount", "sampleDecode", "route", "reason", "error",\n''', '''        "externalSubtitleCount", "embeddedSubtitleCount", "sampleDecode", "route", "reason", "error",\n        "repairCandidateCount", "repairCandidates",\n''')
+          text = text.replace('''        row["audioLanguages"] = ";".join(row.get("audioLanguages") or [])\n        return row\n''', '''        row["audioLanguages"] = ";".join(row.get("audioLanguages") or [])\n        row["repairCandidates"] = ";".join(\n            f"{candidate.get('relativePath', '')}|{candidate.get('score', '')}|{candidate.get('reason', '')}"\n            for candidate in (row.get("repairCandidates") or [])\n        )\n        return row\n''')
+          text = text.replace('''    source_data_error_reasons = {\n        "SUBTITLE_CONTENT_REGISTERED_AS_VIDEO",\n        "MISSING_FILE",\n        "NO_VIDEO_STREAM",\n        "PATH_ESCAPE",\n    }\n''', '')
+          text = text.replace('if item.get("reason") in source_data_error_reasons:', 'if item.get("reason") in SOURCE_DATA_ERROR_REASONS:')
+          text = text.replace('''    items: list[dict[str, Any]] = []\n    total = len(rows)\n''', '''    items: list[dict[str, Any]] = []\n    repair_directory_cache: dict[Path, list[dict[str, Any]]] = {}\n    total = len(rows)\n''')
+          text = text.replace('''            "reason": result.reason,\n            "error": result.error,\n        }\n        items.append(item)\n''', '''            "reason": result.reason,\n            "error": result.error,\n            "repairCandidateCount": 0,\n            "repairCandidates": [],\n        }\n        if result.reason in SOURCE_DATA_ERROR_REASONS and source is not None:\n            candidates = _find_repair_candidates(\n                source,\n                video_root=root,\n                ffprobe_path=probe,\n                ffmpeg_available=ffmpeg is not None,\n                directory_cache=repair_directory_cache,\n            )\n            item["repairCandidates"] = candidates\n            item["repairCandidateCount"] = len(candidates)\n        items.append(item)\n''')
+          text = text.replace('''                    "sourceDataErrors": current_summary["sourceDataErrors"],\n''', '''                    "sourceDataErrors": current_summary["sourceDataErrors"],\n                    "sourceDataErrorsWithCandidates": current_summary["sourceDataErrorsWithCandidates"],\n                    "sourceDataErrorsWithoutCandidates": current_summary["sourceDataErrorsWithoutCandidates"],\n''')
+          p.write_text(text, encoding='utf-8')
+
+          p = Path('windows-installer/src/launcher.py')
+          text = p.read_text(encoding='utf-8')
+          text = text.replace('''        source_errors = int(summary.get("sourceDataErrors") or 0)\n        self.scan_progress.configure''', '''        source_errors = int(summary.get("sourceDataErrors") or 0)\n        repair_with_candidates = int(summary.get("sourceDataErrorsWithCandidates") or 0)\n        repair_without_candidates = int(summary.get("sourceDataErrorsWithoutCandidates") or 0)\n        self.scan_progress.configure''')
+          text = text.replace('''        self._append_log(f"元データ異常CSV: {report.get('sourceErrorsCsvReport', '')}")\n''', '''        self._append_log(\n            f"元データ修復候補: 候補あり {repair_with_candidates:,}件 / 候補なし {repair_without_candidates:,}件"\n        )\n        self._append_log(f"元データ異常CSV: {report.get('sourceErrorsCsvReport', '')}")\n''')
+          text = text.replace('''            f"元データ異常: {source_errors:,}件\\n\\n"\n            f"レポート: {PLAYBACK_AUDIT_OUTPUT_PATH}"\n''', '''            f"元データ異常: {source_errors:,}件\\n"\n            f"修復候補あり: {repair_with_candidates:,}件\\n"\n            f"修復候補なし: {repair_without_candidates:,}件\\n\\n"\n            f"レポート: {PLAYBACK_AUDIT_OUTPUT_PATH}"\n''')
+          text = text.replace('''                + "\\n元データ異常は専用CSVを確認し、元ファイルを差し替えてください。",\n''', '''                + "\\n元データ異常CSVの修復候補を確認し、元ファイルは手動で確認・差し替えてください。",\n''')
+          p.write_text(text, encoding='utf-8')
+
+          Path('windows-installer/src/app_version.py').write_text('APP_VERSION = "0.9.6"\n', encoding='utf-8')
+          p = Path('windows-installer/installer/VideoLibrary.iss')
+          text = p.read_text(encoding='utf-8').replace('0.9.5', '0.9.6')
+          p.write_text(text, encoding='utf-8')
+          p = Path('tests/test_release_consistency.py')
+          text = p.read_text(encoding='utf-8').replace('0.9.5', '0.9.6')
+          p.write_text(text, encoding='utf-8')
+
+          test = r'''from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "windows-installer" / "src"
+sys.path.insert(0, str(SRC))
+
+from playback_audit import AuditProbe, _repair_candidate_score, audit_real_library
+from database import connect, initialize_database
+
+
+class PlaybackAuditV096Tests(unittest.TestCase):
+    def test_episode_match_is_prioritized(self) -> None:
+        target = Path("Show E01.mkv")
+        same = Path("Show Episode 01 1080p.mp4")
+        other = Path("Show E02.mp4")
+        same_score, same_reason = _repair_candidate_score(target, same)
+        other_score, other_reason = _repair_candidate_score(target, other)
+        self.assertEqual(same_reason, "EPISODE_MATCH")
+        self.assertEqual(other_reason, "EPISODE_MISMATCH")
+        self.assertGreater(same_score, other_score)
+
+    def test_audit_adds_same_folder_video_candidate_without_modifying_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "videos"
+            root.mkdir()
+            target = root / "Show E01.mkv"
+            candidate = root / "Show Episode 01.mp4"
+            wrong_episode = root / "Show E02.mp4"
+            target.write_text("subtitle", encoding="utf-8")
+            candidate.write_bytes(b"video-one")
+            wrong_episode.write_bytes(b"video-two")
+            before = target.read_bytes()
+            db = Path(temp) / "library.db"
+            with connect(db) as connection:
+                initialize_database(connection)
+                stamp = "2026-09-15T00:00:00+09:00"
+                connection.execute("INSERT INTO works(external_work_no,category,official_title,created_at,updated_at) VALUES(1,'ドラマ','Show',?,?)", (stamp, stamp))
+                work_id = int(connection.execute("SELECT id FROM works").fetchone()[0])
+                connection.execute("INSERT INTO videos(work_id,external_file_no,official_title,episode_or_type,episode_title,episode_sort_key,created_at,updated_at) VALUES(?,1,'Show','01','Episode 1','0001',?,?)", (work_id, stamp, stamp))
+                video_id = int(connection.execute("SELECT id FROM videos").fetchone()[0])
+                connection.execute("INSERT INTO video_files(video_id,filename,relative_path,extension,created_at,updated_at) VALUES(?, 'Show E01.mkv','Show E01.mkv','mkv',?,?)", (video_id, stamp, stamp))
+                connection.commit()
+
+            subtitle_probe = AuditProbe(status="OK", container_format="srt", embedded_subtitle_count=1, route="NO_ROUTE", reason="SUBTITLE_CONTENT_REGISTERED_AS_VIDEO")
+            video_probe = AuditProbe(status="OK", container_format="mov,mp4", video_codec="h264", audio_codecs=("aac",), audio_track_count=1, route="DIRECT")
+
+            def fake_probe(source: Path, **kwargs):
+                return subtitle_probe if source.name == target.name else video_probe
+
+            with mock.patch("playback_audit.find_ffprobe", return_value=Path("ffprobe")), mock.patch("playback_audit.find_ffmpeg", return_value=Path("ffmpeg")), mock.patch("playback_audit.probe_for_audit", side_effect=fake_probe):
+                report = audit_real_library(db, root, Path(temp) / "out")
+
+            item = report["items"][0]
+            self.assertEqual(report["summary"]["sourceDataErrors"], 1)
+            self.assertEqual(report["summary"]["sourceDataErrorsWithCandidates"], 1)
+            self.assertEqual(report["summary"]["sourceDataErrorsWithoutCandidates"], 0)
+            self.assertGreaterEqual(item["repairCandidateCount"], 1)
+            self.assertEqual(item["repairCandidates"][0]["relativePath"], candidate.name)
+            self.assertEqual(item["repairCandidates"][0]["reason"], "EPISODE_MATCH")
+            self.assertNotIn(str(root), str(item["repairCandidates"]))
+            self.assertEqual(target.read_bytes(), before)
+
+
+if __name__ == "__main__":
+    unittest.main()
+'''
+          Path('tests/test_playback_audit_v096.py').write_text(test, encoding='utf-8')
+
+          launcher_test = r'''from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+LAUNCHER = ROOT / "windows-installer" / "src" / "launcher.py"
+
+
+class PlaybackAuditLauncherV096Tests(unittest.TestCase):
+    def test_launcher_reports_repair_candidate_counts(self) -> None:
+        text = LAUNCHER.read_text(encoding="utf-8")
+        self.assertIn('sourceDataErrorsWithCandidates', text)
+        self.assertIn('sourceDataErrorsWithoutCandidates', text)
+        self.assertIn('修復候補あり', text)
+        self.assertIn('修復候補なし', text)
+        self.assertIn('元データ異常CSVの修復候補', text)
+
+
+if __name__ == "__main__":
+    unittest.main()
+'''
+          Path('tests/test_playback_audit_launcher_v096.py').write_text(launcher_test, encoding='utf-8')
+
+          doc = '''# 0.9.6 元データ異常の修復候補探索\n\n## 背景\n\n0.9.5の実機全件監査では、登録4,869件のうち実動画4,845件は `applicationNoRoute = 0` でアプリ側の再生互換性に未解決項目がないことを確認した。一方、24件は動画拡張子を持ちながら実体がASS/SRT字幕データで、元データ修復待ちとして分離されている。\n\n## 変更内容\n\n- `SUBTITLE_CONTENT_REGISTERED_AS_VIDEO` / `MISSING_FILE` / `NO_VIDEO_STREAM` などの元データ異常について、同一フォルダー内を読み取り専用で探索する。\n- 動画拡張子だけでは候補にせず、ffprobeで映像ストリームを持つことを確認する。\n- エピソード番号一致を優先し、ファイル名類似度を加味して最大3件を提示する。\n- 候補は絶対パスを出さず、動画ルートからの相対パスだけをJSON / 元データ異常CSVへ出力する。\n- `sourceDataErrorsWithCandidates` / `sourceDataErrorsWithoutCandidates` を監査summaryへ追加する。\n- ランチャー完了画面で「修復候補あり / 候補なし」を明示する。\n\n## 安全性\n\n本機能は候補提示だけを行う。元動画・字幕・SQLite・PlaybackCacheを移動、改名、削除、差し替えしない。候補の採用は必ず利用者が元ファイルを確認したうえで手動で行う。\n\n## v1.0前の扱い\n\nアプリ側の再生互換性は0.9.5実機監査で合格済み。0.9.6は残る24件の元ライブラリ修復を安全に進めるための補助機能であり、元データ異常をアプリ側の再生失敗として扱わない方針は維持する。\n'''
+          Path('docs/37-0.9.6-source-repair-candidates.md').write_text(doc, encoding='utf-8')
+
+          p = Path('README.md')
+          text = p.read_text(encoding='utf-8')
+          marker = '対象動画拡張子:'
+          section = '''### 0.9.6: 元データ異常の修復候補探索\n- 元データ異常について同一フォルダー内から実動画の修復候補を読み取り専用で探索\n- ffprobeで映像ストリームを持つファイルだけを候補化\n- エピソード番号一致を優先し、ファイル名類似度で最大3候補を順位付け\n- JSON / 元データ異常CSVへ相対パスだけを出力し、ランチャーに候補あり・なし件数を表示\n- 元動画・字幕・SQLite・PlaybackCacheは自動変更しない\n\n'''
+          if section not in text:
+              text = text.replace(marker, section + marker)
+          p.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md docs tests windows-installer
+          git commit -m "0.9.6: 元データ異常の修復候補探索を追加"
+          git push origin HEAD:feature/issue-72-source-repair-candidates
