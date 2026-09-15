@@ -69,7 +69,7 @@ class CombinedMediaMatchingTests(unittest.TestCase):
         self.assertEqual(_media_types_for("日本映画"), ("movie",))
         self.assertEqual(_media_types_for("国内ドラマ"), ("tv",))
 
-    def test_v1_existing_match_is_reassessed_once_and_tv_can_win(self):
+    def test_legacy_existing_match_is_reassessed_once_and_tv_can_win(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             db = root / "library.db"
@@ -101,7 +101,7 @@ class CombinedMediaMatchingTests(unittest.TestCase):
                 marker = connection.execute(
                     "SELECT payload_json FROM tmdb_api_cache WHERE cache_key='tmdb:matcher-version'"
                 ).fetchone()
-                self.assertIn('"version":2', marker["payload_json"])
+                self.assertIn('"version":3', marker["payload_json"])
 
             second_client = CombinedClient()
             second = sync_tmdb_library(
