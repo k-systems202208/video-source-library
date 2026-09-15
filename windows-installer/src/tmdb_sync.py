@@ -20,7 +20,7 @@ from tmdb_images import cached_image_path, download_tmdb_image
 _MATCHED = "MATCHED"
 _REVIEW = "REVIEW"
 _UNMATCHED = "UNMATCHED"
-_MATCHER_VERSION = 2
+_MATCHER_VERSION = 3
 _MATCHER_VERSION_CACHE_KEY = "tmdb:matcher-version"
 
 
@@ -43,9 +43,72 @@ def _normalize_title(value: str | None) -> str:
     return "".join(ch for ch in text if ch.isalnum())
 
 
+def _title_variants(value: str | None) -> set[str]:
+    text = unicodedata.normalize("NFKC", str(value or "")).casefold().strip()
+    if not text:
+        return set()
+    raw_variants = {text}
+
+    without_brackets = re.sub(r"\s*[\(\[][^\)\]]*[\)\]]\s*", " ", text).strip()
+    if without_brackets:
+        raw_variants.add(without_brackets)
+
+    for part in re.split(r"[/／|｜〜～~:：]", text):
+        part = part.strip(" -‐‑–—―_・.　")
+        if part:
+            raw_variants.add(part)
+
+    for match in re.finditer(
+        r"([a-z0-9&'! .]+)-([\u3040-\u30ff\u3400-\u9fff々・ー]+)-?",
+        text,
+        re.IGNORECASE,
+    ):
+        for part in match.groups():
+            part = part.strip(" -‐‑–—―_・.　")
+            if part:
+                raw_variants.add(part)
+
+    variants = {_normalize_title(item) for item in raw_variants}
+    return {item for item in variants if item}
+
+
+def _title_similarity(left: str | None, right: str | None) -> float:
+    left_variants = _title_variants(left)
+    right_variants = _title_variants(right)
+    if not left_variants or not right_variants:
+        return 0.0
+    if left_variants & right_variants:
+        return 1.0
+    return max(
+        SequenceMatcher(None, local, remote).ratio()
+        for local in left_variants
+        for remote in right_variants
+    )
+
+
+def _extract_years(value: str | None) -> tuple[int, ...]:
+    years: list[int] = []
+    for match in re.finditer(r"(?:19|20)\d{2}", str(value or "")):
+        year = int(match.group(0))
+        if year not in years:
+            years.append(year)
+    return tuple(years)
+
+
 def _extract_year(value: str | None) -> int | None:
-    match = re.search(r"(?:19|20)\d{2}", str(value or ""))
-    return int(match.group(0)) if match else None
+    years = _extract_years(value)
+    return years[0] if years else None
+
+
+def _is_multi_year_period(value: str | None) -> bool:
+    years = _extract_years(value)
+    return len(years) >= 2 and min(years) != max(years)
+
+
+def _work_value(work: sqlite3.Row | dict[str, Any], key: str, default: Any = None) -> Any:
+    if isinstance(work, sqlite3.Row):
+        return work[key] if key in work.keys() else default
+    return work.get(key, default)
 
 
 def _candidate_year(payload: dict[str, Any], media_type: str) -> int | None:
@@ -73,6 +136,40 @@ def _media_types_for(category: str | None) -> tuple[str, ...]:
     if has_tv:
         return ("tv",)
     return ("movie", "tv")
+
+
+def _media_type_hint(work: sqlite3.Row | dict[str, Any]) -> tuple[str | None, float]:
+    media_types = _media_types_for(str(_work_value(work, "category", "") or ""))
+    if len(media_types) == 1:
+        return media_types[0], 0.20
+
+    try:
+        episode_count = int(_work_value(work, "episode_count", 0) or 0)
+    except (TypeError, ValueError):
+        episode_count = 0
+    try:
+        movie_content_count = int(_work_value(work, "movie_content_count", 0) or 0)
+    except (TypeError, ValueError):
+        movie_content_count = 0
+    try:
+        media_file_count = int(_work_value(work, "media_file_count", 0) or 0)
+    except (TypeError, ValueError):
+        media_file_count = 0
+
+    if episode_count > 0 and episode_count > movie_content_count:
+        return "tv", 0.16
+    if movie_content_count > 0 and movie_content_count > episode_count:
+        return "movie", 0.16
+
+    period = str(_work_value(work, "year_or_period", "") or "")
+    if media_file_count >= 3 and not _is_multi_year_period(period):
+        return "tv", 0.10
+    return None, 0.0
+
+
+def _candidate_rank_score(work: sqlite3.Row | dict[str, Any], candidate: Candidate) -> float:
+    preferred_type, bonus = _media_type_hint(work)
+    return candidate.confidence + (bonus if candidate.media_type == preferred_type else 0.0)
 
 
 def _stored_matcher_version(connection: sqlite3.Connection) -> int:
@@ -116,20 +213,19 @@ def _candidate_from_result(
     except (TypeError, ValueError):
         return None
     local_titles = [
-        str(work["official_title"] or "").strip(),
-        str(work["source_title"] or "").strip(),
+        str(_work_value(work, "official_title", "") or "").strip(),
+        str(_work_value(work, "source_title", "") or "").strip(),
     ]
     local_titles = [value for value in local_titles if value]
     candidate_titles = _candidate_titles(payload, media_type)
     if not local_titles or not candidate_titles:
         return None
     similarity = max(
-        SequenceMatcher(None, _normalize_title(local), _normalize_title(remote)).ratio()
+        _title_similarity(local, remote)
         for local in local_titles
         for remote in candidate_titles
-        if _normalize_title(local) and _normalize_title(remote)
     )
-    local_year = _extract_year(str(work["year_or_period"] or ""))
+    local_year = _extract_year(str(_work_value(work, "year_or_period", "") or ""))
     remote_year = _candidate_year(payload, media_type)
     year_score = _year_similarity(local_year, remote_year)
     image_bonus = 1.0 if payload.get("poster_path") else 0.0
@@ -152,20 +248,46 @@ def choose_candidate(
     work: sqlite3.Row | dict[str, Any],
     candidates: Iterable[Candidate],
 ) -> tuple[str, Candidate | None, str]:
-    ranked = sorted(candidates, key=lambda item: (item.confidence, item.title_similarity), reverse=True)
+    ranked = sorted(
+        candidates,
+        key=lambda item: (_candidate_rank_score(work, item), item.confidence, item.title_similarity),
+        reverse=True,
+    )
     if not ranked:
         return _UNMATCHED, None, "NO_CANDIDATE"
     top = ranked[0]
     second = ranked[1] if len(ranked) > 1 else None
-    margin = top.confidence - second.confidence if second else 1.0
-    local_year = _extract_year(str(work["year_or_period"] or ""))
+    top_rank = _candidate_rank_score(work, top)
+    second_rank = _candidate_rank_score(work, second) if second else None
+    margin = top_rank - second_rank if second_rank is not None else 1.0
+    local_year = _extract_year(str(_work_value(work, "year_or_period", "") or ""))
     exact_year = top.year_similarity >= 0.65 if local_year is not None else False
     title_is_strong = top.title_similarity >= 0.96
     unambiguous = second is None or margin >= 0.08
     exact_title_without_year = local_year is None and top.title_similarity >= 0.995 and (second is None or margin >= 0.18)
-    if top.confidence >= 0.92 and title_is_strong and unambiguous and (exact_year or exact_title_without_year):
-        return _MATCHED, top, "AUTO_HIGH_CONFIDENCE"
+    multi_year_movie = top.media_type == "movie" and _is_multi_year_period(
+        str(_work_value(work, "year_or_period", "") or "")
+    )
+    preferred_type, media_bonus = _media_type_hint(work)
+    media_context_selected = bool(
+        preferred_type
+        and media_bonus > 0
+        and top.media_type == preferred_type
+        and second is not None
+        and second.media_type != top.media_type
+        and margin >= 0.08
+    )
+    if (
+        not multi_year_movie
+        and top.confidence >= 0.92
+        and title_is_strong
+        and unambiguous
+        and (exact_year or exact_title_without_year)
+    ):
+        return _MATCHED, top, "AUTO_MEDIA_CONTEXT" if media_context_selected else "AUTO_HIGH_CONFIDENCE"
     if top.confidence >= 0.70:
+        if multi_year_movie:
+            return _REVIEW, top, "MULTI_YEAR_MOVIE_REVIEW"
         return _REVIEW, top, "REVIEW_REQUIRED"
     return _UNMATCHED, top, "LOW_CONFIDENCE"
 
@@ -342,7 +464,15 @@ def sync_tmdb_library(
     rows: list[dict[str, Any]] = []
     with connect(database_path) as connection:
         works = connection.execute(
-            "SELECT id,category,year_or_period,source_title,official_title FROM works ORDER BY external_work_no"
+            """
+            SELECT
+                w.id,w.category,w.year_or_period,w.source_title,w.official_title,
+                w.media_file_count,w.subfolder_count,
+                (SELECT COUNT(*) FROM videos v WHERE v.work_id=w.id AND v.content_type='EPISODE') AS episode_count,
+                (SELECT COUNT(*) FROM videos v WHERE v.work_id=w.id AND v.content_type='MOVIE') AS movie_content_count
+            FROM works w
+            ORDER BY w.external_work_no
+            """
         ).fetchall()
         total = len(works)
         force_reassess = _stored_matcher_version(connection) < _MATCHER_VERSION
