@@ -387,3 +387,8 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 同期結果は `%LOCALAPPDATA%\VideoLibrary\diagnostics\tmdb-match-audit-*.json/.csv` に保存します。TMDb未設定や通信失敗でも、動画再生・字幕・利用者状態など既存機能はそのまま利用できます。
 
 TMDB attribution: This product uses the TMDB API but is not endorsed or certified by TMDB.
+
+### TMDb複合カテゴリ照合（1.1.0-a2）
+
+`日本映画・ドラマ` / `海外映画・ドラマ` はmovieとtvの両方を検索します。旧ロジックで作成された既存MATCHEDはmatcher version 2への初回移行時だけ再評価し、その後は従来どおり確定済みMATCHEDを保護します。
+

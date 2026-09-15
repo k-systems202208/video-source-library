@@ -20,6 +20,8 @@ from tmdb_images import cached_image_path, download_tmdb_image
 _MATCHED = "MATCHED"
 _REVIEW = "REVIEW"
 _UNMATCHED = "UNMATCHED"
+_MATCHER_VERSION = 2
+_MATCHER_VERSION_CACHE_KEY = "tmdb:matcher-version"
 
 
 @dataclass(frozen=True)
@@ -62,11 +64,35 @@ def _candidate_titles(payload: dict[str, Any], media_type: str) -> list[str]:
 
 def _media_types_for(category: str | None) -> tuple[str, ...]:
     text = str(category or "")
-    if "映画" in text:
+    has_movie = "映画" in text
+    has_tv = "ドラマ" in text or "テレビ" in text
+    if has_movie and has_tv:
+        return ("movie", "tv")
+    if has_movie:
         return ("movie",)
-    if "ドラマ" in text:
+    if has_tv:
         return ("tv",)
     return ("movie", "tv")
+
+
+def _stored_matcher_version(connection: sqlite3.Connection) -> int:
+    payload = get_cached_json(connection, _MATCHER_VERSION_CACHE_KEY)
+    if not isinstance(payload, dict):
+        return 0
+    try:
+        return int(payload.get("version") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _store_matcher_version(connection: sqlite3.Connection) -> None:
+    put_cached_json(
+        connection,
+        _MATCHER_VERSION_CACHE_KEY,
+        {"version": _MATCHER_VERSION},
+        fetched_at=now_iso(),
+        expires_at=None,
+    )
 
 
 def _year_similarity(local_year: int | None, candidate_year: int | None) -> float:
@@ -319,6 +345,7 @@ def sync_tmdb_library(
             "SELECT id,category,year_or_period,source_title,official_title FROM works ORDER BY external_work_no"
         ).fetchall()
         total = len(works)
+        force_reassess = _stored_matcher_version(connection) < _MATCHER_VERSION
         for index, work in enumerate(works, start=1):
             existing = connection.execute(
                 "SELECT * FROM tmdb_work_links WHERE work_id=?",
@@ -327,7 +354,12 @@ def sync_tmdb_library(
             candidate: Candidate | None = None
             reason = ""
             status = _UNMATCHED
-            if existing is not None and existing["match_status"] == _MATCHED and existing["tmdb_id"]:
+            if (
+                not force_reassess
+                and existing is not None
+                and existing["match_status"] == _MATCHED
+                and existing["tmdb_id"]
+            ):
                 candidate = Candidate(
                     media_type=str(existing["media_type"]),
                     tmdb_id=int(existing["tmdb_id"]),
@@ -384,6 +416,8 @@ def sync_tmdb_library(
                         "currentItem": str(work["official_title"]),
                     }
                 )
+        _store_matcher_version(connection)
+        connection.commit()
     summary = {
         "total": len(rows),
         "matched": sum(1 for item in rows if item["status"] == _MATCHED),
