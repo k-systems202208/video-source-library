@@ -266,11 +266,31 @@ def summarize_audit(items: list[dict[str, Any]]) -> dict[str, Any]:
         for codec in item.get("audioCodecs") or []:
             if codec:
                 audio_codecs[str(codec)] += 1
+
+    source_data_error_reasons = {
+        "SUBTITLE_CONTENT_REGISTERED_AS_VIDEO",
+        "MISSING_FILE",
+        "NO_VIDEO_STREAM",
+        "PATH_ESCAPE",
+    }
+    direct = sum(1 for item in items if item.get("route") == "DIRECT")
+    transcode = sum(1 for item in items if item.get("route") == "TRANSCODE")
+    raw_no_route = sum(1 for item in items if item.get("route") == "NO_ROUTE")
+    source_data_errors = sum(1 for item in items if item.get("reason") in source_data_error_reasons)
+    application_no_route = sum(
+        1
+        for item in items
+        if item.get("route") == "NO_ROUTE" and item.get("reason") not in source_data_error_reasons
+    )
+
     return {
         "total": len(items),
-        "direct": sum(1 for item in items if item.get("route") == "DIRECT"),
-        "transcode": sum(1 for item in items if item.get("route") == "TRANSCODE"),
-        "noRoute": sum(1 for item in items if item.get("route") == "NO_ROUTE"),
+        "playableVideoTotal": len(items) - source_data_errors,
+        "direct": direct,
+        "transcode": transcode,
+        "noRoute": raw_no_route,
+        "applicationNoRoute": application_no_route,
+        "sourceDataErrors": source_data_errors,
         "probeErrors": sum(1 for item in items if item.get("reason") == "PROBE_ERROR"),
         "decodeErrors": sum(1 for item in items if item.get("reason") == "DECODE_ERROR"),
         "missing": sum(1 for item in items if item.get("reason") == "MISSING_FILE"),
@@ -292,11 +312,17 @@ def summarize_audit(items: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def write_audit_reports(output_dir: Path, report: dict[str, Any], *, stamp: str | None = None) -> tuple[Path, Path]:
+def write_audit_reports(
+    output_dir: Path,
+    report: dict[str, Any],
+    *,
+    stamp: str | None = None,
+) -> tuple[Path, Path, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     suffix = stamp or datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
     json_path = output_dir / f"playback-audit-{suffix}.json"
     csv_path = output_dir / f"playback-audit-{suffix}.csv"
+    source_errors_path = output_dir / f"playback-audit-source-errors-{suffix}.csv"
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     fields = [
@@ -305,15 +331,33 @@ def write_audit_reports(output_dir: Path, report: dict[str, Any], *, stamp: str 
         "hasJapaneseAudio", "preferredAudioIndex", "preferredAudioCodec", "preferredAudioLanguage",
         "externalSubtitleCount", "embeddedSubtitleCount", "sampleDecode", "route", "reason", "error",
     ]
+
+    def csv_row(item: dict[str, Any]) -> dict[str, Any]:
+        row = dict(item)
+        row["audioCodecs"] = ";".join(row.get("audioCodecs") or [])
+        row["audioLanguages"] = ";".join(row.get("audioLanguages") or [])
+        return row
+
+    items = list(report.get("items") or [])
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
-        for item in report.get("items") or []:
-            row = dict(item)
-            row["audioCodecs"] = ";".join(row.get("audioCodecs") or [])
-            row["audioLanguages"] = ";".join(row.get("audioLanguages") or [])
-            writer.writerow(row)
-    return json_path, csv_path
+        for item in items:
+            writer.writerow(csv_row(item))
+
+    source_data_error_reasons = {
+        "SUBTITLE_CONTENT_REGISTERED_AS_VIDEO",
+        "MISSING_FILE",
+        "NO_VIDEO_STREAM",
+        "PATH_ESCAPE",
+    }
+    with source_errors_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        for item in items:
+            if item.get("reason") in source_data_error_reasons:
+                writer.writerow(csv_row(item))
+    return json_path, csv_path, source_errors_path
 
 
 def audit_real_library(
@@ -428,6 +472,8 @@ def audit_real_library(
                     "direct": current_summary["direct"],
                     "transcode": current_summary["transcode"],
                     "noRoute": current_summary["noRoute"],
+                    "applicationNoRoute": current_summary["applicationNoRoute"],
+                    "sourceDataErrors": current_summary["sourceDataErrors"],
                 }
             )
 
@@ -438,7 +484,8 @@ def audit_real_library(
         "summary": summarize_audit(items),
         "items": items,
     }
-    json_path, csv_path = write_audit_reports(Path(output_dir), report)
+    json_path, csv_path, source_errors_path = write_audit_reports(Path(output_dir), report)
     report["jsonReport"] = str(json_path)
     report["csvReport"] = str(csv_path)
+    report["sourceErrorsCsvReport"] = str(source_errors_path)
     return report
