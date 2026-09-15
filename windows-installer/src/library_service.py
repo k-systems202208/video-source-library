@@ -104,8 +104,8 @@ def list_works(
                 "availableVideoCount": int(r["available_count"]),
                 "favorite": bool(r["favorite"]),
                 "progress": _progress(int(r["watched_count"]), int(r["progress_total"]), int(r["in_progress_count"])),
-                "posterUrl": f"/tmdb-image/poster/{int(r["id"])}" if r["tmdb_match_status"] == "MATCHED" and r["tmdb_poster_path"] else None,
-                "backdropUrl": f"/tmdb-image/backdrop/{int(r["id"])}" if r["tmdb_match_status"] == "MATCHED" and r["tmdb_backdrop_path"] else None,
+                "posterUrl": f'/tmdb-image/poster/{int(r["id"])}' if r["tmdb_match_status"] == "MATCHED" and r["tmdb_poster_path"] else None,
+                "backdropUrl": f'/tmdb-image/backdrop/{int(r["id"])}' if r["tmdb_match_status"] == "MATCHED" and r["tmdb_backdrop_path"] else None,
             }
             for r in rows
         ],
@@ -167,8 +167,8 @@ def get_work(connection: sqlite3.Connection, work_id: int, *, user_id: int | Non
         "mediaFormat": r["media_format"], "director": r["director_or_direction"], "cast": r["main_cast_or_voice_actors"],
         "verificationStatus": r["verification_status"], "creditsVerificationStatus": r["credits_verification_status"],
         "favorite": bool(r["favorite"]),
-        "posterUrl": f"/tmdb-image/poster/{int(r["id"])}" if r["tmdb_match_status"] == "MATCHED" and r["tmdb_poster_path"] else None,
-        "backdropUrl": f"/tmdb-image/backdrop/{int(r["id"])}" if r["tmdb_match_status"] == "MATCHED" and r["tmdb_backdrop_path"] else None,
+        "posterUrl": f'/tmdb-image/poster/{int(r["id"])}' if r["tmdb_match_status"] == "MATCHED" and r["tmdb_poster_path"] else None,
+        "backdropUrl": f'/tmdb-image/backdrop/{int(r["id"])}' if r["tmdb_match_status"] == "MATCHED" and r["tmdb_backdrop_path"] else None,
         "tmdb": {
             "status": r["tmdb_match_status"] or "UNMATCHED",
             "mediaType": r["tmdb_media_type"], "id": r["tmdb_id"], "confidence": r["tmdb_confidence"],
