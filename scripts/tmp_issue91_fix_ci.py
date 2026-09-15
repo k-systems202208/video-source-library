@@ -20,6 +20,11 @@ replace_once(
     "self.assertEqual(SCHEMA_VERSION,5)",
 )
 replace_once(
+    "tests/test_phase4.py",
+    "self.assertEqual(c.execute('SELECT schema_version FROM schema_info').fetchone()[0],4)",
+    "self.assertEqual(c.execute('SELECT schema_version FROM schema_info').fetchone()[0],5)",
+)
+replace_once(
     "windows-installer/src/backup_restore.py",
     "from paths import BACKUP_DIR, DATA_ROOT, DATABASE_PATH\n",
     "from database import SCHEMA_VERSION\nfrom paths import BACKUP_DIR, DATA_ROOT, DATABASE_PATH\n",
