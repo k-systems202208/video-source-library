@@ -412,42 +412,26 @@ class VideoLibraryLauncher(tk.Tk):
         self._append_log(f"元データ異常CSV: {report.get('sourceErrorsCsvReport', '')}")
         self._set_busy(False)
         message = (
-            f"全件再生監査が完了しました。
-
-"
-            f"登録: {total:,}件
-"
-            f"実動画: {playable_total:,}件
-"
-            f"DIRECT: {direct:,}件
-"
-            f"互換変換: {transcode:,}件
-"
-            f"アプリ再生不可: {application_no_route:,}件
-"
-            f"元データ異常: {source_errors:,}件
-
-"
+            f"全件再生監査が完了しました。\n\n"
+            f"登録: {total:,}件\n"
+            f"実動画: {playable_total:,}件\n"
+            f"DIRECT: {direct:,}件\n"
+            f"互換変換: {transcode:,}件\n"
+            f"アプリ再生不可: {application_no_route:,}件\n"
+            f"元データ異常: {source_errors:,}件\n\n"
             f"レポート: {PLAYBACK_AUDIT_OUTPUT_PATH}"
         )
         if application_no_route:
-            messagebox.showwarning(APP_NAME, message + "
-
-アプリ側の再生互換性に未解決項目があります。")
+            messagebox.showwarning(APP_NAME, message + "\n\nアプリ側の再生互換性に未解決項目があります。")
         elif source_errors:
             messagebox.showwarning(
                 APP_NAME,
                 message
-                + "
-
-実動画の再生互換性は合格です。"
-                + "
-元データ異常は専用CSVを確認し、元ファイルを差し替えてください。",
+                + "\n\n実動画の再生互換性は合格です。"
+                + "\n元データ異常は専用CSVを確認し、元ファイルを差し替えてください。",
             )
         else:
-            messagebox.showinfo(APP_NAME, message + "
-
-v1.0再生受入条件を満たしています。")
+            messagebox.showinfo(APP_NAME, message + "\n\nv1.0再生受入条件を満たしています。")
 
     def _playback_audit_failed(self, exc: Exception) -> None:
         self.audit_thread = None
