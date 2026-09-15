@@ -379,3 +379,11 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 - 利用者状態: SQLite `library.db`
 
 元動画・字幕を変更・削除・移動しないことを設計原則とします。
+
+## TMDb作品照合とポスター（1.1.0）
+
+ランチャーの `TMDb設定` で API Read Access Token を設定した後、ライブラリ停止中に `TMDb同期` を実行できます。作品名・年・種別から保守的に照合し、高信頼の `MATCHED` だけを自動確定して poster/backdrop を `%LOCALAPPDATA%\VideoLibrary\TMDbImages` に保存します。低信頼候補は `REVIEW` として監査CSVへ残し、画像は採用しません。
+
+同期結果は `%LOCALAPPDATA%\VideoLibrary\diagnostics\tmdb-match-audit-*.json/.csv` に保存します。TMDb未設定や通信失敗でも、動画再生・字幕・利用者状態など既存機能はそのまま利用できます。
+
+TMDB attribution: This product uses the TMDB API but is not endorsed or certified by TMDB.
