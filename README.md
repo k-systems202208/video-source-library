@@ -154,7 +154,10 @@
 - 人物別一覧は既存の作品検索APIを再利用し、この段階では外部通信を追加しない
 - 外国人名の中黒 `・` を人物区切りとして扱わず、クレジット文字列を安全側で分割
 - TMDb API Read Access TokenのBearer認証、schema 5の作品紐付け／APIキャッシュ基盤、ランチャーのTMDb設定を追加
-- 作品自動マッチング、人物ID、ポスター／背景画像、レトロ映画館UIは次段階で追加
+- 作品名・公開年・種別を使ったTMDb候補照合を追加し、高信頼かつ候補差が十分な場合だけ自動確定
+- 自動確定時はTMDb ID、media type、confidence、poster/backdrop参照、overviewをSQLiteへ保存
+- 低信頼・複数候補は `REVIEW` / `CANDIDATE` として残し、440作品向けJSON/CSV監査レポートを出力
+- 人物ID統合、画像のWeb UI表示、レトロ映画館UIは次段階で追加
 
 対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
@@ -372,6 +375,7 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 - [0.9.2 実ライブラリ全件再生監査](docs/33-0.9.2-playback-audit.md)
 - [1.1.0 既存クレジット表示と人物クリック作品検索](docs/40-1.1.0-credits-person-links.md)
 - [1.1.0 TMDb連携基盤](docs/41-1.1.0-tmdb-foundation.md)
+- [1.1.0 TMDb作品マッチングと監査](docs/42-1.1.0-tmdb-matching.md)
 
 ## 正本
 - 動画そのもの: ユーザー指定の動画フォルダー
