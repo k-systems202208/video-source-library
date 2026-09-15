@@ -1,4 +1,4 @@
-# 自宅動画ライブラリ v1.0 DB設計
+# 自宅動画ライブラリ v1.1 DB設計
 
 SQLiteを使用し、WAL、foreign keysを有効にする。
 
@@ -7,6 +7,7 @@ SQLiteを使用し、WAL、foreign keysを有効にする。
 - schema 2: Phase 3で `scan_discoveries` を追加
 - schema 3: Phase 4で `user_video_state.watched_override` を追加
 - schema 4: Phase 6で `subtitles` とffprobe解析状態を追加
+- schema 5: 1.1.0でTMDb作品紐付けとAPIレスポンスキャッシュを追加
 
 既存DBは削除・再作成せずmigrationする。schema更新後もお気に入り、視聴位置、再生回数などの既存利用者状態を保持する。
 
@@ -25,6 +26,8 @@ SQLiteを使用し、WAL、foreign keysを有効にする。
 - `scan_errors`
 - `scan_discoveries`: JSON未登録だが実フォルダーで発見された `NEW_FILE`
 - `metadata_imports`
+- `tmdb_work_links`: ローカル作品とTMDb movie/tv IDの紐付け・画像パス等のキャッシュ
+- `tmdb_api_cache`: TMDb search/details/credits/configuration等のJSONレスポンスキャッシュ
 
 ## `video_files`
 
@@ -112,3 +115,20 @@ JSON更新時は外部IDでUPSERTし、`user_work_state` / `user_video_state` �
 
 ## 整合性
 `PRAGMA quick_check = ok`、`PRAGMA foreign_key_check` エラー0、外部ID重複0を必須とする。
+
+## TMDbキャッシュ（schema 5）
+
+### `tmdb_work_links`
+ローカル `works.id` ごとにTMDbとの照合状態を保持する。1作品につき0または1行で、同じTMDb作品へ複数のローカル作品が対応する可能性があるためTMDb ID自体はUNIQUEにしない。
+
+- `media_type`: `movie` / `tv`
+- `tmdb_id`: TMDb側ID
+- `match_status`: `UNMATCHED` / `CANDIDATE` / `MATCHED` / `REVIEW`
+- `confidence`: 0.0〜1.0。自動確定の判断材料であり、低信頼候補は後続工程で `REVIEW` とする
+- `matched_title` / `matched_year`
+- `poster_path` / `backdrop_path`
+- `overview`
+- `synced_at`
+
+### `tmdb_api_cache`
+API応答を `cache_key` 単位でJSON保存する。`expires_at` がある場合は期限切れを再利用しない。API Read Access Tokenは保存しない。

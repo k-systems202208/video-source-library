@@ -14,7 +14,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable
 
-from app_config import load_config, save_config
+from app_config import configured_tmdb_token, load_config, save_config, save_tmdb_token, tmdb_token_source
 from app_version import APP_VERSION
 from backup_restore import apply_pending_restore, create_manual_backup
 from database import connect, initialize_database, now_iso
@@ -251,6 +251,7 @@ class VideoLibraryLauncher(tk.Tk):
         )
         self.audit_button.pack(side="left", padx=8)
         ttk.Button(operations_frame, text="状態再確認", command=self.refresh_local_status).pack(side="left")
+        ttk.Button(operations_frame, text="TMDb設定", command=self.open_tmdb_settings).pack(side="left", padx=(0, 8))
         ttk.Label(
             operations_frame,
             text="停止中に全件再生監査を実行できます。",
@@ -269,6 +270,66 @@ class VideoLibraryLauncher(tk.Tk):
         ttk.Label(scan_box, textvariable=self.scan_elapsed, font=SMALL_FONT).pack(anchor="w", pady=(2, 6))
         self.log_text = tk.Text(scan_box, height=4, wrap="none", font=MONO_FONT, state="disabled")
         self.log_text.pack(fill="both", expand=True)
+
+
+    def open_tmdb_settings(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("TMDb設定")
+        dialog.geometry("520x245")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+
+        frame = ttk.Frame(dialog, padding=18)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="TMDb API Read Access Token", font=STATUS_FONT).pack(anchor="w")
+        source = tmdb_token_source(config_path=CONFIG_PATH)
+        source_text = {
+            "environment": "現在: 環境変数 VIDEO_LIBRARY_TMDB_TOKEN で設定済み",
+            "config": "現在: ローカル設定に保存済み",
+            "none": "現在: 未設定（TMDb未設定でも既存機能は利用できます）",
+        }.get(source, "現在: 未設定")
+        ttk.Label(frame, text=source_text, font=SMALL_FONT, wraplength=470).pack(anchor="w", pady=(6, 10))
+        ttk.Label(
+            frame,
+            text="新しいトークンを入力して保存してください。保存済みトークンの値は画面へ再表示しません。",
+            font=SMALL_FONT,
+            wraplength=470,
+        ).pack(anchor="w")
+        token_value = tk.StringVar(value="")
+        entry = ttk.Entry(frame, textvariable=token_value, show="*")
+        entry.pack(fill="x", pady=(8, 12))
+
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x")
+
+        def save_local() -> None:
+            value = token_value.get().strip()
+            if not value:
+                messagebox.showinfo(APP_NAME, "保存するトークンを入力してください。", parent=dialog)
+                return
+            save_tmdb_token(value, config_path=CONFIG_PATH)
+            token_value.set("")
+            messagebox.showinfo(APP_NAME, "TMDbトークンをローカル設定へ保存しました。", parent=dialog)
+            dialog.destroy()
+
+        def clear_local() -> None:
+            save_tmdb_token(None, config_path=CONFIG_PATH)
+            token_value.set("")
+            if configured_tmdb_token(config_path=CONFIG_PATH):
+                messagebox.showinfo(
+                    APP_NAME,
+                    "ローカル設定を削除しました。環境変数のTMDbトークンは引き続き有効です。",
+                    parent=dialog,
+                )
+            else:
+                messagebox.showinfo(APP_NAME, "ローカルのTMDb設定を削除しました。", parent=dialog)
+            dialog.destroy()
+
+        ttk.Button(buttons, text="保存", command=save_local).pack(side="left")
+        ttk.Button(buttons, text="ローカル設定を削除", command=clear_local).pack(side="left", padx=8)
+        ttk.Button(buttons, text="閉じる", command=dialog.destroy).pack(side="right")
+        entry.focus_set()
 
 
     def refresh_cache_status(self) -> None:
