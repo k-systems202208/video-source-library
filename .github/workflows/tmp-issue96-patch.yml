@@ -1,0 +1,37 @@
+name: tmp-issue96-patch
+
+on:
+  push:
+    branches:
+      - fix/issue-96-tmdb-combined-media
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/issue-96-tmdb-combined-media
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Apply matcher v2 patch
+        run: python scripts/tmp_issue96_patch.py
+      - name: Compile
+        run: python -m compileall windows-installer/src tests
+      - name: Focused tests
+        shell: pwsh
+        run: |
+          python -m unittest tests.test_tmdb_combined_media_v110 tests.test_tmdb_matching_images_v110 tests.test_tmdb_foundation_v110 -v
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md docs/43-1.1.0-tmdb-combined-media-fix.md tests/test_tmdb_combined_media_v110.py windows-installer/src/tmdb_sync.py
+          git commit -m "fix: 複合カテゴリでTMDb movie/tv両方を照合"
+          git push origin HEAD:fix/issue-96-tmdb-combined-media
