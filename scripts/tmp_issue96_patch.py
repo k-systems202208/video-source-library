@@ -145,9 +145,17 @@ class CombinedMediaMatchingTests(unittest.TestCase):
             second = sync_tmdb_library(
                 db, image_root, reports, "token", client=second_client, image_downloader=fake_download
             )
-            self.assertEqual(second["items"][0]["reason"], "EXISTING_MATCH")
+            self.assertEqual(second["summary"]["matched"], 1)
             self.assertEqual(second_client.movie_calls, 0)
             self.assertEqual(second_client.tv_calls, 0)
+            with connect(db) as connection:
+                row = connection.execute(
+                    "SELECT media_type,tmdb_id,match_status FROM tmdb_work_links WHERE work_id=?",
+                    (work_id,),
+                ).fetchone()
+                self.assertEqual(row["media_type"], "tv")
+                self.assertEqual(int(row["tmdb_id"]), 1396)
+                self.assertEqual(row["match_status"], "MATCHED")
 
 
 if __name__ == "__main__":
