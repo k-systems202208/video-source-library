@@ -30,22 +30,13 @@ replace_once(
     '''            if existing is not None and existing["match_status"] == _MATCHED and existing["tmdb_id"]:\n''',
     '''            if (\n                not force_reassess\n                and existing is not None\n                and existing["match_status"] == _MATCHED\n                and existing["tmdb_id"]\n            ):\n''',
 )
-# Store matcher version only after all works have been processed successfully.
 replace_once(
     path,
-    '''            if progress_callback is not None:\n                progress_callback(\n''',
-    '''            if progress_callback is not None:\n                progress_callback(\n''',
-)
-# Insert marker before summary construction after loop. Use the exact summary marker.
-replace_once(
-    path,
-    '''        summary = {\n''',
-    '''        _store_matcher_version(connection)\n        connection.commit()\n        summary = {\n''',
+    '''    summary = {\n''',
+    '''        _store_matcher_version(connection)\n        connection.commit()\n    summary = {\n''',
 )
 
-# Add regression tests.
-test_path = Path('tests/test_tmdb_combined_media_v110.py')
-test_path.write_text(r'''from __future__ import annotations
+Path('tests/test_tmdb_combined_media_v110.py').write_text(r'''from __future__ import annotations
 
 import tempfile
 import unittest
@@ -96,7 +87,6 @@ def seed_combined_work(db: Path) -> int:
             (stamp, stamp),
         )
         work_id = int(connection.execute("SELECT last_insert_rowid()").fetchone()[0])
-        # Simulate a MATCHED row produced by matcher v1. It must be reassessed once.
         connection.execute(
             """
             INSERT INTO tmdb_work_links(
@@ -151,7 +141,6 @@ class CombinedMediaMatchingTests(unittest.TestCase):
                 ).fetchone()
                 self.assertIn('"version":2', marker["payload_json"])
 
-            # Matcher v2 marker protects the confirmed result on later syncs.
             second_client = CombinedClient()
             second = sync_tmdb_library(
                 db, image_root, reports, "token", client=second_client, image_downloader=fake_download
@@ -165,11 +154,8 @@ if __name__ == "__main__":
     unittest.main()
 ''', encoding='utf-8')
 
-# Documentation.
-doc = Path('docs/43-1.1.0-tmdb-combined-media-fix.md')
-doc.write_text('''# 1.1.0-a2 TMDb複合カテゴリ照合修正\n\n## 実機監査で判明した問題\n\n2026-09-15の440作品監査で、`日本映画・ドラマ` / `海外映画・ドラマ` がmovieのみ検索されていた。\n原因はカテゴリ文字列に「映画」が含まれるとmovieのみを返す判定順序だった。\n\n## 修正\n\n- 「映画」と「ドラマ」の両方を含むカテゴリはmovie/tv両方を検索する。\n- 単独映画カテゴリはmovie、単独ドラマカテゴリはtvを維持する。\n- matcher version 2 をDB内TMDbキャッシュへ記録する。\n- version 2へ初回移行するときだけ、旧matcherで作られた既存MATCHEDも再評価する。\n- 再評価が最後まで成功した場合だけversion markerを保存する。中断時は次回再試行する。\n- version 2移行後の既存MATCHEDは従来どおり保護する。\n- REVIEW/UNMATCHEDではTMDb画像URLを公開しない既存安全策を維持する。\n\n## 実機再監査\n\n修正版でTMDb同期を再実行し、440作品のMATCHED/REVIEW/UNMATCHEDと誤マッチを再確認する。\n特に日本ドラマと「ブレイキング・バッド」がtv候補として評価されることを確認する。\n''', encoding='utf-8')
+Path('docs/43-1.1.0-tmdb-combined-media-fix.md').write_text('''# 1.1.0-a2 TMDb複合カテゴリ照合修正\n\n## 実機監査で判明した問題\n\n2026-09-15の440作品監査で、`日本映画・ドラマ` / `海外映画・ドラマ` がmovieのみ検索されていた。\n原因はカテゴリ文字列に「映画」が含まれるとmovieのみを返す判定順序だった。\n\n## 修正\n\n- 「映画」と「ドラマ」の両方を含むカテゴリはmovie/tv両方を検索する。\n- 単独映画カテゴリはmovie、単独ドラマカテゴリはtvを維持する。\n- matcher version 2 をDB内TMDbキャッシュへ記録する。\n- version 2へ初回移行するときだけ、旧matcherで作られた既存MATCHEDも再評価する。\n- 再評価が最後まで成功した場合だけversion markerを保存する。中断時は次回再試行する。\n- version 2移行後の既存MATCHEDは従来どおり保護する。\n- REVIEW/UNMATCHEDではTMDb画像URLを公開しない既存安全策を維持する。\n\n## 実機再監査\n\n修正版でTMDb同期を再実行し、440作品のMATCHED/REVIEW/UNMATCHEDと誤マッチを再確認する。\n特に日本ドラマと「ブレイキング・バッド」がtv候補として評価されることを確認する。\n''', encoding='utf-8')
 
-# README note.
 readme = Path('README.md')
 text = readme.read_text(encoding='utf-8')
 section = '''\n\n### TMDb複合カテゴリ照合（1.1.0-a2）\n\n`日本映画・ドラマ` / `海外映画・ドラマ` はmovieとtvの両方を検索します。旧ロジックで作成された既存MATCHEDはmatcher version 2への初回移行時だけ再評価し、その後は従来どおり確定済みMATCHEDを保護します。\n'''
