@@ -1,0 +1,82 @@
+name: Apply Issue 66 Launcher Layout
+
+on:
+  push:
+    branches: [fix/issue-66-v093-launcher-audit-layout]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/issue-66-v093-launcher-audit-layout
+      - name: Patch 0.9.3 launcher layout
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          launcher = Path('windows-installer/src/launcher.py')
+          s = launcher.read_text(encoding='utf-8')
+
+          footer = '''        footer = ttk.Frame(main)\n        footer.pack(fill="x", pady=(8, 0))\n        ttk.Button(footer, text="バックアップ作成", command=self.backup).pack(side="left")\n        self.audit_button = ttk.Button(footer, text="全件再生監査", command=self.start_playback_audit)\n        self.audit_button.pack(side="left", padx=8)\n        ttk.Button(footer, text="状態再確認", command=self.refresh_local_status).pack(side="left")\n        ttk.Label(\n            footer,\n            text="この画面を閉じるとローカルサーバーも停止します。動画ファイル自体は変更しません。",\n            font=SMALL_FONT,\n        ).pack(side="right")\n'''
+          if s.count(footer) != 1:
+              raise SystemExit(f'footer anchor mismatch: {s.count(footer)}')
+          s = s.replace(footer, '', 1)
+
+          status_anchor = '        ttk.Label(main, textvariable=self.status, font=STATUS_FONT).pack(anchor="w", pady=(0, 6))\n'
+          operations = '''        operations_frame = ttk.Frame(main)\n        operations_frame.pack(fill="x", pady=(0, 10))\n        ttk.Button(operations_frame, text="バックアップ作成", command=self.backup).pack(side="left")\n        self.audit_button = ttk.Button(\n            operations_frame, text="全件再生監査", command=self.start_playback_audit\n        )\n        self.audit_button.pack(side="left", padx=8)\n        ttk.Button(operations_frame, text="状態再確認", command=self.refresh_local_status).pack(side="left")\n        ttk.Label(\n            operations_frame,\n            text="停止中に全件再生監査を実行できます。",\n            font=SMALL_FONT,\n        ).pack(side="right")\n\n'''
+          if s.count(status_anchor) != 1:
+              raise SystemExit(f'status anchor mismatch: {s.count(status_anchor)}')
+          s = s.replace(status_anchor, operations + status_anchor, 1)
+
+          old_log = '        self.log_text = tk.Text(scan_box, height=8, wrap="none", font=MONO_FONT, state="disabled")\n'
+          new_log = '        self.log_text = tk.Text(scan_box, height=4, wrap="none", font=MONO_FONT, state="disabled")\n'
+          if s.count(old_log) != 1:
+              raise SystemExit(f'log height anchor mismatch: {s.count(old_log)}')
+          s = s.replace(old_log, new_log, 1)
+          launcher.write_text(s, encoding='utf-8')
+
+          app_version = Path('windows-installer/src/app_version.py')
+          av = app_version.read_text(encoding='utf-8')
+          if av != 'APP_VERSION = "0.9.2"\n':
+              raise SystemExit('app_version mismatch')
+          app_version.write_text('APP_VERSION = "0.9.3"\n', encoding='utf-8')
+
+          installer = Path('windows-installer/installer/VideoLibrary.iss')
+          ins = installer.read_text(encoding='utf-8')
+          if ins.count('#define MyAppVersion "0.9.2"') != 1:
+              raise SystemExit('installer version mismatch')
+          installer.write_text(ins.replace('#define MyAppVersion "0.9.2"', '#define MyAppVersion "0.9.3"', 1), encoding='utf-8')
+
+          consistency = Path('tests/test_release_consistency.py')
+          cs = consistency.read_text(encoding='utf-8')
+          if cs.count('self.assertEqual(APP_VERSION, "0.9.2")') != 1:
+              raise SystemExit('release consistency version mismatch')
+          consistency.write_text(cs.replace('self.assertEqual(APP_VERSION, "0.9.2")', 'self.assertEqual(APP_VERSION, "0.9.3")', 1), encoding='utf-8')
+
+          layout_test = Path('tests/test_launcher_layout_v093.py')
+          layout_test.write_text('''from __future__ import annotations\n\nimport unittest\nfrom pathlib import Path\n\nROOT = Path(__file__).resolve().parents[1]\nLAUNCHER = ROOT / "windows-installer" / "src" / "launcher.py"\n\n\nclass LauncherLayoutV093Tests(unittest.TestCase):\n    def test_critical_operations_are_before_expandable_scan_area(self) -> None:\n        text = LAUNCHER.read_text(encoding="utf-8")\n        self.assertIn('WINDOW_GEOMETRY = "780x690"', text)\n        operations = text.index('operations_frame = ttk.Frame(main)')\n        audit = text.index('text="全件再生監査"')\n        scan = text.index('scan_box = ttk.LabelFrame(main, text="起動スキャン"')\n        self.assertLess(operations, scan)\n        self.assertLess(audit, scan)\n        self.assertIn('operations_frame.pack(fill="x", pady=(0, 10))', text)\n        self.assertIn('scan_box.pack(fill="both", expand=True)', text)\n        self.assertNotIn('footer = ttk.Frame(main)', text)\n\n    def test_standard_height_uses_compact_scan_log(self) -> None:\n        text = LAUNCHER.read_text(encoding="utf-8")\n        self.assertIn('self.log_text = tk.Text(scan_box, height=4', text)\n        self.assertNotIn('self.log_text = tk.Text(scan_box, height=8', text)\n\n\nif __name__ == "__main__":\n    unittest.main()\n''', encoding='utf-8')
+
+          readme = Path('README.md')
+          rs = readme.read_text(encoding='utf-8')
+          anchor = '''### 0.9.2: v1.0前の実ライブラリ全件再生監査\n- Windowsランチャーの「全件再生監査」で登録動画を実ファイル単位にffprobe解析\n- コンテナ、映像Codec、全音声Codec・言語、日本語音声、外部字幕、埋め込み字幕を集計\n- 各動画を `DIRECT` / `TRANSCODE` / `NO_ROUTE` に分類\n- 欠損、ffprobe失敗、映像ストリームなし、FFmpeg不在を `NO_ROUTE` として明示\n- JSON / CSVレポートを `%LOCALAPPDATA%\\VideoLibrary\\diagnostics` へ出力\n- 元動画・字幕・PlaybackCache・SQLiteの利用者状態は変更しない\n- v1.0受入条件は実ライブラリ4,869件で `NO_ROUTE = 0`\n\n'''
+          addition = anchor + '''### 0.9.3: 全件再生監査ボタンのランチャー配置修正\n- 標準ウィンドウサイズ `780x690` を維持したまま、バックアップ・全件再生監査・状態再確認を起動スキャン欄より上へ移動\n- 起動スキャンのログ表示を標準サイズ向けにコンパクト化し、重要操作が画面外へ押し出されないように修正\n- 全件再生監査の処理内容・レポート形式・v1.0受入条件は0.9.2から変更しない\n- CIで重要操作がexpand対象の起動スキャン欄より前に配置されることを固定\n\n'''
+          if rs.count(anchor) != 1:
+              raise SystemExit(f'README 0.9.2 anchor mismatch: {rs.count(anchor)}')
+          readme.write_text(rs.replace(anchor, addition, 1), encoding='utf-8')
+
+          doc = Path('docs/34-0.9.3-launcher-audit-layout.md')
+          doc.write_text('''# 0.9.3 全件再生監査ボタンのランチャー配置修正\n\n## 背景\n\n0.9.2では全件再生監査機能をWindowsランチャーへ追加したが、標準サイズ `780x690` では起動スキャン欄の要求高さにより、最下部のフッターが画面外へ押し出される場合があった。\n\n## 修正\n\n- `バックアップ作成`、`全件再生監査`、`状態再確認` を起動スキャン欄より前に配置する\n- 起動スキャン欄だけを `expand=True` の可変領域として残す\n- 標準ウィンドウサイズ `780x690` は変更しない\n- スキャンログの初期高さを8行から4行へ縮小し、標準サイズで主要操作と進捗を両立する\n- 0.9.2の監査処理、JSON/CSV形式、`NO_ROUTE = 0` の受入条件は変更しない\n\n## 回帰テスト\n\n`tests/test_launcher_layout_v093.py` で以下を固定する。\n\n- 監査操作エリアが起動スキャン欄より先に生成される\n- `全件再生監査` ボタンが起動スキャン欄より先に存在する\n- 起動スキャン欄のみが `expand=True` である\n- 旧フッター配置へ戻っていない\n- `780x690` とコンパクトなログ高さを維持する\n\n## 実機確認\n\n0.9.3を上書きインストールし、標準サイズのまま `全件再生監査` が表示されることを確認する。その後、ライブラリ停止中に全件再生監査を実行して4,869件 / `NO_ROUTE = 0` を確認する。\n''', encoding='utf-8')
+          PY
+      - name: Commit 0.9.3 changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md docs/34-0.9.3-launcher-audit-layout.md tests/test_launcher_layout_v093.py tests/test_release_consistency.py windows-installer/src/launcher.py windows-installer/src/app_version.py windows-installer/installer/VideoLibrary.iss
+          git commit -m "0.9.3: 全件再生監査ボタンを常時表示領域へ移動"
+          git push origin HEAD:fix/issue-66-v093-launcher-audit-layout
