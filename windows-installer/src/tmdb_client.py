@@ -80,3 +80,11 @@ class TmdbClient:
             params["first_air_date_year"] = first_air_date_year
         value = self.get_json("/search/tv", params)
         return value if isinstance(value, dict) else {}
+
+    def movie_details(self, tmdb_id: int, *, language: str = "ja-JP") -> dict[str, Any]:
+        value = self.get_json(f"/movie/{int(tmdb_id)}", {"language": language})
+        return value if isinstance(value, dict) else {}
+
+    def tv_details(self, tmdb_id: int, *, language: str = "ja-JP") -> dict[str, Any]:
+        value = self.get_json(f"/tv/{int(tmdb_id)}", {"language": language})
+        return value if isinstance(value, dict) else {}
