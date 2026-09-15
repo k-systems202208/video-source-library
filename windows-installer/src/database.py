@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def now_iso() -> str:
@@ -261,6 +261,36 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             status TEXT NOT NULL,
             message TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS tmdb_work_links (
+            work_id INTEGER PRIMARY KEY,
+            media_type TEXT CHECK(media_type IN ('movie', 'tv') OR media_type IS NULL),
+            tmdb_id INTEGER,
+            match_status TEXT NOT NULL DEFAULT 'UNMATCHED'
+                CHECK(match_status IN ('UNMATCHED', 'CANDIDATE', 'MATCHED', 'REVIEW')),
+            confidence REAL CHECK(confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)),
+            matched_title TEXT,
+            matched_year TEXT,
+            poster_path TEXT,
+            backdrop_path TEXT,
+            overview TEXT,
+            synced_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(work_id) REFERENCES works(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS tmdb_api_cache (
+            cache_key TEXT PRIMARY KEY,
+            payload_json TEXT NOT NULL,
+            fetched_at TEXT NOT NULL,
+            expires_at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tmdb_work_lookup
+            ON tmdb_work_links(media_type, tmdb_id);
+        CREATE INDEX IF NOT EXISTS idx_tmdb_work_status
+            ON tmdb_work_links(match_status);
 
         CREATE INDEX IF NOT EXISTS idx_works_category ON works(category);
         CREATE INDEX IF NOT EXISTS idx_works_title ON works(official_title);

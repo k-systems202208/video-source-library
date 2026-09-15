@@ -8,12 +8,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from database import SCHEMA_VERSION
 from paths import BACKUP_DIR, DATA_ROOT, DATABASE_PATH
 
 RESTORE_REQUEST_FILENAME = "restore-request.json"
 RESTORE_STATUS_FILENAME = "restore-status.json"
 BACKUP_NAME_PATTERN = re.compile(r"^library-[A-Za-z0-9._-]+\.db$")
-SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
+SUPPORTED_SCHEMA_VERSIONS = frozenset(range(1, SCHEMA_VERSION + 1))
 
 
 def _utc_now_iso() -> str:
