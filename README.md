@@ -118,6 +118,14 @@
 - 全件再生監査の処理内容・レポート形式・v1.0受入条件は0.9.2から変更しない
 - CIで重要操作がexpand対象の起動スキャン欄より前に配置されることを固定
 
+### 0.9.4〜0.9.5: 全件再生監査の精度向上と元データ異常分離
+- 0.9.4: DB拡張子の正規化、DIRECT decode-only、AAC 2ch正規化、ASS/SRT実体の誤登録分類を追加
+- 0.9.5: 実動画の再生互換性と元ライブラリのデータ異常を別集計に分離
+- `applicationNoRoute` はアプリ側の未解決再生経路だけを示す
+- `sourceDataErrors` は元ファイル差し替えが必要な項目を示す
+- 元データ異常だけを `playback-audit-source-errors-*.csv` に出力
+- 元動画・字幕・SQLite・PlaybackCacheは監査で変更しない
+
 対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
 ## ffmpeg / ffprobe
