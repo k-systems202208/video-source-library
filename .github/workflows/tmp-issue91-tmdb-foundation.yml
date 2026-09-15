@@ -1,0 +1,35 @@
+name: tmp-issue91-tmdb-foundation
+
+on:
+  push:
+    branches:
+      - feature/issue-91-tmdb-foundation
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/issue-91-tmdb-foundation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Apply TMDb foundation changes
+        run: python scripts/tmp_issue91_patch.py
+      - name: Run focused tests
+        shell: pwsh
+        run: |
+          python -m unittest tests.test_tmdb_foundation_v110 tests.test_phase6 tests.test_release_consistency tests.test_credits_people_ui_v110 -v
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md docs/01-database-design.md docs/41-1.1.0-tmdb-foundation.md tests/test_phase6.py tests/test_tmdb_foundation_v110.py windows-installer/src/app_config.py windows-installer/src/database.py windows-installer/src/launcher.py windows-installer/src/tmdb_cache.py windows-installer/src/tmdb_client.py
+          git commit -m "feat: TMDb連携基盤とローカルキャッシュを追加"
+          git push origin HEAD:feature/issue-91-tmdb-foundation
