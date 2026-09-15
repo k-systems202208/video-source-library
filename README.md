@@ -139,6 +139,15 @@
 - 実ライブラリ24件では、0.9.6で表示された9件の候補はすべて別エピソードだったため、0.9.7の期待値は「候補あり0 / 候補なし24」
 - 候補探索は読み取り専用で、元動画・字幕・SQLite・PlaybackCacheを変更しない
 
+### 1.0.0: 正式版
+- 実ライブラリ4,869登録のうち、実動画4,845件で `applicationNoRoute = 0` を実機監査で確認
+- DIRECT 1,826件 / 互換変換 3,019件で、実動画4,845件すべてに再生経路を確保
+- probe / decode / missing / path escape のアプリ側異常はすべて0
+- 元データ異常24件は `.mkv` / `.mp4` 名だが実体がASS/SRT字幕データであり、アプリ不具合と分離
+- 0.9.7実機監査で24件すべて `repairCandidateCount = 0` を確認し、別エピソードの誤候補を解消
+- Tailscale Serve / PWA / 外部字幕 / 日本語音声優先 / FFmpeg互換変換 / PlaybackCache / Backup / 全件監査を正式版の基準として固定
+- 元動画・字幕・SQLite利用者状態を自動変更しない方針を維持
+
 対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
 ## ffmpeg / ffprobe
