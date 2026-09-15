@@ -81,8 +81,9 @@ def list_works(
           COALESCE((SELECT favorite FROM user_work_state s WHERE s.user_id=? AND s.work_id=w.id),0) favorite,
           (SELECT COUNT(*) FROM videos v LEFT JOIN user_video_state s ON s.video_id=v.id AND s.user_id=? WHERE v.work_id=w.id AND v.content_type IN ('EPISODE','MOVIE') AND COALESCE(s.watched,0)=1) watched_count,
           (SELECT COUNT(*) FROM videos v WHERE v.work_id=w.id AND v.content_type IN ('EPISODE','MOVIE')) progress_total,
-          (SELECT COUNT(*) FROM videos v JOIN user_video_state s ON s.video_id=v.id AND s.user_id=? WHERE v.work_id=w.id AND s.position_ms>0 AND s.watched=0) in_progress_count
-        FROM works w {where_sql}
+          (SELECT COUNT(*) FROM videos v JOIN user_video_state s ON s.video_id=v.id AND s.user_id=? WHERE v.work_id=w.id AND s.position_ms>0 AND s.watched=0) in_progress_count,
+          t.match_status tmdb_match_status,t.poster_path tmdb_poster_path,t.backdrop_path tmdb_backdrop_path
+        FROM works w LEFT JOIN tmdb_work_links t ON t.work_id=w.id {where_sql}
         ORDER BY {order_sql} LIMIT ? OFFSET ?
         """,
         [user_id, user_id, user_id, *params, limit_value, offset_value],
@@ -103,6 +104,8 @@ def list_works(
                 "availableVideoCount": int(r["available_count"]),
                 "favorite": bool(r["favorite"]),
                 "progress": _progress(int(r["watched_count"]), int(r["progress_total"]), int(r["in_progress_count"])),
+                "posterUrl": f"/tmdb-image/poster/{int(r["id"])}" if r["tmdb_match_status"] == "MATCHED" and r["tmdb_poster_path"] else None,
+                "backdropUrl": f"/tmdb-image/backdrop/{int(r["id"])}" if r["tmdb_match_status"] == "MATCHED" and r["tmdb_backdrop_path"] else None,
             }
             for r in rows
         ],
@@ -115,8 +118,11 @@ def get_work(connection: sqlite3.Connection, work_id: int, *, user_id: int | Non
         SELECT w.id,w.external_work_no,w.category,w.year_or_period,w.source_title,w.official_title,
                w.media_file_count,w.subtitle_file_count,w.media_format,w.director_or_direction,
                w.main_cast_or_voice_actors,w.verification_status,w.credits_verification_status,
-               COALESCE(s.favorite,0) favorite
-        FROM works w LEFT JOIN user_work_state s ON s.work_id=w.id AND s.user_id=? WHERE w.id=?
+               COALESCE(s.favorite,0) favorite,t.media_type tmdb_media_type,t.tmdb_id,t.match_status tmdb_match_status,
+               t.confidence tmdb_confidence,t.matched_title tmdb_matched_title,t.matched_year tmdb_matched_year,
+               t.poster_path tmdb_poster_path,t.backdrop_path tmdb_backdrop_path,t.overview tmdb_overview
+        FROM works w LEFT JOIN user_work_state s ON s.work_id=w.id AND s.user_id=?
+        LEFT JOIN tmdb_work_links t ON t.work_id=w.id WHERE w.id=?
         """,
         (user_id, work_id),
     ).fetchone()
@@ -161,6 +167,14 @@ def get_work(connection: sqlite3.Connection, work_id: int, *, user_id: int | Non
         "mediaFormat": r["media_format"], "director": r["director_or_direction"], "cast": r["main_cast_or_voice_actors"],
         "verificationStatus": r["verification_status"], "creditsVerificationStatus": r["credits_verification_status"],
         "favorite": bool(r["favorite"]),
+        "posterUrl": f"/tmdb-image/poster/{int(r["id"])}" if r["tmdb_match_status"] == "MATCHED" and r["tmdb_poster_path"] else None,
+        "backdropUrl": f"/tmdb-image/backdrop/{int(r["id"])}" if r["tmdb_match_status"] == "MATCHED" and r["tmdb_backdrop_path"] else None,
+        "tmdb": {
+            "status": r["tmdb_match_status"] or "UNMATCHED",
+            "mediaType": r["tmdb_media_type"], "id": r["tmdb_id"], "confidence": r["tmdb_confidence"],
+            "matchedTitle": r["tmdb_matched_title"], "matchedYear": r["tmdb_matched_year"],
+            "overview": r["tmdb_overview"],
+        },
         "progress": _progress(int(p["watched"] or 0), int(p["total"] or 0), int(p["in_progress"] or 0)),
         "groups": [
             {"id": int(g["id"]), "name": g["display_name"], "type": g["group_type"], "sortOrder": int(g["sort_order"]),

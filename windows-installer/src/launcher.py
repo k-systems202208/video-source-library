@@ -27,6 +27,7 @@ from paths import CONFIG_PATH, DATABASE_PATH, DATA_ROOT, RUNTIME_PATH
 from remote_access import disable_remote_access, enable_remote_access, get_remote_status
 from scan_runner import scan_library
 from server import create_server
+from tmdb_sync import sync_tmdb_library
 
 APP_NAME = "自宅動画ライブラリ"
 # Music Library uses 8765. Keep Video Library on a different localhost origin
@@ -35,6 +36,8 @@ DEFAULT_PORT = 8876
 METADATA_PATH = DATA_ROOT / "metadata" / "video_library.json"
 PLAYBACK_CACHE_PATH = DATA_ROOT / "PlaybackCache"
 PLAYBACK_AUDIT_OUTPUT_PATH = DATA_ROOT / "diagnostics"
+TMDB_IMAGE_PATH = DATA_ROOT / "TMDbImages"
+TMDB_REPORT_OUTPUT_PATH = DATA_ROOT / "diagnostics"
 
 # Keep the Windows launcher visually aligned with mp3-source-music-library.
 UI_FONT = "Yu Gothic UI"
@@ -132,6 +135,7 @@ class VideoLibraryLauncher(tk.Tk):
         self.server_thread: threading.Thread | None = None
         self.scan_thread: threading.Thread | None = None
         self.audit_thread: threading.Thread | None = None
+        self.tmdb_thread: threading.Thread | None = None
         self.audit_started_monotonic: float | None = None
         self.scan_started_monotonic: float | None = None
         self.control_secret = ""
@@ -251,6 +255,8 @@ class VideoLibraryLauncher(tk.Tk):
         )
         self.audit_button.pack(side="left", padx=8)
         ttk.Button(operations_frame, text="状態再確認", command=self.refresh_local_status).pack(side="left")
+        self.tmdb_sync_button = ttk.Button(operations_frame, text="TMDb同期", command=self.start_tmdb_sync)
+        self.tmdb_sync_button.pack(side="left", padx=(0, 8))
         ttk.Button(operations_frame, text="TMDb設定", command=self.open_tmdb_settings).pack(side="left", padx=(0, 8))
         ttk.Label(
             operations_frame,
@@ -330,6 +336,112 @@ class VideoLibraryLauncher(tk.Tk):
         ttk.Button(buttons, text="ローカル設定を削除", command=clear_local).pack(side="left", padx=8)
         ttk.Button(buttons, text="閉じる", command=dialog.destroy).pack(side="right")
         entry.focus_set()
+
+
+    def start_tmdb_sync(self) -> None:
+        if self.server is not None or self.scan_thread is not None or self.audit_thread is not None or self.tmdb_thread is not None:
+            messagebox.showinfo(APP_NAME, "TMDb同期の前にライブラリを停止してください。")
+            return
+        if not DATABASE_PATH.is_file():
+            messagebox.showerror(APP_NAME, "ライブラリDBが見つかりません。")
+            return
+        token = configured_tmdb_token(config_path=CONFIG_PATH)
+        if not token:
+            messagebox.showinfo(APP_NAME, "先に「TMDb設定」でAPI Read Access Tokenを設定してください。")
+            return
+        if not messagebox.askyesno(
+            APP_NAME,
+            "登録作品をTMDbと照合し、高信頼で一致した作品のポスター／背景画像を保存します。\n"
+            "低信頼候補は自動確定しません。開始しますか？",
+        ):
+            return
+        self._set_busy(True)
+        self.status.set("TMDb作品情報を同期中です")
+        self.scan_status.set("TMDb同期中 — 作品を照合しています")
+        self.scan_counts.set("MATCHED 0 / REVIEW 0 / UNMATCHED 0")
+        self.scan_current.set("現在処理中: —")
+        self.scan_progress.configure(mode="determinate", maximum=1)
+        self.scan_progress["value"] = 0
+        self._append_log("=" * 72)
+        self._append_log("TMDb作品照合を開始します。低信頼候補は自動確定しません。")
+        self.tmdb_thread = threading.Thread(
+            target=self._tmdb_sync_worker,
+            args=(token,),
+            daemon=True,
+            name="VideoLibraryTmdbSync",
+        )
+        self.tmdb_thread.start()
+
+    def _tmdb_sync_worker(self, token: str) -> None:
+        try:
+            report = sync_tmdb_library(
+                DATABASE_PATH,
+                TMDB_IMAGE_PATH,
+                TMDB_REPORT_OUTPUT_PATH,
+                token,
+                progress_callback=self._tmdb_progress_from_worker,
+            )
+        except Exception as exc:
+            self.after(0, lambda e=exc: self._tmdb_sync_failed(e))
+            return
+        self.after(0, lambda r=report: self._tmdb_sync_succeeded(r))
+
+    def _tmdb_progress_from_worker(self, progress: dict[str, Any]) -> None:
+        snapshot = dict(progress)
+        self.after(0, lambda p=snapshot: self._apply_tmdb_progress(p))
+
+    def _apply_tmdb_progress(self, progress: dict[str, Any]) -> None:
+        current = int(progress.get("current") or 0)
+        total = int(progress.get("total") or 0)
+        matched = int(progress.get("matched") or 0)
+        review = int(progress.get("review") or 0)
+        unmatched = int(progress.get("unmatched") or 0)
+        self.scan_status.set(f"TMDb同期中 — {current:,} / {total:,}")
+        self.scan_counts.set(f"MATCHED {matched:,} / REVIEW {review:,} / UNMATCHED {unmatched:,}")
+        self.scan_current.set(f"現在処理中: {progress.get('currentItem') or '—'}")
+        self.scan_progress.configure(mode="determinate", maximum=max(1, total))
+        self.scan_progress["value"] = min(current, total)
+        if current and (current % 25 == 0 or current == total):
+            self._append_log(
+                f"TMDb {current:,}/{total:,}: MATCHED {matched:,} / REVIEW {review:,} / UNMATCHED {unmatched:,}"
+            )
+
+    def _tmdb_sync_succeeded(self, report: dict[str, Any]) -> None:
+        self.tmdb_thread = None
+        summary = report.get("summary") or {}
+        total = int(summary.get("total") or 0)
+        matched = int(summary.get("matched") or 0)
+        review = int(summary.get("review") or 0)
+        unmatched = int(summary.get("unmatched") or 0)
+        posters = int(summary.get("posterCached") or 0)
+        backdrops = int(summary.get("backdropCached") or 0)
+        self.scan_progress.configure(mode="determinate", maximum=max(1, total))
+        self.scan_progress["value"] = total
+        self.scan_status.set("完了 — TMDb作品情報を同期しました")
+        self.scan_counts.set(f"MATCHED {matched:,} / REVIEW {review:,} / UNMATCHED {unmatched:,}")
+        self.scan_current.set("現在処理中: 完了")
+        self.status.set("TMDb作品情報の同期が完了しました")
+        self._append_log(
+            f"TMDb同期完了: {total:,}作品 / MATCHED {matched:,} / REVIEW {review:,} / UNMATCHED {unmatched:,}"
+        )
+        self._append_log(f"ポスター {posters:,} / 背景 {backdrops:,} / JSON: {report.get('jsonReport', '')}")
+        self._append_log(f"CSV : {report.get('csvReport', '')}")
+        self._set_busy(False)
+        messagebox.showinfo(
+            APP_NAME,
+            "TMDb同期が完了しました。\n\n"
+            f"登録作品: {total:,}\nMATCHED: {matched:,}\nREVIEW: {review:,}\nUNMATCHED: {unmatched:,}\n"
+            f"ポスター保存: {posters:,}\n背景保存: {backdrops:,}\n\n"
+            "REVIEWは自動確定していません。診断CSVで確認できます。",
+        )
+
+    def _tmdb_sync_failed(self, exc: Exception) -> None:
+        self.tmdb_thread = None
+        self.status.set("TMDb同期に失敗しました")
+        self.scan_status.set("失敗 — TMDb作品情報を同期できませんでした")
+        self._append_log(f"TMDb ERROR: {type(exc).__name__}: {exc}")
+        self._set_busy(False)
+        messagebox.showerror(APP_NAME, f"TMDb同期に失敗しました。\n{exc}")
 
 
     def refresh_cache_status(self) -> None:
@@ -532,6 +644,7 @@ class VideoLibraryLauncher(tk.Tk):
         self.meta_browse_button.configure(state=state)
         self.import_button.configure(state=state)
         self.audit_button.configure(state=state)
+        self.tmdb_sync_button.configure(state=state)
         if busy:
             self.browser_button.configure(state="disabled")
             self.stop_button.configure(state="disabled")

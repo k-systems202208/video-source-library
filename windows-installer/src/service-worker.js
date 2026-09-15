@@ -7,7 +7,7 @@ self.addEventListener('fetch',event=>{
   if(request.method!=='GET')return;
   const url=new URL(request.url);
   if(url.origin!==self.location.origin)return;
-  if(url.pathname.startsWith('/api/')||url.pathname.startsWith('/video/')||url.pathname.startsWith('/subtitle/'))return;
+  if(url.pathname.startsWith('/api/')||url.pathname.startsWith('/video/')||url.pathname.startsWith('/subtitle/')||url.pathname.startsWith('/tmdb-image/'))return;
   if(request.mode==='navigate'){
     event.respondWith(fetch(request).then(response=>response).catch(()=>caches.match('/offline.html')));
     return;

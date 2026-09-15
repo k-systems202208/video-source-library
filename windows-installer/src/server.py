@@ -26,6 +26,7 @@ from scan_runner import scan_library
 from subtitle_stream import resolve_subtitle_file, subtitle_file_to_webvtt
 from scanner import latest_scan_status, mime_type_for_extension, resolve_video_file
 from tailscale_identity import parse_tailscale_identity
+from tmdb_images import resolve_cached_tmdb_image
 from user_state import (
     PlaybackSessionStore,
     continue_watching,
@@ -359,6 +360,29 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             if not head:
                 self.wfile.write(body)
 
+        def _serve_tmdb_image(self, kind: str, work_id: int, *, head: bool = False) -> None:
+            with connect(db_path) as connection:
+                resolved = resolve_cached_tmdb_image(connection, app_data_root / "TMDbImages", work_id, kind)
+            if resolved is None:
+                self._error(404, "TMDB_IMAGE_NOT_FOUND", "TMDb画像が見つかりません。")
+                return
+            image_path, content_type = resolved
+            try:
+                size = image_path.stat().st_size
+            except OSError:
+                self._error(404, "TMDB_IMAGE_NOT_FOUND", "TMDb画像が見つかりません。")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(size))
+            self._common(cache="public, max-age=3600")
+            self.end_headers()
+            if not head:
+                try:
+                    self.wfile.write(image_path.read_bytes())
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
         def do_GET(self) -> None:
             parsed = urlsplit(self.path); path = parsed.path; query = parse_qs(parsed.query, keep_blank_values=True)
             if path in ("/", "/index.html"):
@@ -376,6 +400,9 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             subtitle = re.fullmatch(r"/subtitle/(\d+)\.vtt", path)
             if subtitle:
                 self._serve_subtitle(int(subtitle.group(1))); return
+            tmdb_image = re.fullmatch(r"/tmdb-image/(poster|backdrop)/(\d+)", path)
+            if tmdb_image:
+                self._serve_tmdb_image(tmdb_image.group(1), int(tmdb_image.group(2))); return
             stream = re.fullmatch(r"/video/(\d+)", path)
             if stream:
                 self._serve_video(int(stream.group(1))); return
@@ -459,6 +486,9 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             subtitle = re.fullmatch(r"/subtitle/(\d+)\.vtt", urlsplit(self.path).path)
             if subtitle:
                 self._serve_subtitle(int(subtitle.group(1)), head=True); return
+            tmdb_image = re.fullmatch(r"/tmdb-image/(poster|backdrop)/(\d+)", urlsplit(self.path).path)
+            if tmdb_image:
+                self._serve_tmdb_image(tmdb_image.group(1), int(tmdb_image.group(2)), head=True); return
             stream = re.fullmatch(r"/video/(\d+)", urlsplit(self.path).path)
             if stream:
                 self._serve_video(int(stream.group(1)), head=True); return
