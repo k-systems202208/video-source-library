@@ -99,12 +99,13 @@ class PlaybackAuditV092Tests(unittest.TestCase):
                     "embeddedSubtitleCount": 1, "route": "TRANSCODE", "reason": "", "error": "",
                 }],
             }
-            json_path, csv_path = write_audit_reports(Path(temp), report, stamp="test")
+            json_path, csv_path, source_errors_path = write_audit_reports(Path(temp), report, stamp="test")
             self.assertEqual(json.loads(json_path.read_text(encoding="utf-8"))["summary"]["total"], 1)
             csv_text = csv_path.read_text(encoding="utf-8-sig")
             self.assertIn("anime/test.mkv", csv_text)
             self.assertIn("aac;flac", csv_text)
             self.assertNotIn("C:\\", csv_text)
+            self.assertTrue(source_errors_path.is_file())
 
     def test_real_library_audit_counts_external_subtitles_and_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -155,6 +156,7 @@ class PlaybackAuditV092Tests(unittest.TestCase):
             self.assertEqual(report["summary"]["embeddedSubtitleStreams"], 1)
             self.assertTrue(Path(report["jsonReport"]).is_file())
             self.assertTrue(Path(report["csvReport"]).is_file())
+            self.assertTrue(Path(report["sourceErrorsCsvReport"]).is_file())
 
 
 if __name__ == "__main__":
