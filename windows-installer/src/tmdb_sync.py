@@ -53,7 +53,7 @@ def _title_variants(value: str | None) -> set[str]:
     if without_brackets:
         raw_variants.add(without_brackets)
 
-    for part in re.split(r"[/／|｜〜～:：]", text):
+    for part in re.split(r"[/／|｜〜～~:：]", text):
         part = part.strip(" -‐‑–—―_・.　")
         if part:
             raw_variants.add(part)
