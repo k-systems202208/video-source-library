@@ -393,6 +393,8 @@ class VideoLibraryLauncher(tk.Tk):
         transcode = int(summary.get("transcode") or 0)
         application_no_route = int(summary.get("applicationNoRoute") or 0)
         source_errors = int(summary.get("sourceDataErrors") or 0)
+        repair_with_candidates = int(summary.get("sourceDataErrorsWithCandidates") or 0)
+        repair_without_candidates = int(summary.get("sourceDataErrorsWithoutCandidates") or 0)
         self.scan_progress.configure(mode="determinate", maximum=max(1, total))
         self.scan_progress["value"] = total
         self.scan_status.set("完了 — 全件再生監査が完了しました")
@@ -409,6 +411,9 @@ class VideoLibraryLauncher(tk.Tk):
         )
         self._append_log(f"JSON: {report.get('jsonReport', '')}")
         self._append_log(f"CSV : {report.get('csvReport', '')}")
+        self._append_log(
+            f"元データ修復候補: 候補あり {repair_with_candidates:,}件 / 候補なし {repair_without_candidates:,}件"
+        )
         self._append_log(f"元データ異常CSV: {report.get('sourceErrorsCsvReport', '')}")
         self._set_busy(False)
         message = (
@@ -418,7 +423,9 @@ class VideoLibraryLauncher(tk.Tk):
             f"DIRECT: {direct:,}件\n"
             f"互換変換: {transcode:,}件\n"
             f"アプリ再生不可: {application_no_route:,}件\n"
-            f"元データ異常: {source_errors:,}件\n\n"
+            f"元データ異常: {source_errors:,}件\n"
+            f"修復候補あり: {repair_with_candidates:,}件\n"
+            f"修復候補なし: {repair_without_candidates:,}件\n\n"
             f"レポート: {PLAYBACK_AUDIT_OUTPUT_PATH}"
         )
         if application_no_route:
@@ -428,7 +435,7 @@ class VideoLibraryLauncher(tk.Tk):
                 APP_NAME,
                 message
                 + "\n\n実動画の再生互換性は合格です。"
-                + "\n元データ異常は専用CSVを確認し、元ファイルを差し替えてください。",
+                + "\n元データ異常CSVの修復候補を確認し、元ファイルは手動で確認・差し替えてください。",
             )
         else:
             messagebox.showinfo(APP_NAME, message + "\n\nv1.0再生受入条件を満たしています。")
