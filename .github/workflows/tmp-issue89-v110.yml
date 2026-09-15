@@ -20,7 +20,10 @@ jobs:
         with:
           python-version: '3.13'
       - name: Apply 1.1.0 credits and person search changes
-        run: python scripts/tmp_issue89_patch.py
+        shell: pwsh
+        run: |
+          python scripts/tmp_issue89_patch.py
+          python scripts/tmp_issue89_fix.py
       - name: Run focused tests
         shell: pwsh
         run: |
@@ -30,6 +33,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README.md docs/40-1.1.0-credits-person-links.md tests/test_credits_people_ui_v110.py tests/test_release_v100.py windows-installer/src/video-library.html windows-installer/src/app_version.py windows-installer/installer/VideoLibrary.iss
+          git add README.md docs/40-1.1.0-credits-person-links.md tests/test_credits_people_ui_v110.py tests/test_release_v100.py tests/test_release_consistency.py windows-installer/src/video-library.html windows-installer/src/app_version.py windows-installer/installer/VideoLibrary.iss
           git commit -m "feat: 1.1.0 クレジット表示と人物検索を追加"
           git push origin HEAD:feature/issue-89-v110-credits-person-search
