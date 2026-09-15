@@ -243,6 +243,20 @@ class VideoLibraryLauncher(tk.Tk):
             font=SMALL_FONT,
         ).pack(anchor="w", pady=(5, 0))
 
+        operations_frame = ttk.Frame(main)
+        operations_frame.pack(fill="x", pady=(0, 10))
+        ttk.Button(operations_frame, text="バックアップ作成", command=self.backup).pack(side="left")
+        self.audit_button = ttk.Button(
+            operations_frame, text="全件再生監査", command=self.start_playback_audit
+        )
+        self.audit_button.pack(side="left", padx=8)
+        ttk.Button(operations_frame, text="状態再確認", command=self.refresh_local_status).pack(side="left")
+        ttk.Label(
+            operations_frame,
+            text="停止中に全件再生監査を実行できます。",
+            font=SMALL_FONT,
+        ).pack(side="right")
+
         ttk.Label(main, textvariable=self.status, font=STATUS_FONT).pack(anchor="w", pady=(0, 6))
 
         scan_box = ttk.LabelFrame(main, text="起動スキャン", padding=10)
@@ -253,20 +267,9 @@ class VideoLibraryLauncher(tk.Tk):
         ttk.Label(scan_box, textvariable=self.scan_counts, font=SMALL_FONT).pack(anchor="w")
         ttk.Label(scan_box, textvariable=self.scan_current, font=SMALL_FONT).pack(anchor="w", pady=(3, 0))
         ttk.Label(scan_box, textvariable=self.scan_elapsed, font=SMALL_FONT).pack(anchor="w", pady=(2, 6))
-        self.log_text = tk.Text(scan_box, height=8, wrap="none", font=MONO_FONT, state="disabled")
+        self.log_text = tk.Text(scan_box, height=4, wrap="none", font=MONO_FONT, state="disabled")
         self.log_text.pack(fill="both", expand=True)
 
-        footer = ttk.Frame(main)
-        footer.pack(fill="x", pady=(8, 0))
-        ttk.Button(footer, text="バックアップ作成", command=self.backup).pack(side="left")
-        self.audit_button = ttk.Button(footer, text="全件再生監査", command=self.start_playback_audit)
-        self.audit_button.pack(side="left", padx=8)
-        ttk.Button(footer, text="状態再確認", command=self.refresh_local_status).pack(side="left")
-        ttk.Label(
-            footer,
-            text="この画面を閉じるとローカルサーバーも停止します。動画ファイル自体は変更しません。",
-            font=SMALL_FONT,
-        ).pack(side="right")
 
     def refresh_cache_status(self) -> None:
         stats = playback_cache_stats(PLAYBACK_CACHE_PATH)
