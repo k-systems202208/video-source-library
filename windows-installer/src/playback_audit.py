@@ -3,7 +3,9 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
 import subprocess
+from difflib import SequenceMatcher
 from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -12,9 +14,11 @@ from typing import Any, Callable
 
 from database import connect, initialize_database
 from media_probe import find_ffprobe
-from playback_compat import browser_direct_playback, browser_transcode_codec_args, find_ffmpeg
+from playback_compat import REAL_LIBRARY_VIDEO_EXTENSIONS, browser_direct_playback, browser_transcode_codec_args, find_ffmpeg
 
 SUBTITLE_ONLY_CONTAINER_FORMATS = {"ass", "ssa", "srt", "subrip", "webvtt", "vtt"}
+SOURCE_DATA_ERROR_REASONS = {"SUBTITLE_CONTENT_REGISTERED_AS_VIDEO", "MISSING_FILE", "NO_VIDEO_STREAM", "PATH_ESCAPE"}
+AUDIT_VIDEO_EXTENSIONS = REAL_LIBRARY_VIDEO_EXTENSIONS | {".m4v", ".mov", ".wmv"}
 
 
 @dataclass(frozen=True)
@@ -257,6 +261,114 @@ def _safe_source(video_root: Path, relative_path: str) -> Path | None:
         return None
 
 
+def _candidate_name_key(path: Path) -> str:
+    stem = path.stem.casefold()
+    stem = re.sub(r"[\[\](){}._-]+", " ", stem)
+    stem = re.sub(r"\b(?:720p|1080p|2160p|x264|x265|h264|h265|hevc|aac|flac|web[- ]?dl|bluray|hdtv)\b", " ", stem)
+    return " ".join(stem.split())
+
+
+def _episode_numbers(path: Path) -> set[int]:
+    stem = path.stem.casefold()
+    values: set[int] = set()
+    patterns = [
+        r"(?:^|[^a-z0-9])(?:ep|e|episode)[ ._-]*0*(\d{1,3})(?:[^0-9]|$)",
+        r"(?:^|[^a-z0-9])0*(\d{1,3})(?:[^0-9]|$)",
+    ]
+    for pattern in patterns:
+        for raw in re.findall(pattern, stem):
+            try:
+                values.add(int(raw))
+            except ValueError:
+                pass
+        if values:
+            break
+    return values
+
+
+def _repair_candidate_score(target: Path, candidate: Path) -> tuple[float, str]:
+    target_key = _candidate_name_key(target)
+    candidate_key = _candidate_name_key(candidate)
+    ratio = SequenceMatcher(None, target_key, candidate_key).ratio()
+    target_eps = _episode_numbers(target)
+    candidate_eps = _episode_numbers(candidate)
+    if target_eps and candidate_eps and target_eps & candidate_eps:
+        return min(1.0, ratio + 0.40), "EPISODE_MATCH"
+    if target_eps and candidate_eps and not (target_eps & candidate_eps):
+        return max(0.0, ratio - 0.35), "EPISODE_MISMATCH"
+    return ratio, "NAME_SIMILARITY"
+
+
+def _find_repair_candidates(
+    source: Path,
+    *,
+    video_root: Path,
+    ffprobe_path: Path,
+    ffmpeg_available: bool,
+    directory_cache: dict[Path, list[dict[str, Any]]],
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    parent = source.parent
+    try:
+        parent.relative_to(video_root)
+    except ValueError:
+        return []
+    if not parent.is_dir():
+        return []
+
+    viable = directory_cache.get(parent)
+    if viable is None:
+        viable = []
+        try:
+            entries = sorted(parent.iterdir(), key=lambda item: item.name.casefold())
+        except OSError:
+            entries = []
+        for candidate in entries:
+            if not candidate.is_file() or candidate.suffix.casefold() not in AUDIT_VIDEO_EXTENSIONS:
+                continue
+            if candidate == source:
+                continue
+            candidate_probe = probe_for_audit(
+                candidate,
+                extension=candidate.suffix,
+                ffprobe_path=ffprobe_path,
+                ffmpeg_available=ffmpeg_available,
+            )
+            if not candidate_probe.video_codec or candidate_probe.reason in SOURCE_DATA_ERROR_REASONS or candidate_probe.reason == "PROBE_ERROR":
+                continue
+            try:
+                relative = candidate.relative_to(video_root).as_posix()
+            except ValueError:
+                continue
+            viable.append(
+                {
+                    "path": candidate,
+                    "relativePath": relative,
+                    "containerFormat": candidate_probe.container_format,
+                    "videoCodec": candidate_probe.video_codec,
+                }
+            )
+        directory_cache[parent] = viable
+
+    ranked: list[dict[str, Any]] = []
+    for candidate in viable:
+        path = candidate["path"]
+        if path == source:
+            continue
+        score, reason = _repair_candidate_score(source, path)
+        ranked.append(
+            {
+                "relativePath": candidate["relativePath"],
+                "score": round(score, 4),
+                "reason": reason,
+                "containerFormat": candidate["containerFormat"],
+                "videoCodec": candidate["videoCodec"],
+            }
+        )
+    ranked.sort(key=lambda item: (-float(item["score"]), str(item["relativePath"]).casefold()))
+    return ranked[: max(0, limit)]
+
+
 def summarize_audit(items: list[dict[str, Any]]) -> dict[str, Any]:
     extensions = Counter(str(item.get("extension") or "").lower() for item in items)
     containers = Counter(str(item.get("containerFormat") or "") for item in items if item.get("containerFormat"))
@@ -267,20 +379,14 @@ def summarize_audit(items: list[dict[str, Any]]) -> dict[str, Any]:
             if codec:
                 audio_codecs[str(codec)] += 1
 
-    source_data_error_reasons = {
-        "SUBTITLE_CONTENT_REGISTERED_AS_VIDEO",
-        "MISSING_FILE",
-        "NO_VIDEO_STREAM",
-        "PATH_ESCAPE",
-    }
     direct = sum(1 for item in items if item.get("route") == "DIRECT")
     transcode = sum(1 for item in items if item.get("route") == "TRANSCODE")
     raw_no_route = sum(1 for item in items if item.get("route") == "NO_ROUTE")
-    source_data_errors = sum(1 for item in items if item.get("reason") in source_data_error_reasons)
+    source_data_errors = sum(1 for item in items if item.get("reason") in SOURCE_DATA_ERROR_REASONS)
     application_no_route = sum(
         1
         for item in items
-        if item.get("route") == "NO_ROUTE" and item.get("reason") not in source_data_error_reasons
+        if item.get("route") == "NO_ROUTE" and item.get("reason") not in SOURCE_DATA_ERROR_REASONS
     )
 
     return {
@@ -291,6 +397,8 @@ def summarize_audit(items: list[dict[str, Any]]) -> dict[str, Any]:
         "noRoute": raw_no_route,
         "applicationNoRoute": application_no_route,
         "sourceDataErrors": source_data_errors,
+        "sourceDataErrorsWithCandidates": sum(1 for item in items if item.get("reason") in SOURCE_DATA_ERROR_REASONS and int(item.get("repairCandidateCount") or 0) > 0),
+        "sourceDataErrorsWithoutCandidates": sum(1 for item in items if item.get("reason") in SOURCE_DATA_ERROR_REASONS and int(item.get("repairCandidateCount") or 0) == 0),
         "probeErrors": sum(1 for item in items if item.get("reason") == "PROBE_ERROR"),
         "decodeErrors": sum(1 for item in items if item.get("reason") == "DECODE_ERROR"),
         "missing": sum(1 for item in items if item.get("reason") == "MISSING_FILE"),
@@ -330,12 +438,17 @@ def write_audit_reports(
         "containerFormat", "videoCodec", "videoProfile", "pixelFormat", "audioCodecs", "audioLanguages", "audioTrackCount",
         "hasJapaneseAudio", "preferredAudioIndex", "preferredAudioCodec", "preferredAudioLanguage",
         "externalSubtitleCount", "embeddedSubtitleCount", "sampleDecode", "route", "reason", "error",
+        "repairCandidateCount", "repairCandidates",
     ]
 
     def csv_row(item: dict[str, Any]) -> dict[str, Any]:
         row = dict(item)
         row["audioCodecs"] = ";".join(row.get("audioCodecs") or [])
         row["audioLanguages"] = ";".join(row.get("audioLanguages") or [])
+        row["repairCandidates"] = ";".join(
+            f"{candidate.get('relativePath', '')}|{candidate.get('score', '')}|{candidate.get('reason', '')}"
+            for candidate in (row.get("repairCandidates") or [])
+        )
         return row
 
     items = list(report.get("items") or [])
@@ -345,17 +458,11 @@ def write_audit_reports(
         for item in items:
             writer.writerow(csv_row(item))
 
-    source_data_error_reasons = {
-        "SUBTITLE_CONTENT_REGISTERED_AS_VIDEO",
-        "MISSING_FILE",
-        "NO_VIDEO_STREAM",
-        "PATH_ESCAPE",
-    }
     with source_errors_path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
         for item in items:
-            if item.get("reason") in source_data_error_reasons:
+            if item.get("reason") in SOURCE_DATA_ERROR_REASONS:
                 writer.writerow(csv_row(item))
     return json_path, csv_path, source_errors_path
 
@@ -389,6 +496,7 @@ def audit_real_library(
         ).fetchall()
 
     items: list[dict[str, Any]] = []
+    repair_directory_cache: dict[Path, list[dict[str, Any]]] = {}
     total = len(rows)
     for position, row in enumerate(rows, start=1):
         relative_path = str(row["relative_path"] or "")
@@ -460,7 +568,19 @@ def audit_real_library(
             "route": result.route,
             "reason": result.reason,
             "error": result.error,
+            "repairCandidateCount": 0,
+            "repairCandidates": [],
         }
+        if result.reason in SOURCE_DATA_ERROR_REASONS and source is not None:
+            candidates = _find_repair_candidates(
+                source,
+                video_root=root,
+                ffprobe_path=probe,
+                ffmpeg_available=ffmpeg is not None,
+                directory_cache=repair_directory_cache,
+            )
+            item["repairCandidates"] = candidates
+            item["repairCandidateCount"] = len(candidates)
         items.append(item)
         if progress_callback is not None:
             current_summary = summarize_audit(items)
@@ -474,6 +594,8 @@ def audit_real_library(
                     "noRoute": current_summary["noRoute"],
                     "applicationNoRoute": current_summary["applicationNoRoute"],
                     "sourceDataErrors": current_summary["sourceDataErrors"],
+                    "sourceDataErrorsWithCandidates": current_summary["sourceDataErrorsWithCandidates"],
+                    "sourceDataErrorsWithoutCandidates": current_summary["sourceDataErrorsWithoutCandidates"],
                 }
             )
 
