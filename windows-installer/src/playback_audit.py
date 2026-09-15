@@ -12,7 +12,9 @@ from typing import Any, Callable
 
 from database import connect, initialize_database
 from media_probe import find_ffprobe
-from playback_compat import browser_direct_playback, find_ffmpeg
+from playback_compat import browser_direct_playback, browser_transcode_codec_args, find_ffmpeg
+
+SUBTITLE_ONLY_CONTAINER_FORMATS = {"ass", "ssa", "srt", "subrip", "webvtt", "vtt"}
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,13 @@ def _is_japanese(language: str, title: str) -> bool:
     return "japanese" in lowered or "日本語" in title
 
 
+def _no_video_reason(container_format: str) -> str:
+    formats = {part.strip().casefold() for part in str(container_format or "").split(",") if part.strip()}
+    if formats & SUBTITLE_ONLY_CONTAINER_FORMATS:
+        return "SUBTITLE_CONTENT_REGISTERED_AS_VIDEO"
+    return "NO_VIDEO_STREAM"
+
+
 def parse_audit_probe_payload(
     payload: dict[str, Any],
     *,
@@ -58,17 +67,18 @@ def parse_audit_probe_payload(
     if not isinstance(format_info, dict):
         format_info = {}
 
+    container_format = str(format_info.get("format_name") or "").strip()
     videos = [s for s in streams if isinstance(s, dict) and s.get("codec_type") == "video"]
     audios = [s for s in streams if isinstance(s, dict) and s.get("codec_type") == "audio"]
     subtitles = [s for s in streams if isinstance(s, dict) and s.get("codec_type") == "subtitle"]
     if not videos:
         return AuditProbe(
             status="OK",
-            container_format=str(format_info.get("format_name") or ""),
+            container_format=container_format,
             audio_track_count=len(audios),
             embedded_subtitle_count=len(subtitles),
             route="NO_ROUTE",
-            reason="NO_VIDEO_STREAM",
+            reason=_no_video_reason(container_format),
         )
 
     video_codec = str(videos[0].get("codec_name") or "").strip().casefold()
@@ -111,7 +121,7 @@ def parse_audit_probe_payload(
 
     return AuditProbe(
         status="OK",
-        container_format=str(format_info.get("format_name") or "").strip(),
+        container_format=container_format,
         video_codec=video_codec,
         video_profile=video_profile,
         pixel_format=pixel_format,
@@ -168,16 +178,36 @@ def probe_for_audit(
             creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) if os.name == "nt" else 0,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return AuditProbe(status="ERROR", route="NO_ROUTE", reason="PROBE_ERROR", error=_sanitize_process_error(f"{type(exc).__name__}: {exc}", source))
+        return AuditProbe(
+            status="ERROR",
+            route="NO_ROUTE",
+            reason="PROBE_ERROR",
+            error=_sanitize_process_error(f"{type(exc).__name__}: {exc}", source),
+        )
     if completed.returncode != 0:
         error = completed.stderr.decode("utf-8", errors="replace").strip()
-        return AuditProbe(status="ERROR", route="NO_ROUTE", reason="PROBE_ERROR", error=_sanitize_process_error(error, source) or f"ffprobe exit code {completed.returncode}")
+        return AuditProbe(
+            status="ERROR",
+            route="NO_ROUTE",
+            reason="PROBE_ERROR",
+            error=_sanitize_process_error(error, source) or f"ffprobe exit code {completed.returncode}",
+        )
     try:
         payload = json.loads(completed.stdout.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        return AuditProbe(status="ERROR", route="NO_ROUTE", reason="PROBE_ERROR", error=f"invalid ffprobe JSON: {exc}"[:1000])
+        return AuditProbe(
+            status="ERROR",
+            route="NO_ROUTE",
+            reason="PROBE_ERROR",
+            error=f"invalid ffprobe JSON: {exc}"[:1000],
+        )
     if not isinstance(payload, dict):
-        return AuditProbe(status="ERROR", route="NO_ROUTE", reason="PROBE_ERROR", error="ffprobe JSON root is not an object")
+        return AuditProbe(
+            status="ERROR",
+            route="NO_ROUTE",
+            reason="PROBE_ERROR",
+            error="ffprobe JSON root is not an object",
+        )
     return parse_audit_probe_payload(payload, extension=extension, ffmpeg_available=ffmpeg_available)
 
 
@@ -186,13 +216,29 @@ def verify_playback_sample(
     *,
     preferred_audio_index: int | None,
     ffmpeg_path: Path,
+    route: str = "TRANSCODE",
     timeout_seconds: float = 60.0,
 ) -> tuple[bool, str]:
-    command = [str(ffmpeg_path), "-nostdin", "-v", "error", "-t", "0.5", "-i", str(source), "-map", "0:v:0"]
+    command = [
+        str(ffmpeg_path),
+        "-nostdin", "-v", "error",
+        "-t", "0.5",
+        "-i", str(source),
+        "-map", "0:v:0",
+    ]
     command.extend(["-map", f"0:{preferred_audio_index}"] if preferred_audio_index is not None else ["-map", "0:a:0?"])
-    command.extend(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "30", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-f", "null", "-"])
+    if route == "TRANSCODE":
+        command.extend(browser_transcode_codec_args(preset="ultrafast", crf="30", audio_bitrate="96k"))
+    command.extend(["-f", "null", "-"])
     try:
-        completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=timeout_seconds, creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) if os.name == "nt" else 0)
+        completed = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=timeout_seconds,
+            creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) if os.name == "nt" else 0,
+        )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return False, _sanitize_process_error(f"{type(exc).__name__}: {exc}", source)
     if completed.returncode != 0:
@@ -230,6 +276,9 @@ def summarize_audit(items: list[dict[str, Any]]) -> dict[str, Any]:
         "missing": sum(1 for item in items if item.get("reason") == "MISSING_FILE"),
         "pathEscapes": sum(1 for item in items if item.get("reason") == "PATH_ESCAPE"),
         "noVideoStream": sum(1 for item in items if item.get("reason") == "NO_VIDEO_STREAM"),
+        "subtitleContentRegisteredAsVideo": sum(
+            1 for item in items if item.get("reason") == "SUBTITLE_CONTENT_REGISTERED_AS_VIDEO"
+        ),
         "withJapaneseAudio": sum(1 for item in items if item.get("hasJapaneseAudio")),
         "multiAudio": sum(1 for item in items if int(item.get("audioTrackCount") or 0) > 1),
         "withExternalSubtitles": sum(1 for item in items if int(item.get("externalSubtitleCount") or 0) > 0),
@@ -302,9 +351,19 @@ def audit_real_library(
         extension = str(row["extension"] or Path(relative_path).suffix).casefold()
         source = _safe_source(root, relative_path)
         if source is None:
-            result = AuditProbe(status="ERROR", route="NO_ROUTE", reason="PATH_ESCAPE", error="relative path escapes video root")
+            result = AuditProbe(
+                status="ERROR",
+                route="NO_ROUTE",
+                reason="PATH_ESCAPE",
+                error="relative path escapes video root",
+            )
         elif not source.is_file():
-            result = AuditProbe(status="ERROR", route="NO_ROUTE", reason="MISSING_FILE", error="registered video file was not found")
+            result = AuditProbe(
+                status="ERROR",
+                route="NO_ROUTE",
+                reason="MISSING_FILE",
+                error="registered video file was not found",
+            )
         else:
             result = probe_for_audit(
                 source,
@@ -318,11 +377,18 @@ def audit_real_library(
                     source,
                     preferred_audio_index=result.preferred_audio_index,
                     ffmpeg_path=ffmpeg,
+                    route=result.route,
                 )
                 if decoded:
                     result = replace(result, sample_decode="PASS")
                 else:
-                    result = replace(result, sample_decode="FAIL", route="NO_ROUTE", reason="DECODE_ERROR", error=decode_error)
+                    result = replace(
+                        result,
+                        sample_decode="FAIL",
+                        route="NO_ROUTE",
+                        reason="DECODE_ERROR",
+                        error=decode_error,
+                    )
 
         title = str(row["official_title"] or "")
         episode = str(row["episode_title"] or row["episode_or_type"] or "")

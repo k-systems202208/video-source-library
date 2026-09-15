@@ -14,6 +14,7 @@ from media_probe import find_ffprobe
 from playback_cache import DEFAULT_CACHE_LIMIT_BYTES, mark_playback_cache_used, prune_playback_cache
 
 REAL_LIBRARY_VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".webm", ".mpg", ".flv"}
+TRANSCODE_PROFILE_VERSION = "h264-aac-stereo-v2"
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,30 @@ class AudioSelection:
 
 _TRANSCODE_LOCKS: dict[str, threading.Lock] = {}
 _TRANSCODE_LOCKS_GUARD = threading.Lock()
+
+
+def normalize_video_extension(extension: str) -> str:
+    ext = str(extension or "").strip().casefold()
+    if ext and not ext.startswith("."):
+        ext = "." + ext
+    return ext
+
+
+def browser_transcode_codec_args(
+    *,
+    preset: str = "veryfast",
+    crf: str = "20",
+    audio_bitrate: str = "192k",
+) -> list[str]:
+    return [
+        "-c:v", "libx264",
+        "-preset", preset,
+        "-crf", crf,
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-ac", "2",
+        "-b:a", audio_bitrate,
+    ]
 
 
 def find_ffmpeg(explicit: Path | str | None = None) -> Path | None:
@@ -68,7 +93,7 @@ def find_ffmpeg(explicit: Path | str | None = None) -> Path | None:
 
 
 def browser_direct_playback(extension: str, video_codec: str | None, audio_codec: str | None) -> bool:
-    ext = extension.casefold()
+    ext = normalize_video_extension(extension)
     video = (video_codec or "").casefold()
     audio = (audio_codec or "").casefold()
 
@@ -158,7 +183,9 @@ def preferred_audio_selection(source: Path | str, *, ffprobe_path: Path | str | 
 
 def _cache_target(source: Path, cache_dir: Path) -> Path:
     stat = source.stat()
-    key = f"{source.resolve()}|{stat.st_size}|{stat.st_mtime_ns}".encode("utf-8", errors="surrogatepass")
+    key = (
+        f"{TRANSCODE_PROFILE_VERSION}|{source.resolve()}|{stat.st_size}|{stat.st_mtime_ns}"
+    ).encode("utf-8", errors="surrogatepass")
     digest = hashlib.sha256(key).hexdigest()[:24]
     return cache_dir / f"{digest}.mp4"
 
@@ -209,13 +236,8 @@ def transcode_to_browser_mp4(
                 "-i", str(src),
                 "-map", "0:v:0",
                 "-map", audio_map,
-                "-c:v", "libx264",
-                "-preset", "veryfast",
-                "-crf", "20",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac",
-                "-b:a", "192k",
             ]
+            command.extend(browser_transcode_codec_args())
             if selection is not None and selection.japanese:
                 command.extend(["-metadata:s:a:0", "language=jpn"])
             command.extend(["-movflags", "+faststart", str(temporary)])
@@ -256,7 +278,7 @@ def prepare_browser_playback(
     ffprobe_path: Path | str | None = None,
 ) -> PlaybackPreparation:
     src = Path(source).resolve()
-    ext = extension.casefold()
+    ext = normalize_video_extension(extension)
     selection = preferred_audio_selection(src, ffprobe_path=ffprobe_path)
     effective_audio = selection.codec if selection is not None else audio_codec
     requires_track_selection = bool(selection is not None and selection.japanese and not selection.first_audio)
