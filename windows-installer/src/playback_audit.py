@@ -356,6 +356,8 @@ def _find_repair_candidates(
         if path == source:
             continue
         score, reason = _repair_candidate_score(source, path)
+        if reason == "EPISODE_MISMATCH":
+            continue
         ranked.append(
             {
                 "relativePath": candidate["relativePath"],
