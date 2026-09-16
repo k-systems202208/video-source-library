@@ -1,13 +1,18 @@
 {
-  "name": "自宅動画ライブラリ",
-  "short_name": "動画ライブラリ",
-  "description": "手元の映画・ドラマ・アニメを索引化して視聴するローカル動画ライブラリ",
+  "name": "シネマ蔵書館",
+  "short_name": "シネマ蔵書館",
+  "description": "映画・ドラマ・アニメを収蔵し、検索・鑑賞するプライベート映像ライブラリ",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#111318",
-  "theme_color": "#171a1f",
+  "background_color": "#100c0a",
+  "theme_color": "#1a100d",
   "icons": [
-    {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
   ]
 }

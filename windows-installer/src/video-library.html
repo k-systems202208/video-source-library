@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#171a1f">
+  <meta name="theme-color" content="#1a100d">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg">
-  <title>自宅動画ライブラリ</title>
+  <title>シネマ蔵書館</title>
   <style>
     :root{color-scheme:dark;--bg:#111318;--panel:#191c22;--panel2:#14171c;--line:#303641;--text:#f2f4f7;--muted:#a8b0bd;--accent:#e7b85c;--accent2:#f6d994;--danger:#ef8b8b;--ok:#83cf9a}
     *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -20,23 +20,44 @@
     .poster{position:relative;aspect-ratio:2/3;background:linear-gradient(145deg,#29231a,#111318);border-bottom:1px solid var(--line);overflow:hidden}.poster::after{content:"";position:absolute;inset:auto 0 0;height:24%;background:linear-gradient(transparent,rgba(0,0,0,.28));pointer-events:none}.poster img{width:100%;height:100%;display:block;object-fit:cover;transition:transform .3s ease}.card:hover .poster img{transform:scale(1.025)}.poster-fallback{height:100%;display:flex;align-items:center;justify-content:center;padding:18px;text-align:center;color:var(--accent2);font-weight:700}.card{padding:0;overflow:hidden}.card-body{padding:14px 16px 16px;display:flex;flex-direction:column;flex:1}.hero.has-backdrop{background-size:cover;background-position:center}.hero.has-backdrop::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(17,19,24,.96),rgba(17,19,24,.75),rgba(17,19,24,.9));pointer-events:none}.hero{position:relative;overflow:hidden}.hero-layout{position:relative;z-index:1;display:grid;grid-template-columns:150px minmax(0,1fr);gap:20px}.hero-poster{width:150px;aspect-ratio:2/3;object-fit:cover;border-radius:10px;border:1px solid var(--line);box-shadow:0 10px 28px rgba(0,0,0,.45)}.hero-poster-fallback{display:flex;align-items:center;justify-content:center;padding:14px;text-align:center;background:linear-gradient(145deg,#29231a,#111318);color:var(--accent2);font-weight:800}.hero-body{min-width:0}.overview{margin:14px 0 0;line-height:1.75;color:#d7dbe2}.tmdb-credit{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);text-align:center}.tmdb-credit a{color:var(--accent2)}
     @media(max-width:700px){.hero-layout{grid-template-columns:100px minmax(0,1fr)}.hero-poster{width:100px}.player-modal{padding:0}.player-dialog{width:100%;height:100dvh;max-height:none;border-radius:0;padding:12px}.player-modal .player{max-height:65vh}header{align-items:flex-start;flex-direction:column}.header-actions{width:100%;justify-content:space-between}.toolbar{grid-template-columns:1fr}.grid{grid-template-columns:1fr 1fr}.hero-line{display:block}.hero-actions{margin-top:10px}.episode{grid-template-columns:78px 1fr}.episode-state{grid-column:2}.tech{grid-template-columns:1fr 1fr}.scan-counts{grid-template-columns:1fr 1fr}}
     @media(max-width:440px){.grid{grid-template-columns:1fr}.mini{min-width:270px}.tech{grid-template-columns:1fr}.scan-counts{grid-template-columns:1fr}}
+
+    /* cinema-library-theme-v1: classic private cinema */
+    :root{--bg:#100c0a;--panel:#1b1511;--panel2:#15100d;--line:#574226;--text:#f4ead8;--muted:#b9aa90;--accent:#c9a45b;--accent2:#f1d493;--wine:#741c22;--wine2:#9a2f35;--danger:#e58d85;--ok:#8fc39b}
+    html,body{background:radial-gradient(circle at 50% -20%,rgba(116,28,34,.20),transparent 34rem),linear-gradient(180deg,#15100d 0,#100c0a 38rem,#0c0908 100%);color:var(--text)}
+    body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;opacity:.24;background:repeating-linear-gradient(90deg,rgba(255,255,255,.012) 0,rgba(255,255,255,.012) 1px,transparent 1px,transparent 5px)}
+    .app{max-width:1320px;padding-top:18px}
+    header{position:relative;padding:18px 20px 16px;margin-bottom:24px;border:1px solid rgba(201,164,91,.46);border-left:0;border-right:0;background:linear-gradient(90deg,rgba(116,28,34,.20),rgba(27,21,17,.94) 22%,rgba(27,21,17,.94) 78%,rgba(116,28,34,.14));box-shadow:0 14px 34px rgba(0,0,0,.24)}
+    .brand h1,.home-strip h2,.card h2,.hero h1,.hero h2,.player-dialog-head h2,.scan-dialog h2{font-family:"Yu Mincho","Hiragino Mincho ProN","Hiragino Mincho Pro",Georgia,serif}
+    .brand h1{font-size:30px;letter-spacing:.12em;color:#f3dfb0;text-shadow:0 1px 0 #5d3f16,0 0 24px rgba(201,164,91,.16)}
+    .brand p{font-family:Georgia,"Times New Roman",serif;font-size:11px;letter-spacing:.22em;color:#c8aa72;text-transform:uppercase}
+    .toolbar{margin-bottom:16px}.search,.sort{background:rgba(21,16,13,.94);border-color:#5c4729;box-shadow:inset 0 1px 0 rgba(255,255,255,.025)}.search:focus,.sort:focus{outline:1px solid var(--accent);border-color:var(--accent)}
+    .chips{border-bottom:1px solid rgba(201,164,91,.28);margin-bottom:18px}.chip,.ghost,.group,.action,.tag{background:linear-gradient(180deg,#211913,#17110e);border-color:#5b4529}.chip:hover,.ghost:hover,.group:hover,.action:hover{border-color:var(--accent);color:var(--accent2)}.chip.active,.primary{background:linear-gradient(180deg,var(--wine2),var(--wine));color:#fff3de;border:1px solid #d4b061;box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 4px 14px rgba(0,0,0,.20)}
+    .home-strip{padding:0 0 5px}.home-strip h2{display:flex;align-items:center;gap:10px;font-size:18px;letter-spacing:.08em;color:#edcf8b}.home-strip h2::before{content:"◆";font-size:10px;color:var(--wine2);text-shadow:0 0 8px rgba(201,164,91,.25)}.home-strip h2::after{content:"";height:1px;flex:1;background:linear-gradient(90deg,rgba(201,164,91,.55),transparent)}
+    .mini{background:linear-gradient(145deg,#211811,#15100d);border-color:#594326;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.20)}.mini:hover,.mini:focus-within{border-color:#c19a52;box-shadow:0 12px 30px rgba(0,0,0,.34),0 0 0 1px rgba(201,164,91,.10)}.mini-poster,.mini-poster-fallback{border-right:1px solid rgba(201,164,91,.38)}
+    .grid{gap:18px}.card{background:linear-gradient(180deg,#1e1712,#15100d);border:1px solid #5f492b;border-radius:7px;box-shadow:0 11px 30px rgba(0,0,0,.23)}.card:hover,.card:focus-within{transform:translateY(-4px);border-color:#c7a05a;box-shadow:0 16px 40px rgba(0,0,0,.38),0 0 0 1px rgba(201,164,91,.09)}.poster{margin:7px 7px 0;aspect-ratio:2/3;border:1px solid #8a6936;border-bottom-color:#6a4f2a;background:#120d0a;box-shadow:inset 0 0 0 3px #24190f,0 5px 14px rgba(0,0,0,.36)}.poster::before{content:"";position:absolute;inset:3px;border:1px solid rgba(238,205,138,.20);z-index:2;pointer-events:none}.card-body{padding:13px 15px 16px}.badge,.ep-no{color:#e4bf72;letter-spacing:.04em}.card h2{color:#f7eddd;font-size:18px}.card-foot{border-top:1px solid rgba(201,164,91,.18);padding-top:10px;margin-top:12px}
+    .hero{border-radius:8px;border:1px solid #765a32;background:#1b1511;box-shadow:0 18px 44px rgba(0,0,0,.32)}.hero.has-backdrop::before{background:linear-gradient(90deg,rgba(15,10,8,.98) 0%,rgba(15,10,8,.86) 42%,rgba(15,10,8,.68) 70%,rgba(15,10,8,.88) 100%)}.hero-poster{border-radius:3px;border:1px solid #b28b48;box-shadow:0 0 0 5px #1a120c,0 0 0 6px #624927,0 14px 34px rgba(0,0,0,.55)}.hero-body h1,.hero-body h2{letter-spacing:.06em;color:#fff0d1}.overview{color:#e5dac7}.credits{border-top-color:rgba(201,164,91,.34)}.credit-label{color:#d1b781}.person-link{background:rgba(24,17,13,.82);border-color:#67502f;color:#f0d08a}.person-link:hover,.person-link:focus-visible{background:#2a1d14;border-color:#cba65c}
+    .groups{border-top:1px solid rgba(201,164,91,.24);padding-top:16px}.group.active{background:rgba(116,28,34,.24);border-color:#caa25b;color:#f1d493}.episode,.video-detail,.tech-item{background:linear-gradient(180deg,#1b1511,#14100d);border-color:#574226;border-radius:6px}.episode:hover{border-color:#aa8348;background:#211711}.progress,.scan-track{background:#33251a}.progress>span,.scan-bar{background:linear-gradient(90deg,#7d1f24,#c89f56)}
+    .player-dialog,.scan-dialog{background:linear-gradient(180deg,#1d1611,#120e0b);border-color:#6d522d;border-radius:8px}.player-status,.scan-current{background:#140f0c;border-color:#503c24}.tmdb-credit{border-top-color:rgba(201,164,91,.22);color:#8f806c}.tmdb-credit a{color:#c9a45b}
+    #back{margin-bottom:14px}.load .primary{padding-left:20px;padding-right:20px}
+    @media(max-width:700px){header{padding:14px 2px 14px;background:none;border-top-color:rgba(201,164,91,.32)}.brand h1{font-size:25px}.app{padding-left:14px;padding-right:14px}.grid{gap:12px}.poster{margin:5px 5px 0}.hero{padding:16px}.hero-poster{box-shadow:0 0 0 3px #1a120c,0 0 0 4px #624927,0 10px 24px rgba(0,0,0,.48)}}
+
   </style>
 </head>
 <body>
 <div class="app">
   <header>
-    <div class="brand"><h1>自宅動画ライブラリ</h1><p>Video Library Catalog</p></div>
+    <div class="brand"><h1>シネマ蔵書館</h1><p>CINEMA COLLECTION · PRIVATE SCREENING</p></div>
     <div class="header-actions"><div><div class="user" id="currentUser"></div><div class="stats" id="stats">読み込み中...</div><div class="scan-status" id="scanStatus"></div></div><button class="ghost" id="scanButton">再スキャン</button></div>
   </header>
   <main>
-    <section id="continueSection" class="home-strip" hidden><h2>続きから見る</h2><div id="continueStrip" class="strip"></div></section>
-    <section id="nextSection" class="home-strip" hidden><h2>次に見る</h2><div id="nextStrip" class="strip"></div></section>
+    <section id="continueSection" class="home-strip" hidden><h2>上映中</h2><div id="continueStrip" class="strip"></div></section>
+    <section id="nextSection" class="home-strip" hidden><h2>次回上映</h2><div id="nextStrip" class="strip"></div></section>
     <section class="catalog" id="catalog">
       <div class="toolbar"><input id="search" class="search" type="search" placeholder="作品名・監督・出演者を検索"><select id="sort" class="sort"><option value="title">作品名順</option><option value="year">年順</option><option value="added">登録順</option></select></div>
       <div class="chips" id="categories"></div><div id="message"></div><div class="grid" id="works"></div>
       <div class="load" id="loadWrap" hidden><button class="primary" id="loadMore">さらに表示</button></div>
     </section>
-    <section class="detail" id="detail" hidden><button class="ghost" id="back">← 作品一覧</button><div id="workDetail"></div></section>
+    <section class="detail" id="detail" hidden><button class="ghost" id="back">← 作品目録</button><div id="workDetail"></div></section>
   </main>
   <footer class="tmdb-credit">This product uses the TMDB API but is not endorsed or certified by TMDB. · <a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer">TMDB</a></footer>
 </div>

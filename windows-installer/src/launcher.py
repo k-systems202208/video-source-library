@@ -29,7 +29,7 @@ from scan_runner import scan_library
 from server import create_server
 from tmdb_sync import sync_tmdb_library
 
-APP_NAME = "自宅動画ライブラリ"
+APP_NAME = "シネマ蔵書館"
 # Music Library uses 8765. Keep Video Library on a different localhost origin
 # so Service Worker, Cache Storage and PWA state cannot collide.
 DEFAULT_PORT = 8876
