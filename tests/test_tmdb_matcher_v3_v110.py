@@ -176,7 +176,7 @@ class TmdbMatcherV3Tests(unittest.TestCase):
                 marker = connection.execute(
                     "SELECT payload_json FROM tmdb_api_cache WHERE cache_key='tmdb:matcher-version'"
                 ).fetchone()
-                self.assertIn('"version":4', marker["payload_json"])
+                self.assertIn('\"version\":5', marker["payload_json"])
 
 
 if __name__ == "__main__":
