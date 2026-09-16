@@ -141,7 +141,7 @@ class Phase2HttpTests(unittest.TestCase):
     def test_web_ui_is_served_and_is_paginated(self) -> None:
         with urlopen(self.base + "/", timeout=10) as response:
             html = response.read().decode("utf-8")
-        self.assertIn("自宅動画ライブラリ", html)
+        self.assertIn("シネマ蔵書館", html)
         self.assertIn("const PAGE=60", html)
         self.assertIn("/api/works", html)
         self.assertNotIn("video_library.json", html)
