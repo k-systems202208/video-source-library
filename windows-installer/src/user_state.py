@@ -301,11 +301,13 @@ def continue_watching(connection: sqlite3.Connection, user_id: int, *, limit: in
         SELECT v.id AS video_id, v.episode_or_type, v.episode_title, v.content_type,
                w.id AS work_id, w.official_title AS work_title,
                sg.display_name AS group_name,
-               uvs.position_ms, uvs.duration_ms, uvs.last_played_at
+               uvs.position_ms, uvs.duration_ms, uvs.last_played_at,
+               t.match_status AS tmdb_match_status, t.poster_path AS tmdb_poster_path
         FROM user_video_state uvs
         JOIN videos v ON v.id = uvs.video_id
         JOIN works w ON w.id = v.work_id
         LEFT JOIN series_groups sg ON sg.id = v.series_group_id
+        LEFT JOIN tmdb_work_links t ON t.work_id = w.id
         JOIN video_files vf ON vf.video_id = v.id
         WHERE uvs.user_id = ? AND uvs.position_ms > 0 AND uvs.watched = 0 AND vf.is_available = 1
         ORDER BY uvs.last_played_at DESC LIMIT ?
@@ -317,7 +319,7 @@ def continue_watching(connection: sqlite3.Connection, user_id: int, *, limit: in
         duration = row["duration_ms"]
         position = int(row["position_ms"] or 0)
         percent = int(round(position * 100 / int(duration))) if duration and int(duration) > 0 else None
-        items.append({"videoId": int(row["video_id"]), "workId": int(row["work_id"]), "workTitle": row["work_title"], "groupName": row["group_name"], "episodeOrType": row["episode_or_type"], "episodeTitle": row["episode_title"], "contentType": row["content_type"], "positionMs": position, "durationMs": duration, "percent": percent, "lastPlayedAt": row["last_played_at"]})
+        items.append({"videoId": int(row["video_id"]), "workId": int(row["work_id"]), "workTitle": row["work_title"], "groupName": row["group_name"], "episodeOrType": row["episode_or_type"], "episodeTitle": row["episode_title"], "contentType": row["content_type"], "positionMs": position, "durationMs": duration, "percent": percent, "lastPlayedAt": row["last_played_at"], "posterUrl": f'/tmdb-image/poster/{int(row["work_id"])}' if row["tmdb_match_status"] == "MATCHED" and row["tmdb_poster_path"] else None})
     return {"items": items}
 
 
@@ -388,10 +390,12 @@ def next_up(connection: sqlite3.Connection, user_id: int, *, limit: int = 20) ->
             """
             SELECT v.id, v.episode_or_type, v.episode_title,
                    w.id AS work_id, w.official_title AS work_title,
-                   sg.display_name AS group_name
+                   sg.display_name AS group_name,
+                   t.match_status AS tmdb_match_status, t.poster_path AS tmdb_poster_path
             FROM videos v
             JOIN works w ON w.id = v.work_id
             LEFT JOIN series_groups sg ON sg.id = v.series_group_id
+            LEFT JOIN tmdb_work_links t ON t.work_id = w.id
             JOIN video_files vf ON vf.video_id = v.id
             LEFT JOIN user_video_state next_state ON next_state.video_id = v.id AND next_state.user_id = ?
             WHERE v.work_id = ?
@@ -403,7 +407,7 @@ def next_up(connection: sqlite3.Connection, user_id: int, *, limit: int = 20) ->
             (user_id, key["work_id"], key["series_group_id"], key["series_group_id"], current["episode_sort_key"]),
         ).fetchone()
         if candidate is not None:
-            result.append({"videoId": int(candidate["id"]), "workId": int(candidate["work_id"]), "workTitle": candidate["work_title"], "groupName": candidate["group_name"], "episodeOrType": candidate["episode_or_type"], "episodeTitle": candidate["episode_title"]})
+            result.append({"videoId": int(candidate["id"]), "workId": int(candidate["work_id"]), "workTitle": candidate["work_title"], "groupName": candidate["group_name"], "episodeOrType": candidate["episode_or_type"], "episodeTitle": candidate["episode_title"], "posterUrl": f'/tmdb-image/poster/{int(candidate["work_id"])}' if candidate["tmdb_match_status"] == "MATCHED" and candidate["tmdb_poster_path"] else None})
             if len(result) >= limit:
                 break
     return {"items": result}
