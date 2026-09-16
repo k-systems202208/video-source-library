@@ -21,7 +21,7 @@ from tmdb_images import cached_image_path, download_tmdb_image
 _MATCHED = "MATCHED"
 _REVIEW = "REVIEW"
 _UNMATCHED = "UNMATCHED"
-_MATCHER_VERSION = 6
+_MATCHER_VERSION = 7
 _MATCHER_VERSION_CACHE_KEY = "tmdb:matcher-version"
 _SEARCH_CACHE_VERSION = 3
 
@@ -36,6 +36,34 @@ _AUDITED_TITLE_ALIASES: dict[str, tuple[str, ...]] = {
     "トリック": ("TRICK",),
     "goodluck": ("グッドラック", "グッドラック!!", "グッドラック！！"),
     "グッドラック": ("GOOD LUCK!!", "GOOD LUCK"),
+}
+
+# 2026-09-16の440作品実機監査で候補内容まで人手確認した確定シグネチャ。
+# generic matcherの閾値は緩めず、ローカル作品名/期間とTMDb候補の種別・ID・開始年が
+# すべて一致した場合だけ監査承認として確定する。
+_AUDIT_APPROVED_MATCHES: dict[tuple[str, str], tuple[str, int, str]] = {
+    ("進撃の巨人", ""): ("tv", 1429, "2013"),
+    ("誰にも言えない", "1993"): ("tv", 36167, "1993"),
+    ("こんな恋のはなし", "1997"): ("tv", 9327, "1997"),
+    ("牙狼〈GARO〉", "2005-2006"): ("tv", 1941, "2005"),
+    ("半分の月がのぼる空", "2006"): ("tv", 34746, "2006"),
+    ("SUMMER NUDE", "2013"): ("tv", 64293, "2013"),
+    ("夜行観覧車", "2013"): ("tv", 81864, "2013"),
+    ("信長協奏曲", "2014"): ("tv", 62911, "2014"),
+    ("仰げば尊し", "2016"): ("tv", 83474, "2016"),
+}
+
+# 1つのTMDb作品へ自動確定してはいけないローカル集約項目。
+_AUDIT_AGGREGATE_WORKS: set[tuple[str, str]] = {
+    ("男はつらいよ", "1969-2019"),
+    ("仁義なき戦い", "1973-1974"),
+    ("福岡恋愛白書", "2011-2016"),
+    ("殺人分析班シリーズ", "2016-2019"),
+}
+
+# TMDbのシリーズ構造とローカル管理単位が一致しないため自動紐付けしない項目。
+_AUDIT_SPECIAL_UNMATCHED: set[tuple[str, str]] = {
+    ("3年B組金八先生 第6シリーズ", "2001"),
 }
 
 
@@ -177,6 +205,31 @@ def _work_value(work: sqlite3.Row | dict[str, Any], key: str, default: Any = Non
     if isinstance(work, sqlite3.Row):
         return work[key] if key in work.keys() else default
     return work.get(key, default)
+
+
+def _work_audit_key(work: sqlite3.Row | dict[str, Any]) -> tuple[str, str]:
+    return (
+        str(_work_value(work, "official_title", "") or "").strip(),
+        str(_work_value(work, "year_or_period", "") or "").strip(),
+    )
+
+
+def _audit_approved_candidate(
+    work: sqlite3.Row | dict[str, Any],
+    candidates: Iterable[Candidate],
+) -> Candidate | None:
+    expected = _AUDIT_APPROVED_MATCHES.get(_work_audit_key(work))
+    if expected is None:
+        return None
+    media_type, tmdb_id, matched_year = expected
+    for candidate in candidates:
+        if (
+            candidate.media_type == media_type
+            and candidate.tmdb_id == tmdb_id
+            and candidate.year == matched_year
+        ):
+            return candidate
+    return None
 
 
 def _candidate_year(payload: dict[str, Any], media_type: str) -> int | None:
@@ -324,6 +377,18 @@ def choose_candidate(
         key=lambda item: (_candidate_rank_score(work, item), item.confidence, item.title_similarity),
         reverse=True,
     )
+    audit_key = _work_audit_key(work)
+
+    if audit_key in _AUDIT_SPECIAL_UNMATCHED:
+        return _UNMATCHED, ranked[0] if ranked else None, "AUDIT_SPECIAL_STRUCTURE"
+
+    if audit_key in _AUDIT_AGGREGATE_WORKS:
+        return _REVIEW, ranked[0] if ranked else None, "AUDIT_AGGREGATE_REVIEW"
+
+    approved = _audit_approved_candidate(work, ranked)
+    if approved is not None:
+        return _MATCHED, approved, "AUDIT_APPROVED"
+
     if not ranked:
         return _UNMATCHED, None, "NO_CANDIDATE"
 
@@ -625,8 +690,8 @@ def sync_tmdb_library(
         total = len(works)
         stored_version = _stored_matcher_version(connection)
 
-        # v5実機監査でMATCHED 424件を確認済み。v6は日本語別名検索の追加なので、
-        # v4以降のMATCHEDは保持し、REVIEW/UNMATCHEDだけを再検索する。
+        # v6実機監査でMATCHED 426件を確認済み。v7は監査承認と特殊項目の整理なので、
+        # v4以降のMATCHEDは保持し、REVIEW/UNMATCHEDだけを再評価する。
         # v3以前は既知の旧誤マッチを含むため従来どおり再評価する。
         force_reassess_matched = stored_version < 4
 

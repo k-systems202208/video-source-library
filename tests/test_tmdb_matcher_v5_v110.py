@@ -168,7 +168,7 @@ class TmdbMatcherV5Tests(unittest.TestCase):
                 image_downloader=lambda *args, **kwargs: None,
             )
             self.assertEqual(client.calls, 0)
-            self.assertEqual(result["summary"]["matcherVersion"], 6)
+            self.assertEqual(result["summary"]["matcherVersion"], 7)
             self.assertEqual(result["summary"]["matched"], 1)
 
             with connect(db) as connection:
@@ -182,7 +182,7 @@ class TmdbMatcherV5Tests(unittest.TestCase):
                 marker = connection.execute(
                     "SELECT payload_json FROM tmdb_api_cache WHERE cache_key='tmdb:matcher-version'"
                 ).fetchone()
-                self.assertIn('\"version\":6', marker["payload_json"])
+                self.assertIn('\"version\":7', marker["payload_json"])
 
 
 if __name__ == "__main__":
