@@ -1,0 +1,34 @@
+name: Apply TMDb matcher v6 patch
+
+on:
+  push:
+    branches:
+      - fix/tmdb-matcher-v6-audit-108
+    paths:
+      - scripts/apply-tmdb-v6.py
+      - .github/workflows/apply-tmdb-v6.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/tmdb-matcher-v6-audit-108
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply patch
+        run: python scripts/apply-tmdb-v6.py
+      - name: Commit product changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "1.1.0: matcher v6 日本語別名検索を追加 (#108)"
+          git push origin HEAD:fix/tmdb-matcher-v6-audit-108
