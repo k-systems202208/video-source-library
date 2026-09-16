@@ -12,6 +12,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from app_version import APP_VERSION
 from database import connect, now_iso
 from tmdb_cache import get_cached_json, put_cached_json
 from tmdb_client import TmdbClient
@@ -20,7 +21,7 @@ from tmdb_images import cached_image_path, download_tmdb_image
 _MATCHED = "MATCHED"
 _REVIEW = "REVIEW"
 _UNMATCHED = "UNMATCHED"
-_MATCHER_VERSION = 3
+_MATCHER_VERSION = 4
 _MATCHER_VERSION_CACHE_KEY = "tmdb:matcher-version"
 
 
@@ -435,7 +436,7 @@ def _write_report(report_dir: Path, rows: list[dict[str, Any]], summary: dict[st
         encoding="utf-8",
     )
     fields = [
-        "workId", "title", "category", "yearOrPeriod", "status", "confidence", "mediaType",
+        "appVersion", "matcherVersion", "workId", "title", "category", "yearOrPeriod", "status", "confidence", "mediaType",
         "tmdbId", "matchedTitle", "matchedYear", "reason", "posterCached", "backdropCached",
     ]
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
@@ -520,6 +521,8 @@ def sync_tmdb_library(
                     poster_cached = bool(candidate.poster_path and cached_image_path(image_root_path, int(work["id"]), "poster", candidate.poster_path).is_file())
                     backdrop_cached = bool(candidate.backdrop_path and cached_image_path(image_root_path, int(work["id"]), "backdrop", candidate.backdrop_path).is_file())
             row = {
+                "appVersion": APP_VERSION,
+                "matcherVersion": _MATCHER_VERSION,
                 "workId": int(work["id"]),
                 "title": str(work["official_title"]),
                 "category": str(work["category"]),
@@ -549,6 +552,8 @@ def sync_tmdb_library(
         _store_matcher_version(connection)
         connection.commit()
     summary = {
+        "appVersion": APP_VERSION,
+        "matcherVersion": _MATCHER_VERSION,
         "total": len(rows),
         "matched": sum(1 for item in rows if item["status"] == _MATCHED),
         "review": sum(1 for item in rows if item["status"] == _REVIEW),

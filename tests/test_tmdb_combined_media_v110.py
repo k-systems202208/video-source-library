@@ -101,7 +101,7 @@ class CombinedMediaMatchingTests(unittest.TestCase):
                 marker = connection.execute(
                     "SELECT payload_json FROM tmdb_api_cache WHERE cache_key='tmdb:matcher-version'"
                 ).fetchone()
-                self.assertIn('"version":3', marker["payload_json"])
+                self.assertIn('"version":4', marker["payload_json"])
 
             second_client = CombinedClient()
             second = sync_tmdb_library(
