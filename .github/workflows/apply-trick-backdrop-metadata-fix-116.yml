@@ -1,0 +1,63 @@
+name: Apply TRICK backdrop metadata fix
+on:
+  push:
+    branches:
+      - fix/trick-backdrop-metadata-116
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Apply patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          client_path = Path('windows-installer/src/tmdb_client.py')
+          client = client_path.read_text(encoding='utf-8')
+          anchor = '''    def search_tv(self, query: str, *, first_air_date_year: str | int | None = None, language: str = "ja-JP") -> dict[str, Any]:\n        params: dict[str, Any] = {"query": query, "language": language, "include_adult": "false"}\n        if first_air_date_year not in (None, ""):\n            params["first_air_date_year"] = first_air_date_year\n        value = self.get_json("/search/tv", params)\n        return value if isinstance(value, dict) else {}\n'''
+          replacement = anchor + '''\n    def movie_details(self, movie_id: int, *, language: str = "ja-JP") -> dict[str, Any]:\n        value = self.get_json(f"/movie/{int(movie_id)}", {"language": language})\n        return value if isinstance(value, dict) else {}\n\n    def tv_details(self, tv_id: int, *, language: str = "ja-JP") -> dict[str, Any]:\n        value = self.get_json(f"/tv/{int(tv_id)}", {"language": language})\n        return value if isinstance(value, dict) else {}\n'''
+          if anchor not in client:
+              raise SystemExit('tmdb_client anchor not found')
+          client_path.write_text(client.replace(anchor, replacement, 1), encoding='utf-8')
+
+          sync_path = Path('windows-installer/src/tmdb_sync.py')
+          sync = sync_path.read_text(encoding='utf-8')
+          old = '_IMAGE_CACHE_REPAIR_VERSION = 1\n'
+          if old not in sync:
+              raise SystemExit('repair version anchor not found')
+          sync = sync.replace(old, '_IMAGE_CACHE_REPAIR_VERSION = 2\n', 1)
+
+          anchor = '''def choose_candidate(\n    work: sqlite3.Row | dict[str, Any],\n    candidates: Iterable[Candidate],\n) -> tuple[str, Candidate | None, str]:\n'''
+          helper = '''def _refresh_matched_candidate_details(\n    client: TmdbClient,\n    candidate: Candidate,\n    *,\n    language: str = "ja-JP",\n) -> Candidate:\n    if candidate.media_type == "movie":\n        payload = client.movie_details(candidate.tmdb_id, language=language)\n    elif candidate.media_type == "tv":\n        payload = client.tv_details(candidate.tmdb_id, language=language)\n    else:\n        raise ValueError("unsupported TMDb media type")\n\n    try:\n        detail_id = int(payload.get("id"))\n    except (AttributeError, TypeError, ValueError):\n        raise ValueError("TMDb detail payload has no valid id") from None\n    if detail_id != candidate.tmdb_id:\n        raise ValueError("TMDb detail id does not match existing link")\n\n    titles = _candidate_titles(payload, candidate.media_type)\n    detail_year = _candidate_year(payload, candidate.media_type)\n    return Candidate(\n        media_type=candidate.media_type,\n        tmdb_id=candidate.tmdb_id,\n        title=titles[0] if titles else candidate.title,\n        year=str(detail_year or candidate.year),\n        poster_path=str(payload.get("poster_path")) if payload.get("poster_path") else None,\n        backdrop_path=str(payload.get("backdrop_path")) if payload.get("backdrop_path") else None,\n        overview=str(payload.get("overview") or "").strip(),\n        title_similarity=candidate.title_similarity,\n        year_similarity=candidate.year_similarity,\n        confidence=candidate.confidence,\n    )\n\n\n'''
+          if anchor not in sync:
+              raise SystemExit('choose_candidate anchor not found')
+          sync = sync.replace(anchor, helper + anchor, 1)
+
+          old = '''                status = _MATCHED\n                reason = "EXISTING_MATCH"\n            else:\n'''
+          new = '''                status = _MATCHED\n                reason = "EXISTING_MATCH"\n                if legacy_image_repair and _work_audit_key(work) in _LEGACY_STALE_IMAGE_WORKS:\n                    candidate = _refresh_matched_candidate_details(tmdb, candidate)\n                    _upsert_link(connection, int(work["id"]), status, candidate)\n                    connection.commit()\n                    reason = "EXISTING_MATCH_METADATA_REFRESH"\n            else:\n'''
+          if old not in sync:
+              raise SystemExit('existing match anchor not found')
+          sync = sync.replace(old, new, 1)
+          sync_path.write_text(sync, encoding='utf-8')
+
+          test = Path('tests/test_tmdb_detail_metadata_refresh_v110.py')
+          test.write_text('''from __future__ import annotations\n\nimport json\nimport sys\nimport unittest\nfrom pathlib import Path\n\nROOT = Path(__file__).resolve().parents[1]\nSRC = ROOT / "windows-installer" / "src"\nsys.path.insert(0, str(SRC))\n\nfrom tmdb_client import TmdbClient\nfrom tmdb_sync import Candidate, _IMAGE_CACHE_REPAIR_VERSION, _refresh_matched_candidate_details\n\n\nclass Response:\n    def __init__(self, payload):\n        self._body = json.dumps(payload).encode("utf-8")\n    def read(self):\n        return self._body\n    def close(self):\n        pass\n\n\nclass TmdbDetailMetadataRefreshV110Tests(unittest.TestCase):\n    def test_client_fetches_tv_details(self):\n        seen = []\n        def opener(request, timeout):\n            seen.append(request.full_url)\n            return Response({"id": 19616, "name": "トリック"})\n        client = TmdbClient("token", opener=opener, max_retries=0)\n        payload = client.tv_details(19616)\n        self.assertEqual(payload["id"], 19616)\n        self.assertIn("/tv/19616?language=ja-JP", seen[0])\n\n    def test_refresh_replaces_stale_backdrop_metadata_without_rematching(self):\n        class FakeClient:\n            def tv_details(self, tv_id, *, language="ja-JP"):\n                self.called = (tv_id, language)\n                return {\n                    "id": 19616,\n                    "name": "トリック",\n                    "first_air_date": "2000-07-07",\n                    "poster_path": "/correct-poster.jpg",\n                    "backdrop_path": "/correct-backdrop.jpg",\n                    "overview": "correct overview",\n                }\n        old = Candidate(\n            "tv", 19616, "トリック", "2000",\n            "/correct-poster.jpg", "/wrong-backdrop.jpg", "old overview",\n            1.0, 1.0, 1.0,\n        )\n        client = FakeClient()\n        refreshed = _refresh_matched_candidate_details(client, old)\n        self.assertEqual(client.called, (19616, "ja-JP"))\n        self.assertEqual(refreshed.tmdb_id, 19616)\n        self.assertEqual(refreshed.poster_path, "/correct-poster.jpg")\n        self.assertEqual(refreshed.backdrop_path, "/correct-backdrop.jpg")\n        self.assertEqual(refreshed.overview, "correct overview")\n        self.assertEqual(refreshed.confidence, old.confidence)\n\n    def test_detail_id_mismatch_is_rejected(self):\n        class FakeClient:\n            def tv_details(self, tv_id, *, language="ja-JP"):\n                return {"id": 99999, "name": "wrong"}\n        old = Candidate("tv", 19616, "トリック", "2000", "/p.jpg", "/b.jpg", "", 1.0, 1.0, 1.0)\n        with self.assertRaises(ValueError):\n            _refresh_matched_candidate_details(FakeClient(), old)\n\n    def test_repair_version_is_incremented_for_existing_run167_installs(self):\n        self.assertEqual(_IMAGE_CACHE_REPAIR_VERSION, 2)\n\n\nif __name__ == "__main__":\n    unittest.main()\n''', encoding='utf-8')
+
+          doc = Path('docs/53-1.1.0-tmdb-backdrop-metadata-repair.md')
+          doc.write_text('''# 1.1.0 TRICK 背景メタデータ修復\n\n## 背景\n\nRun #167でTRICKの旧画像キャッシュを強制再取得した結果、ポスターは正常化したが背景だけ別作品のまま残った。\n原因は、既にMATCHEDの作品ではTMDb詳細を再取得せず、DBに保存済みの `backdrop_path` をそのまま利用していたため。\n古い `backdrop_path` の画像を再ダウンロードしても、正しい背景にはならない。\n\n## 対応\n\n- `TmdbClient.movie_details()` / `tv_details()` を追加。\n- 画像修復バージョンを2へ更新。\n- 既存TRICK (`2000-2003`, `tv/19616`) に限り、次回TMDb同期時に1回だけ作品詳細を再取得する。\n- 正しいTMDb IDは維持したまま `poster_path` / `backdrop_path` / `overview` 等をDBへ再保存する。\n- 更新された画像パスを使ってポスター・背景キャッシュを強制再取得する。\n- matcher v7および表示バージョン1.1.0は維持する。\n- 通常の既存MATCHED作品を毎回詳細APIへ問い合わせない。\n\n## テスト\n\n`tests/test_tmdb_detail_metadata_refresh_v110.py` で詳細APIのURL、TRICKのstale backdrop置換、ID不一致拒否、修復バージョン2を検証する。\n''', encoding='utf-8')
+      - name: Run targeted tests
+        run: python -m unittest tests.test_tmdb_detail_metadata_refresh_v110 tests.test_tmdb_image_cache_refresh_v110 tests.test_tmdb_matching_images_v110 tests.test_tmdb_matcher_v7_v110
+      - name: Commit product changes and remove helper workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-trick-backdrop-metadata-fix-116.yml
+          git add windows-installer/src/tmdb_client.py windows-installer/src/tmdb_sync.py tests/test_tmdb_detail_metadata_refresh_v110.py docs/53-1.1.0-tmdb-backdrop-metadata-repair.md
+          git commit -m "1.1.0: TRICK背景メタデータをTMDb詳細から修復 (#116)"
+          git push
