@@ -58,11 +58,11 @@ class ExplodingClient:
 
     def search_movie(self, query, *, year=None, language="ja-JP"):
         self.calls += 1
-        raise AssertionError("v4 MATCHED must not be searched again by matcher v5")
+        raise AssertionError("v4 MATCHED must not be searched again by matcher v6")
 
     def search_tv(self, query, *, first_air_date_year=None, language="ja-JP"):
         self.calls += 1
-        raise AssertionError("v4 MATCHED must not be searched again by matcher v5")
+        raise AssertionError("v4 MATCHED must not be searched again by matcher v6")
 
 
 def seed_v4_matched(db: Path) -> int:
@@ -146,9 +146,9 @@ class TmdbMatcherV5Tests(unittest.TestCase):
         self.assertIn(("GOOD LUCK!!", None), client.calls)
         self.assertIn(("GOOD LUCK", 2003), client.calls)
 
-    def test_search_cache_namespace_is_v2(self):
+    def test_search_cache_namespace_is_v3(self):
         key = _search_cache_key("tv", "TRICK", 2000, "ja-JP")
-        self.assertTrue(key.startswith("tmdb:search:v2:"))
+        self.assertTrue(key.startswith("tmdb:search:v3:"))
 
     def test_v4_matched_result_is_preserved_without_api_search(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -168,7 +168,7 @@ class TmdbMatcherV5Tests(unittest.TestCase):
                 image_downloader=lambda *args, **kwargs: None,
             )
             self.assertEqual(client.calls, 0)
-            self.assertEqual(result["summary"]["matcherVersion"], 5)
+            self.assertEqual(result["summary"]["matcherVersion"], 6)
             self.assertEqual(result["summary"]["matched"], 1)
 
             with connect(db) as connection:
@@ -182,7 +182,7 @@ class TmdbMatcherV5Tests(unittest.TestCase):
                 marker = connection.execute(
                     "SELECT payload_json FROM tmdb_api_cache WHERE cache_key='tmdb:matcher-version'"
                 ).fetchone()
-                self.assertIn('\"version\":5', marker["payload_json"])
+                self.assertIn('\"version\":6', marker["payload_json"])
 
 
 if __name__ == "__main__":

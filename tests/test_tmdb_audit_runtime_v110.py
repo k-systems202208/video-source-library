@@ -93,20 +93,20 @@ class TmdbRuntimeAuditTests(unittest.TestCase):
             )
 
             self.assertEqual(result["summary"]["appVersion"], "1.1.0")
-            self.assertEqual(result["summary"]["matcherVersion"], 5)
+            self.assertEqual(result["summary"]["matcherVersion"], 6)
             self.assertEqual(result["summary"]["matched"], 1)
 
             with Path(result["jsonReport"]).open("r", encoding="utf-8") as handle:
                 payload = json.load(handle)
             self.assertEqual(payload["summary"]["appVersion"], "1.1.0")
-            self.assertEqual(payload["summary"]["matcherVersion"], 5)
+            self.assertEqual(payload["summary"]["matcherVersion"], 6)
             self.assertEqual(payload["items"][0]["appVersion"], "1.1.0")
-            self.assertEqual(payload["items"][0]["matcherVersion"], 5)
+            self.assertEqual(payload["items"][0]["matcherVersion"], 6)
 
             with Path(result["csvReport"]).open("r", encoding="utf-8-sig", newline="") as handle:
                 row = next(csv.DictReader(handle))
             self.assertEqual(row["appVersion"], "1.1.0")
-            self.assertEqual(row["matcherVersion"], "5")
+            self.assertEqual(row["matcherVersion"], "6")
             self.assertEqual(row["mediaType"], "tv")
             self.assertEqual(int(row["tmdbId"]), 71404)
 
@@ -120,7 +120,7 @@ class TmdbRuntimeAuditTests(unittest.TestCase):
                 marker = connection.execute(
                     "SELECT payload_json FROM tmdb_api_cache WHERE cache_key='tmdb:matcher-version'"
                 ).fetchone()
-                self.assertIn('\"version\":5', marker["payload_json"])
+                self.assertIn('\"version\":6', marker["payload_json"])
 
 
 if __name__ == "__main__":
