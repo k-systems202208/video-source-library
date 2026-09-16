@@ -21,9 +21,9 @@ from tmdb_images import cached_image_path, download_tmdb_image
 _MATCHED = "MATCHED"
 _REVIEW = "REVIEW"
 _UNMATCHED = "UNMATCHED"
-_MATCHER_VERSION = 5
+_MATCHER_VERSION = 6
 _MATCHER_VERSION_CACHE_KEY = "tmdb:matcher-version"
-_SEARCH_CACHE_VERSION = 2
+_SEARCH_CACHE_VERSION = 3
 
 # 440作品の実機監査で確認済みの「同一作品だがTMDb側の表記が異なる」名称。
 # TMDb IDは固定せず、検索とタイトル類似度の補助にだけ使う。
@@ -32,6 +32,10 @@ _AUDITED_TITLE_ALIASES: dict[str, tuple[str, ...]] = {
     "ライアーゲーム": ("LIAR GAME",),
     "bloodymonday": ("ブラッディ・マンデイ", "ブラッディマンデイ"),
     "ブラッディマンデイ": ("BLOODY MONDAY",),
+    "trick": ("トリック",),
+    "トリック": ("TRICK",),
+    "goodluck": ("グッドラック", "グッドラック!!", "グッドラック！！"),
+    "グッドラック": ("GOOD LUCK!!", "GOOD LUCK"),
 }
 
 
@@ -393,7 +397,7 @@ def _search_cache_key(media_type: str, query: str, year: int | None, language: s
         sort_keys=True,
         separators=(",", ":"),
     )
-    return "tmdb:search:v2:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return "tmdb:search:v3:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _cached_search(
@@ -621,8 +625,8 @@ def sync_tmdb_library(
         total = len(works)
         stored_version = _stored_matcher_version(connection)
 
-        # v4実機監査でMATCHED 420件を確認済み。v5は検索経路の改善なので、
-        # v4 MATCHEDは保持し、REVIEW/UNMATCHEDだけを再検索する。
+        # v5実機監査でMATCHED 424件を確認済み。v6は日本語別名検索の追加なので、
+        # v4以降のMATCHEDは保持し、REVIEW/UNMATCHEDだけを再検索する。
         # v3以前は既知の旧誤マッチを含むため従来どおり再評価する。
         force_reassess_matched = stored_version < 4
 
