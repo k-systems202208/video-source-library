@@ -24,6 +24,14 @@ _UNMATCHED = "UNMATCHED"
 _MATCHER_VERSION = 7
 _MATCHER_VERSION_CACHE_KEY = "tmdb:matcher-version"
 _SEARCH_CACHE_VERSION = 3
+_IMAGE_CACHE_REPAIR_VERSION = 1
+_IMAGE_CACHE_REPAIR_KEY = "tmdb:image-cache-repair-version"
+
+# v3時代に誤MATCHEDだったTRICKは、後続matcherでtv/19616へ修正されても
+# workId.jpg が残り続けたため、既存インストールで一度だけ画像を取り直す。
+_LEGACY_STALE_IMAGE_WORKS: set[tuple[str, str]] = {
+    ("TRICK", "2000-2003"),
+}
 
 # 440作品の実機監査で確認済みの「同一作品だがTMDb側の表記が異なる」名称。
 # TMDb IDは固定せず、検索とタイトル類似度の補助にだけ使う。
@@ -313,6 +321,26 @@ def _store_matcher_version(connection: sqlite3.Connection) -> None:
     )
 
 
+def _stored_image_cache_repair_version(connection: sqlite3.Connection) -> int:
+    payload = get_cached_json(connection, _IMAGE_CACHE_REPAIR_KEY)
+    if not isinstance(payload, dict):
+        return 0
+    try:
+        return int(payload.get("version") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _store_image_cache_repair_version(connection: sqlite3.Connection) -> None:
+    put_cached_json(
+        connection,
+        _IMAGE_CACHE_REPAIR_KEY,
+        {"version": _IMAGE_CACHE_REPAIR_VERSION},
+        fetched_at=now_iso(),
+        expires_at=None,
+    )
+
+
 def _year_similarity(local_year: int | None, candidate_year: int | None) -> float:
     if local_year is None or candidate_year is None:
         return 0.5
@@ -596,22 +624,51 @@ def _upsert_link(
     )
 
 
+def _image_refresh_flags(
+    existing: sqlite3.Row | dict[str, Any] | None,
+    status: str,
+    candidate: Candidate | None,
+) -> tuple[bool, bool]:
+    if status != _MATCHED or candidate is None or existing is None:
+        return False, False
+    old_status = str(existing["match_status"] if isinstance(existing, sqlite3.Row) else existing.get("match_status") or "")
+    old_media_type = str(existing["media_type"] if isinstance(existing, sqlite3.Row) else existing.get("media_type") or "")
+    old_tmdb_id = existing["tmdb_id"] if isinstance(existing, sqlite3.Row) else existing.get("tmdb_id")
+    old_poster = existing["poster_path"] if isinstance(existing, sqlite3.Row) else existing.get("poster_path")
+    old_backdrop = existing["backdrop_path"] if isinstance(existing, sqlite3.Row) else existing.get("backdrop_path")
+    identity_changed = (
+        old_status != _MATCHED
+        or old_media_type != candidate.media_type
+        or int(old_tmdb_id or 0) != candidate.tmdb_id
+    )
+    return (
+        identity_changed or str(old_poster or "") != str(candidate.poster_path or ""),
+        identity_changed or str(old_backdrop or "") != str(candidate.backdrop_path or ""),
+    )
+
+
 def _cache_candidate_images(
     work_id: int,
     candidate: Candidate,
     image_root: Path,
     *,
     image_downloader: Callable[..., Path],
+    force_poster_refresh: bool = False,
+    force_backdrop_refresh: bool = False,
 ) -> tuple[bool, bool]:
     poster_cached = False
     backdrop_cached = False
     if candidate.poster_path:
         target = cached_image_path(image_root, work_id, "poster", candidate.poster_path)
+        if force_poster_refresh and target.is_file():
+            target.unlink()
         if not target.is_file():
             image_downloader(candidate.poster_path, target, size="w500")
         poster_cached = target.is_file()
     if candidate.backdrop_path:
         target = cached_image_path(image_root, work_id, "backdrop", candidate.backdrop_path)
+        if force_backdrop_refresh and target.is_file():
+            target.unlink()
         if not target.is_file():
             image_downloader(candidate.backdrop_path, target, size="w1280")
         backdrop_cached = target.is_file()
@@ -689,6 +746,8 @@ def sync_tmdb_library(
 
         total = len(works)
         stored_version = _stored_matcher_version(connection)
+        image_cache_repair_version = _stored_image_cache_repair_version(connection)
+        legacy_image_repair = image_cache_repair_version < _IMAGE_CACHE_REPAIR_VERSION
 
         # v6実機監査でMATCHED 426件を確認済み。v7は監査承認と特殊項目の整理なので、
         # v4以降のMATCHEDは保持し、REVIEW/UNMATCHEDだけを再評価する。
@@ -734,12 +793,18 @@ def sync_tmdb_library(
             poster_cached = False
             backdrop_cached = False
             if status == _MATCHED and candidate is not None:
+                force_poster_refresh, force_backdrop_refresh = _image_refresh_flags(existing, status, candidate)
+                if legacy_image_repair and _work_audit_key(work) in _LEGACY_STALE_IMAGE_WORKS:
+                    force_poster_refresh = True
+                    force_backdrop_refresh = True
                 try:
                     poster_cached, backdrop_cached = _cache_candidate_images(
                         int(work["id"]),
                         candidate,
                         image_root_path,
                         image_downloader=image_downloader,
+                        force_poster_refresh=force_poster_refresh,
+                        force_backdrop_refresh=force_backdrop_refresh,
                     )
                 except Exception:
                     poster_cached = bool(
@@ -793,6 +858,7 @@ def sync_tmdb_library(
                 )
 
         _store_matcher_version(connection)
+        _store_image_cache_repair_version(connection)
         connection.commit()
 
     summary = {
