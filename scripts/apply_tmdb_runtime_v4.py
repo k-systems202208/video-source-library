@@ -37,7 +37,7 @@ def main() -> None:
     ):
         path = ROOT / rel
         text = path.read_text(encoding="utf-8")
-        updated = text.replace('\\"version\\":3', '\\"version\\":4')
+        updated = text.replace('"version":3', '"version":4')
         if updated == text:
             raise RuntimeError(f"{rel}: matcher marker assertion was not updated")
         path.write_text(updated, encoding="utf-8")
