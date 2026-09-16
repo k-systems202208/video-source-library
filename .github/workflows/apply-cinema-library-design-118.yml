@@ -1,0 +1,100 @@
+name: Apply cinema library design
+on:
+  push:
+    branches: [feat/cinema-library-base-design]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply design
+        shell: python
+        run: |
+          from pathlib import Path
+          import json
+
+          html_path = Path('windows-installer/src/video-library.html')
+          html = html_path.read_text(encoding='utf-8')
+          replacements = {
+              '<meta name="theme-color" content="#171a1f">': '<meta name="theme-color" content="#1a100d">',
+              '<title>自宅動画ライブラリ</title>': '<title>シネマ蔵書館</title>',
+              '<div class="brand"><h1>自宅動画ライブラリ</h1><p>Video Library Catalog</p></div>': '<div class="brand"><h1>シネマ蔵書館</h1><p>CINEMA COLLECTION · PRIVATE SCREENING</p></div>',
+              '<section id="continueSection" class="home-strip" hidden><h2>続きから見る</h2>': '<section id="continueSection" class="home-strip" hidden><h2>上映中</h2>',
+              '<section id="nextSection" class="home-strip" hidden><h2>次に見る</h2>': '<section id="nextSection" class="home-strip" hidden><h2>次回上映</h2>',
+              '<button class="ghost" id="back">← 作品一覧</button>': '<button class="ghost" id="back">← 作品目録</button>',
+          }
+          for old, new in replacements.items():
+              if old not in html:
+                  raise SystemExit(f'missing expected HTML fragment: {old}')
+              html = html.replace(old, new, 1)
+
+          theme = r'''
+    /* cinema-library-theme-v1: classic private cinema */
+    :root{--bg:#100c0a;--panel:#1b1511;--panel2:#15100d;--line:#574226;--text:#f4ead8;--muted:#b9aa90;--accent:#c9a45b;--accent2:#f1d493;--wine:#741c22;--wine2:#9a2f35;--danger:#e58d85;--ok:#8fc39b}
+    html,body{background:
+      radial-gradient(circle at 50% -20%,rgba(116,28,34,.20),transparent 34rem),
+      linear-gradient(180deg,#15100d 0,#100c0a 38rem,#0c0908 100%);color:var(--text)}
+    body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;opacity:.24;background:repeating-linear-gradient(90deg,rgba(255,255,255,.012) 0,rgba(255,255,255,.012) 1px,transparent 1px,transparent 5px)}
+    .app{max-width:1320px;padding-top:18px}
+    header{position:relative;padding:18px 20px 16px;margin-bottom:24px;border:1px solid rgba(201,164,91,.46);border-left:0;border-right:0;background:linear-gradient(90deg,rgba(116,28,34,.20),rgba(27,21,17,.94) 22%,rgba(27,21,17,.94) 78%,rgba(116,28,34,.14));box-shadow:0 14px 34px rgba(0,0,0,.24)}
+    .brand h1,.home-strip h2,.card h2,.hero h1,.hero h2,.player-dialog-head h2,.scan-dialog h2{font-family:"Yu Mincho","Hiragino Mincho ProN","Hiragino Mincho Pro",Georgia,serif}
+    .brand h1{font-size:30px;letter-spacing:.12em;color:#f3dfb0;text-shadow:0 1px 0 #5d3f16,0 0 24px rgba(201,164,91,.16)}
+    .brand p{font-family:Georgia,"Times New Roman",serif;font-size:11px;letter-spacing:.22em;color:#c8aa72;text-transform:uppercase}
+    .toolbar{margin-bottom:16px}.search,.sort{background:rgba(21,16,13,.94);border-color:#5c4729;box-shadow:inset 0 1px 0 rgba(255,255,255,.025)}.search:focus,.sort:focus{outline:1px solid var(--accent);border-color:var(--accent)}
+    .chips{border-bottom:1px solid rgba(201,164,91,.28);margin-bottom:18px}.chip,.ghost,.group,.action,.tag{background:linear-gradient(180deg,#211913,#17110e);border-color:#5b4529}.chip:hover,.ghost:hover,.group:hover,.action:hover{border-color:var(--accent);color:var(--accent2)}.chip.active,.primary{background:linear-gradient(180deg,var(--wine2),var(--wine));color:#fff3de;border:1px solid #d4b061;box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 4px 14px rgba(0,0,0,.20)}
+    .home-strip{padding:0 0 5px}.home-strip h2{display:flex;align-items:center;gap:10px;font-size:18px;letter-spacing:.08em;color:#edcf8b}.home-strip h2::before{content:"◆";font-size:10px;color:var(--wine2);text-shadow:0 0 8px rgba(201,164,91,.25)}.home-strip h2::after{content:"";height:1px;flex:1;background:linear-gradient(90deg,rgba(201,164,91,.55),transparent)}
+    .mini{background:linear-gradient(145deg,#211811,#15100d);border-color:#594326;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.20)}.mini:hover,.mini:focus-within{border-color:#c19a52;box-shadow:0 12px 30px rgba(0,0,0,.34),0 0 0 1px rgba(201,164,91,.10)}.mini-poster,.mini-poster-fallback{border-right:1px solid rgba(201,164,91,.38)}
+    .grid{gap:18px}.card{background:linear-gradient(180deg,#1e1712,#15100d);border:1px solid #5f492b;border-radius:7px;box-shadow:0 11px 30px rgba(0,0,0,.23)}.card:hover,.card:focus-within{transform:translateY(-4px);border-color:#c7a05a;box-shadow:0 16px 40px rgba(0,0,0,.38),0 0 0 1px rgba(201,164,91,.09)}.poster{margin:7px 7px 0;aspect-ratio:2/3;border:1px solid #8a6936;border-bottom-color:#6a4f2a;background:#120d0a;box-shadow:inset 0 0 0 3px #24190f,0 5px 14px rgba(0,0,0,.36)}.poster::before{content:"";position:absolute;inset:3px;border:1px solid rgba(238,205,138,.20);z-index:2;pointer-events:none}.card-body{padding:13px 15px 16px}.badge,.ep-no{color:#e4bf72;letter-spacing:.04em}.card h2{color:#f7eddd;font-size:18px}.card-foot{border-top:1px solid rgba(201,164,91,.18);padding-top:10px;margin-top:12px}
+    .hero{border-radius:8px;border:1px solid #765a32;background:#1b1511;box-shadow:0 18px 44px rgba(0,0,0,.32)}.hero.has-backdrop::before{background:linear-gradient(90deg,rgba(15,10,8,.98) 0%,rgba(15,10,8,.86) 42%,rgba(15,10,8,.68) 70%,rgba(15,10,8,.88) 100%)}.hero-poster{border-radius:3px;border:1px solid #b28b48;box-shadow:0 0 0 5px #1a120c,0 0 0 6px #624927,0 14px 34px rgba(0,0,0,.55)}.hero-body h1,.hero-body h2{letter-spacing:.06em;color:#fff0d1}.overview{color:#e5dac7}.credits{border-top-color:rgba(201,164,91,.34)}.credit-label{color:#d1b781}.person-link{background:rgba(24,17,13,.82);border-color:#67502f;color:#f0d08a}.person-link:hover,.person-link:focus-visible{background:#2a1d14;border-color:#cba65c}
+    .groups{border-top:1px solid rgba(201,164,91,.24);padding-top:16px}.group.active{background:rgba(116,28,34,.24);border-color:#caa25b;color:#f1d493}.episode,.video-detail,.tech-item{background:linear-gradient(180deg,#1b1511,#14100d);border-color:#574226;border-radius:6px}.episode:hover{border-color:#aa8348;background:#211711}.progress,.scan-track{background:#33251a}.progress>span,.scan-bar{background:linear-gradient(90deg,#7d1f24,#c89f56)}
+    .player-dialog,.scan-dialog{background:linear-gradient(180deg,#1d1611,#120e0b);border-color:#6d522d;border-radius:8px}.player-status,.scan-current{background:#140f0c;border-color:#503c24}.tmdb-credit{border-top-color:rgba(201,164,91,.22);color:#8f806c}.tmdb-credit a{color:#c9a45b}
+    #back{margin-bottom:14px}.load .primary{padding-left:20px;padding-right:20px}
+    @media(max-width:700px){header{padding:14px 2px 14px;background:none;border-top-color:rgba(201,164,91,.32)}.brand h1{font-size:25px}.app{padding-left:14px;padding-right:14px}.grid{gap:12px}.poster{margin:5px 5px 0}.hero{padding:16px}.hero-poster{box-shadow:0 0 0 3px #1a120c,0 0 0 4px #624927,0 10px 24px rgba(0,0,0,.48)}}
+          '''
+          marker = '    /* cinema-library-theme-v1: classic private cinema */'
+          if marker in html:
+              raise SystemExit('theme already applied')
+          if '  </style>' not in html:
+              raise SystemExit('style closing tag not found')
+          html = html.replace('  </style>', theme + '\n  </style>', 1)
+          html_path.write_text(html, encoding='utf-8')
+
+          manifest_path = Path('windows-installer/src/manifest.webmanifest')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          manifest['name'] = 'シネマ蔵書館'
+          manifest['short_name'] = 'シネマ蔵書館'
+          manifest['description'] = '映画・ドラマ・アニメを収蔵し、検索・鑑賞するプライベート映像ライブラリ'
+          manifest['background_color'] = '#100c0a'
+          manifest['theme_color'] = '#1a100d'
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          launcher_path = Path('windows-installer/src/launcher.py')
+          launcher = launcher_path.read_text(encoding='utf-8')
+          old = 'APP_NAME = "自宅動画ライブラリ"'
+          if old not in launcher:
+              raise SystemExit('launcher APP_NAME marker not found')
+          launcher = launcher.replace(old, 'APP_NAME = "シネマ蔵書館"', 1)
+          launcher_path.write_text(launcher, encoding='utf-8')
+
+          test_path = Path('tests/test_cinema_library_design_v110.py')
+          test_path.write_text('''from __future__ import annotations\n\nimport json\nimport unittest\nfrom pathlib import Path\n\nROOT = Path(__file__).resolve().parents[1]\nHTML = ROOT / "windows-installer" / "src" / "video-library.html"\nMANIFEST = ROOT / "windows-installer" / "src" / "manifest.webmanifest"\nLAUNCHER = ROOT / "windows-installer" / "src" / "launcher.py"\n\n\nclass CinemaLibraryDesignV110Tests(unittest.TestCase):\n    @classmethod\n    def setUpClass(cls):\n        cls.html = HTML.read_text(encoding="utf-8")\n        cls.manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))\n        cls.launcher = LAUNCHER.read_text(encoding="utf-8")\n\n    def test_brand_name_is_consistent(self):\n        self.assertIn("<title>シネマ蔵書館</title>", self.html)\n        self.assertIn("<h1>シネマ蔵書館</h1>", self.html)\n        self.assertEqual(self.manifest["name"], "シネマ蔵書館")\n        self.assertEqual(self.manifest["short_name"], "シネマ蔵書館")\n        self.assertIn('APP_NAME = "シネマ蔵書館"', self.launcher)\n\n    def test_classic_cinema_theme_markers_are_present(self):\n        self.assertIn("cinema-library-theme-v1", self.html)\n        self.assertIn("--wine:#741c22", self.html)\n        self.assertIn('font-family:"Yu Mincho"', self.html)\n        self.assertIn("#c9a45b", self.html)\n\n    def test_cinema_language_keeps_existing_section_ids(self):\n        self.assertIn('id="continueSection" class="home-strip" hidden><h2>上映中</h2>', self.html)\n        self.assertIn('id="nextSection" class="home-strip" hidden><h2>次回上映</h2>', self.html)\n        self.assertIn('id="back">← 作品目録</button>', self.html)\n        self.assertIn('id="continueStrip"', self.html)\n        self.assertIn('id="nextStrip"', self.html)\n        self.assertIn('id="works"', self.html)\n\n    def test_functional_controls_are_preserved(self):\n        for control_id in ("search", "sort", "scanButton", "loadMore", "playerModal", "scanModal"):\n            self.assertIn(f'id="{control_id}"', self.html)\n        self.assertIn("TMDb同期", self.launcher)\n\n    def test_manifest_uses_matching_dark_cinema_colors(self):\n        self.assertEqual(self.manifest["background_color"], "#100c0a")\n        self.assertEqual(self.manifest["theme_color"], "#1a100d")\n\n\nif __name__ == "__main__":\n    unittest.main()\n''', encoding='utf-8')
+
+          doc = Path('docs/54-1.1.0-cinema-library-base-design.md')
+          doc.write_text('''# 1.1.0 シネマ蔵書館 ベースデザイン\n\nIssue #118。既存の動画ライブラリ機能を維持したまま、A案のクラシック映画館テイストを「シネマ蔵書館」ブランドとして導入する。\n\n## 変更\n\n- ブラウザ、PWA、Windowsランチャーの表示名を「シネマ蔵書館」に統一。\n- 黒〜焦げ茶を基調に、ワインレッド、真鍮/ゴールド、アイボリーを使用。\n- 見出しに明朝系フォントを使用し、映画館のプログラムや看板を想起する階層を追加。\n- 一覧カードはポスターを額装するような枠と陰影へ変更。\n- 作品詳細は既存backdropを活かし、暗いグラデーションとポスター額縁を追加。\n- 「続きから見る」を「上映中」、「次に見る」を「次回上映」、「作品一覧へ戻る」を「作品目録」へ変更。\n- 検索、再生、TMDb、人物リンク、視聴履歴、スキャンなどの機能ロジックは変更しない。\n\n## 互換性\n\n- 表示バージョンは1.1.0を維持。\n- matcherVersion 7を維持。\n- `VideoLibrary.exe` やインストーラー内部識別子は既存上書き更新との互換性のため変更しない。\n- モバイル用CSSも同一テーマ内で調整する。\n''', encoding='utf-8')
+      - name: Run targeted tests
+        run: |
+          python -m unittest tests.test_cinema_library_design_v110 tests.test_poster_ui_polish_v110 tests.test_credits_people_ui_v110
+      - name: Commit product changes and remove helper workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-cinema-library-design-118.yml
+          git add windows-installer/src/video-library.html windows-installer/src/manifest.webmanifest windows-installer/src/launcher.py tests/test_cinema_library_design_v110.py docs/54-1.1.0-cinema-library-base-design.md
+          git commit -m "1.1.0: シネマ蔵書館ベースデザインを導入 (#118)"
+          git push
