@@ -20,6 +20,9 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
+CloseApplications=yes
+CloseApplicationsFilter={#MyAppExeName}
+RestartApplications=no
 
 [Files]
 Source: "..\dist\VideoLibrary\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
