@@ -392,3 +392,6 @@ TMDB attribution: This product uses the TMDB API but is not endorsed or certifie
 
 `日本映画・ドラマ` / `海外映画・ドラマ` はmovieとtvの両方を検索します。旧ロジックで作成された既存MATCHEDはmatcher version 2への初回移行時だけ再評価し、その後は従来どおり確定済みMATCHEDを保護します。
 
+### TMDb監査ランタイム識別（1.1.0）
+
+TMDb監査JSON/CSVには `appVersion` と `matcherVersion` を記録します。matcher更新時は内部version差分で既存MATCHEDを一度だけ再評価し、実機監査ファイルだけで実行ロジックを識別できます。
