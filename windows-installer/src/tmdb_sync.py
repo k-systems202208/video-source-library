@@ -21,8 +21,18 @@ from tmdb_images import cached_image_path, download_tmdb_image
 _MATCHED = "MATCHED"
 _REVIEW = "REVIEW"
 _UNMATCHED = "UNMATCHED"
-_MATCHER_VERSION = 4
+_MATCHER_VERSION = 5
 _MATCHER_VERSION_CACHE_KEY = "tmdb:matcher-version"
+_SEARCH_CACHE_VERSION = 2
+
+# 440作品の実機監査で確認済みの「同一作品だがTMDb側の表記が異なる」名称。
+# TMDb IDは固定せず、検索とタイトル類似度の補助にだけ使う。
+_AUDITED_TITLE_ALIASES: dict[str, tuple[str, ...]] = {
+    "liargame": ("ライアーゲーム",),
+    "ライアーゲーム": ("LIAR GAME",),
+    "bloodymonday": ("ブラッディ・マンデイ", "ブラッディマンデイ"),
+    "ブラッディマンデイ": ("BLOODY MONDAY",),
+}
 
 
 @dataclass(frozen=True)
@@ -44,13 +54,18 @@ def _normalize_title(value: str | None) -> str:
     return "".join(ch for ch in text if ch.isalnum())
 
 
+def _audited_aliases(value: str | None) -> tuple[str, ...]:
+    return _AUDITED_TITLE_ALIASES.get(_normalize_title(value), ())
+
+
 def _title_variants(value: str | None) -> set[str]:
     text = unicodedata.normalize("NFKC", str(value or "")).casefold().strip()
     if not text:
         return set()
     raw_variants = {text}
+    raw_variants.update(alias.casefold() for alias in _audited_aliases(text))
 
-    without_brackets = re.sub(r"\s*[\(\[][^\)\]]*[\)\]]\s*", " ", text).strip()
+    without_brackets = re.sub(r"\s*[\(\[][^)\]]*[\)\]]\s*", " ", text).strip()
     if without_brackets:
         raw_variants.add(without_brackets)
 
@@ -85,6 +100,54 @@ def _title_similarity(left: str | None, right: str | None) -> float:
         for local in left_variants
         for remote in right_variants
     )
+
+
+def _search_query_variants(value: str | None) -> list[str]:
+    text = unicodedata.normalize("NFKC", str(value or "")).strip()
+    if not text:
+        return []
+
+    values: list[str] = [text]
+    values.extend(_audited_aliases(text))
+
+    without_brackets = re.sub(r"\s*[\(\[][^)\]]*[\)\]]\s*", " ", text).strip()
+    if without_brackets and _normalize_title(without_brackets) != _normalize_title(text):
+        values.append(without_brackets)
+
+    punctuation_trimmed = re.sub(r"[!！?？]+$", "", text).strip()
+    if punctuation_trimmed and punctuation_trimmed.casefold() != text.casefold():
+        values.append(punctuation_trimmed)
+
+    for part in re.split(r"[/／|｜〜～~:：]", text):
+        part = part.strip(" -‐‑–—―_・.　")
+        if part:
+            values.append(part)
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        key = unicodedata.normalize("NFKC", item).casefold().strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def _work_search_queries(work: sqlite3.Row | dict[str, Any]) -> list[str]:
+    titles = [
+        str(_work_value(work, "official_title", "") or "").strip(),
+        str(_work_value(work, "source_title", "") or "").strip(),
+    ]
+    result: list[str] = []
+    seen: set[str] = set()
+    for title in titles:
+        for query in _search_query_variants(title):
+            key = unicodedata.normalize("NFKC", query).casefold().strip()
+            if key and key not in seen:
+                seen.add(key)
+                result.append(query)
+    return result
 
 
 def _extract_years(value: str | None) -> tuple[int, ...]:
@@ -213,6 +276,7 @@ def _candidate_from_result(
         tmdb_id = int(payload.get("id"))
     except (TypeError, ValueError):
         return None
+
     local_titles = [
         str(_work_value(work, "official_title", "") or "").strip(),
         str(_work_value(work, "source_title", "") or "").strip(),
@@ -221,6 +285,7 @@ def _candidate_from_result(
     candidate_titles = _candidate_titles(payload, media_type)
     if not local_titles or not candidate_titles:
         return None
+
     similarity = max(
         _title_similarity(local, remote)
         for local in local_titles
@@ -231,6 +296,7 @@ def _candidate_from_result(
     year_score = _year_similarity(local_year, remote_year)
     image_bonus = 1.0 if payload.get("poster_path") else 0.0
     confidence = min(1.0, 0.80 * similarity + 0.15 * year_score + 0.05 * image_bonus)
+
     return Candidate(
         media_type=media_type,
         tmdb_id=tmdb_id,
@@ -256,16 +322,33 @@ def choose_candidate(
     )
     if not ranked:
         return _UNMATCHED, None, "NO_CANDIDATE"
+
     top = ranked[0]
     second = ranked[1] if len(ranked) > 1 else None
     top_rank = _candidate_rank_score(work, top)
     second_rank = _candidate_rank_score(work, second) if second else None
     margin = top_rank - second_rank if second_rank is not None else 1.0
+
     local_year = _extract_year(str(_work_value(work, "year_or_period", "") or ""))
     exact_year = top.year_similarity >= 0.65 if local_year is not None else False
     title_is_strong = top.title_similarity >= 0.96
-    unambiguous = second is None or margin >= 0.08
-    exact_title_without_year = local_year is None and top.title_similarity >= 0.995 and (second is None or margin >= 0.18)
+
+    # v5: タイトル完全一致かつ開始年が完全一致し、2位が年またはタイトルで劣る場合は、
+    # 従来の0.08より小さい0.05差でも十分な根拠とする。
+    exact_title_year_advantage = bool(
+        second is not None
+        and top.title_similarity >= 0.995
+        and top.year_similarity >= 1.0
+        and (second.title_similarity < 0.995 or second.year_similarity < 1.0)
+        and margin >= 0.05
+    )
+    unambiguous = second is None or margin >= 0.08 or exact_title_year_advantage
+
+    exact_title_without_year = (
+        local_year is None
+        and top.title_similarity >= 0.995
+        and (second is None or margin >= 0.18)
+    )
     multi_year_movie = top.media_type == "movie" and _is_multi_year_period(
         str(_work_value(work, "year_or_period", "") or "")
     )
@@ -278,6 +361,7 @@ def choose_candidate(
         and second.media_type != top.media_type
         and margin >= 0.08
     )
+
     if (
         not multi_year_movie
         and top.confidence >= 0.92
@@ -285,7 +369,10 @@ def choose_candidate(
         and unambiguous
         and (exact_year or exact_title_without_year)
     ):
+        if exact_title_year_advantage and not media_context_selected:
+            return _MATCHED, top, "AUTO_EXACT_TITLE_YEAR"
         return _MATCHED, top, "AUTO_MEDIA_CONTEXT" if media_context_selected else "AUTO_HIGH_CONFIDENCE"
+
     if top.confidence >= 0.70:
         if multi_year_movie:
             return _REVIEW, top, "MULTI_YEAR_MOVIE_REVIEW"
@@ -295,12 +382,18 @@ def choose_candidate(
 
 def _search_cache_key(media_type: str, query: str, year: int | None, language: str) -> str:
     raw = json.dumps(
-        {"type": media_type, "query": query, "year": year, "language": language},
+        {
+            "cacheVersion": _SEARCH_CACHE_VERSION,
+            "type": media_type,
+            "query": query,
+            "year": year,
+            "language": language,
+        },
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
     )
-    return "tmdb:search:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return "tmdb:search:v2:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _cached_search(
@@ -316,10 +409,12 @@ def _cached_search(
     cached = get_cached_json(connection, key)
     if isinstance(cached, dict):
         return cached
+
     if media_type == "movie":
         value = client.search_movie(query, year=year, language=language)
     else:
         value = client.search_tv(query, first_air_date_year=year, language=language)
+
     fetched = now_iso()
     expiry = (datetime.fromisoformat(fetched) + timedelta(days=30)).isoformat(timespec="seconds")
     put_cached_json(connection, key, value, fetched_at=fetched, expires_at=expiry)
@@ -327,36 +422,64 @@ def _cached_search(
     return value
 
 
+def _add_search_results(
+    found: dict[tuple[str, int], Candidate],
+    work: sqlite3.Row | dict[str, Any],
+    media_type: str,
+    payload: dict[str, Any],
+) -> None:
+    results = payload.get("results") if isinstance(payload, dict) else None
+    if not isinstance(results, list):
+        return
+    for item in results[:20]:
+        if not isinstance(item, dict):
+            continue
+        candidate = _candidate_from_result(work, media_type, item)
+        if candidate is None:
+            continue
+        key = (candidate.media_type, candidate.tmdb_id)
+        previous = found.get(key)
+        if previous is None or candidate.confidence > previous.confidence:
+            found[key] = candidate
+
+
+def _strong_candidate_for_type(
+    found: dict[tuple[str, int], Candidate],
+    media_type: str,
+) -> bool:
+    candidates = [item for item in found.values() if item.media_type == media_type]
+    return any(
+        item.title_similarity >= 0.96 and item.year_similarity >= 0.65
+        for item in candidates
+    )
+
+
 def _collect_candidates(
     connection: sqlite3.Connection,
     client: TmdbClient,
     work: sqlite3.Row,
 ) -> list[Candidate]:
-    queries = [str(work["official_title"] or "").strip()]
-    source = str(work["source_title"] or "").strip()
-    if source and _normalize_title(source) != _normalize_title(queries[0]):
-        queries.append(source)
+    queries = _work_search_queries(work)
     year = _extract_year(str(work["year_or_period"] or ""))
     found: dict[tuple[str, int], Candidate] = {}
+
     for media_type in _media_types_for(str(work["category"] or "")):
-        for query_index, query in enumerate(queries):
+        for query in queries:
             if not query:
                 continue
+
+            # まず従来どおり年指定。強候補が得られなければ同じクエリを年なしでも検索する。
             payload = _cached_search(connection, client, media_type, query, year)
-            results = payload.get("results") if isinstance(payload, dict) else None
-            if isinstance(results, list):
-                for item in results[:20]:
-                    if not isinstance(item, dict):
-                        continue
-                    candidate = _candidate_from_result(work, media_type, item)
-                    if candidate is None:
-                        continue
-                    key = (candidate.media_type, candidate.tmdb_id)
-                    previous = found.get(key)
-                    if previous is None or candidate.confidence > previous.confidence:
-                        found[key] = candidate
-            if query_index == 0 and found and max(item.title_similarity for item in found.values()) >= 0.90:
+            _add_search_results(found, work, media_type, payload)
+            if _strong_candidate_for_type(found, media_type):
                 break
+
+            if year is not None:
+                payload = _cached_search(connection, client, media_type, query, None)
+                _add_search_results(found, work, media_type, payload)
+                if _strong_candidate_for_type(found, media_type):
+                    break
+
     return list(found.values())
 
 
@@ -426,7 +549,11 @@ def _cache_candidate_images(
     return poster_cached, backdrop_cached
 
 
-def _write_report(report_dir: Path, rows: list[dict[str, Any]], summary: dict[str, Any]) -> tuple[Path, Path]:
+def _write_report(
+    report_dir: Path,
+    rows: list[dict[str, Any]],
+    summary: dict[str, Any],
+) -> tuple[Path, Path]:
     report_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     json_path = report_dir / f"tmdb-match-audit-{stamp}.json"
@@ -436,8 +563,21 @@ def _write_report(report_dir: Path, rows: list[dict[str, Any]], summary: dict[st
         encoding="utf-8",
     )
     fields = [
-        "appVersion", "matcherVersion", "workId", "title", "category", "yearOrPeriod", "status", "confidence", "mediaType",
-        "tmdbId", "matchedTitle", "matchedYear", "reason", "posterCached", "backdropCached",
+        "appVersion",
+        "matcherVersion",
+        "workId",
+        "title",
+        "category",
+        "yearOrPeriod",
+        "status",
+        "confidence",
+        "mediaType",
+        "tmdbId",
+        "matchedTitle",
+        "matchedYear",
+        "reason",
+        "posterCached",
+        "backdropCached",
     ]
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
@@ -460,9 +600,11 @@ def sync_tmdb_library(
     token = str(access_token or "").strip()
     if not token:
         raise ValueError("TMDb API Read Access Token is not configured")
+
     tmdb = client or TmdbClient(token)
     image_root_path = Path(image_root)
     rows: list[dict[str, Any]] = []
+
     with connect(database_path) as connection:
         works = connection.execute(
             """
@@ -475,18 +617,27 @@ def sync_tmdb_library(
             ORDER BY w.external_work_no
             """
         ).fetchall()
+
         total = len(works)
-        force_reassess = _stored_matcher_version(connection) < _MATCHER_VERSION
+        stored_version = _stored_matcher_version(connection)
+
+        # v4実機監査でMATCHED 420件を確認済み。v5は検索経路の改善なので、
+        # v4 MATCHEDは保持し、REVIEW/UNMATCHEDだけを再検索する。
+        # v3以前は既知の旧誤マッチを含むため従来どおり再評価する。
+        force_reassess_matched = stored_version < 4
+
         for index, work in enumerate(works, start=1):
             existing = connection.execute(
                 "SELECT * FROM tmdb_work_links WHERE work_id=?",
                 (int(work["id"]),),
             ).fetchone()
+
             candidate: Candidate | None = None
             reason = ""
             status = _UNMATCHED
+
             if (
-                not force_reassess
+                not force_reassess_matched
                 and existing is not None
                 and existing["match_status"] == _MATCHED
                 and existing["tmdb_id"]
@@ -510,16 +661,37 @@ def sync_tmdb_library(
                 status, candidate, reason = choose_candidate(work, candidates)
                 _upsert_link(connection, int(work["id"]), status, candidate)
                 connection.commit()
+
             poster_cached = False
             backdrop_cached = False
             if status == _MATCHED and candidate is not None:
                 try:
                     poster_cached, backdrop_cached = _cache_candidate_images(
-                        int(work["id"]), candidate, image_root_path, image_downloader=image_downloader
+                        int(work["id"]),
+                        candidate,
+                        image_root_path,
+                        image_downloader=image_downloader,
                     )
                 except Exception:
-                    poster_cached = bool(candidate.poster_path and cached_image_path(image_root_path, int(work["id"]), "poster", candidate.poster_path).is_file())
-                    backdrop_cached = bool(candidate.backdrop_path and cached_image_path(image_root_path, int(work["id"]), "backdrop", candidate.backdrop_path).is_file())
+                    poster_cached = bool(
+                        candidate.poster_path
+                        and cached_image_path(
+                            image_root_path,
+                            int(work["id"]),
+                            "poster",
+                            candidate.poster_path,
+                        ).is_file()
+                    )
+                    backdrop_cached = bool(
+                        candidate.backdrop_path
+                        and cached_image_path(
+                            image_root_path,
+                            int(work["id"]),
+                            "backdrop",
+                            candidate.backdrop_path,
+                        ).is_file()
+                    )
+
             row = {
                 "appVersion": APP_VERSION,
                 "matcherVersion": _MATCHER_VERSION,
@@ -538,6 +710,7 @@ def sync_tmdb_library(
                 "backdropCached": backdrop_cached,
             }
             rows.append(row)
+
             if progress_callback is not None:
                 progress_callback(
                     {
@@ -549,8 +722,10 @@ def sync_tmdb_library(
                         "currentItem": str(work["official_title"]),
                     }
                 )
+
         _store_matcher_version(connection)
         connection.commit()
+
     summary = {
         "appVersion": APP_VERSION,
         "matcherVersion": _MATCHER_VERSION,
@@ -562,4 +737,8 @@ def sync_tmdb_library(
         "backdropCached": sum(1 for item in rows if item["backdropCached"]),
     }
     json_path, csv_path = _write_report(Path(report_dir), rows, summary)
-    return {"summary": summary, "jsonReport": str(json_path), "csvReport": str(csv_path)}
+    return {
+        "summary": summary,
+        "jsonReport": str(json_path),
+        "csvReport": str(csv_path),
+    }
