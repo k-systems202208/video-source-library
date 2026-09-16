@@ -24,7 +24,7 @@ _UNMATCHED = "UNMATCHED"
 _MATCHER_VERSION = 7
 _MATCHER_VERSION_CACHE_KEY = "tmdb:matcher-version"
 _SEARCH_CACHE_VERSION = 3
-_IMAGE_CACHE_REPAIR_VERSION = 1
+_IMAGE_CACHE_REPAIR_VERSION = 2
 _IMAGE_CACHE_REPAIR_KEY = "tmdb:image-cache-repair-version"
 
 # v3時代に誤MATCHEDだったTRICKは、後続matcherでtv/19616へ修正されても
@@ -393,6 +393,42 @@ def _candidate_from_result(
         title_similarity=similarity,
         year_similarity=year_score,
         confidence=confidence,
+    )
+
+
+def _refresh_matched_candidate_details(
+    client: TmdbClient,
+    candidate: Candidate,
+    *,
+    language: str = "ja-JP",
+) -> Candidate:
+    if candidate.media_type == "movie":
+        payload = client.movie_details(candidate.tmdb_id, language=language)
+    elif candidate.media_type == "tv":
+        payload = client.tv_details(candidate.tmdb_id, language=language)
+    else:
+        raise ValueError("unsupported TMDb media type")
+
+    try:
+        detail_id = int(payload.get("id"))
+    except (AttributeError, TypeError, ValueError):
+        raise ValueError("TMDb detail payload has no valid id") from None
+    if detail_id != candidate.tmdb_id:
+        raise ValueError("TMDb detail id does not match existing link")
+
+    titles = _candidate_titles(payload, candidate.media_type)
+    detail_year = _candidate_year(payload, candidate.media_type)
+    return Candidate(
+        media_type=candidate.media_type,
+        tmdb_id=candidate.tmdb_id,
+        title=titles[0] if titles else candidate.title,
+        year=str(detail_year or candidate.year),
+        poster_path=str(payload.get("poster_path")) if payload.get("poster_path") else None,
+        backdrop_path=str(payload.get("backdrop_path")) if payload.get("backdrop_path") else None,
+        overview=str(payload.get("overview") or "").strip(),
+        title_similarity=candidate.title_similarity,
+        year_similarity=candidate.year_similarity,
+        confidence=candidate.confidence,
     )
 
 
@@ -784,6 +820,11 @@ def sync_tmdb_library(
                 )
                 status = _MATCHED
                 reason = "EXISTING_MATCH"
+                if legacy_image_repair and _work_audit_key(work) in _LEGACY_STALE_IMAGE_WORKS:
+                    candidate = _refresh_matched_candidate_details(tmdb, candidate)
+                    _upsert_link(connection, int(work["id"]), status, candidate)
+                    connection.commit()
+                    reason = "EXISTING_MATCH_METADATA_REFRESH"
             else:
                 candidates = _collect_candidates(connection, tmdb, work)
                 status, candidate, reason = choose_candidate(work, candidates)
