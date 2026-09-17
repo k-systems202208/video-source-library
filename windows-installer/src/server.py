@@ -16,7 +16,7 @@ from app_version import APP_VERSION
 from backup_restore import cancel_restore, create_manual_backup, list_backups, pending_restore, restore_status, schedule_restore
 from database import SCHEMA_VERSION, connect, initialize_database, quick_check
 from identity_service import local_owner_user, resolve_tailscale_user
-from library_service import get_video, get_work, library_stats, list_work_videos, list_works
+from library_service import get_video, get_work, library_stats, list_people, list_work_videos, list_works
 from local_auth import LocalOwnerAuth, cookie_value, session_cookie_header
 from matroska_audio import apply_patch_to_chunk, preferred_japanese_audio_patch
 from playback_compat import prepare_browser_playback
@@ -181,11 +181,6 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             text = ui_path.read_text(encoding="utf-8")
             if "manifest.webmanifest" not in text:
                 text = text.replace("</head>", '<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg"></head>')
-            if "diagnostics.html" not in text:
-                text = text.replace(
-                    '<button class="ghost" id="scanButton">再スキャン</button>',
-                    '<a class="ghost" style="text-decoration:none" href="/diagnostics.html">診断</a><button class="ghost" id="scanButton">再スキャン</button>',
-                )
             if "serviceWorker.register" not in text:
                 text = text.replace("</body>", "<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js').catch(()=>{}));}</script></body>")
             body = text.encode("utf-8")
@@ -447,6 +442,12 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                         if path.endswith(".csv"):
                             self._download(diagnostics_csv_bytes(value), "text/csv; charset=utf-8", "scan-diagnostics.csv"); return
                         self._json(200, value); return
+                    if path == "/api/people":
+                        try:
+                            self._json(200, list_people(connection, role=_first(query, "role") or ""))
+                        except ValueError as exc:
+                            self._error(400, "INVALID_PEOPLE_ROLE", str(exc))
+                        return
                     if path == "/api/works":
                         self._json(200, list_works(connection, user_id=user_id, q=_first(query, "q"), category=_first(query, "category"),
                                                    sort=_first(query, "sort") or "title", limit=_first(query, "limit"), offset=_first(query, "offset"))); return
