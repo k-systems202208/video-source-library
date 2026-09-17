@@ -27,6 +27,34 @@ jobs:
       - name: Validate synthetic 440/4869 import
         run: python scripts/validate_ci_fixture.py
 
+  browser-e2e:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Playwright
+        working-directory: browser-e2e
+        run: |
+          npm install
+          npx playwright install chromium
+      - name: Run browser E2E
+        working-directory: browser-e2e
+        run: npm test
+      - name: Upload Playwright diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Playwright-E2E-Diagnostics
+          path: |
+            browser-e2e/playwright-report
+            browser-e2e/test-results
+          if-no-files-found: ignore
+
   playback-formats:
     runs-on: windows-latest
     steps:
@@ -50,7 +78,7 @@ jobs:
 
   installer:
     runs-on: windows-latest
-    needs: [test, playback-formats]
+    needs: [test, playback-formats, browser-e2e]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
