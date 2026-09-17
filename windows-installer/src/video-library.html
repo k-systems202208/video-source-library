@@ -75,6 +75,74 @@
     .available,.scan-status.ok,.watched{color:#91c493}
     @media(max-width:700px){header{padding:13px 14px}.brand h1{font-size:25px}.brand-kicker{font-size:8px}.home-strip h2 small{display:none}.poster{padding:5px}.card-body{padding:11px 12px 14px}}
 
+
+    /* CINEMA_LIBRARY_DETAIL_V2 */
+    .detail #back{
+      margin:0 0 14px;padding:8px 14px;border-color:#745533;background:linear-gradient(180deg,#211812,#15100d);
+      color:#e8d6b2;font-family:"Yu Mincho","Hiragino Mincho ProN",Georgia,serif;letter-spacing:.06em
+    }
+    .detail #back:hover{border-color:#c49a52;color:#fff1cf;background:#251912}
+    .hero{
+      padding:30px 32px 32px;border-color:#735431;background:#17110d;
+      box-shadow:0 18px 54px rgba(0,0,0,.40),inset 0 0 0 1px rgba(215,171,91,.05)
+    }
+    .hero::after{content:"";position:absolute;left:18px;right:18px;bottom:8px;height:1px;background:linear-gradient(90deg,transparent,#8a6335,transparent);opacity:.65}
+    .hero.has-backdrop::before{background:linear-gradient(90deg,rgba(13,10,8,.98) 0%,rgba(13,10,8,.92) 28%,rgba(13,10,8,.72) 66%,rgba(13,10,8,.84) 100%)}
+    .hero-layout{grid-template-columns:205px minmax(0,1fr);gap:36px;align-items:start}
+    .hero-poster{width:205px;border-radius:2px;border:2px solid #b88941;box-shadow:0 16px 38px rgba(0,0,0,.62),0 0 0 6px rgba(31,22,16,.88),0 0 0 7px #5a4024}
+    .hero-poster-fallback{width:205px;min-height:307px;border-radius:2px}
+    .hero-body{padding-top:3px}
+    .hero-line{display:block}
+    .hero-title-block{max-width:880px}
+    .hero-kicker{margin-bottom:12px;color:#c59a4a;font:700 9px/1.2 Georgia,"Times New Roman",serif;letter-spacing:.28em}
+    .hero-title-block>.badge{display:inline-block;margin-bottom:9px;color:#d7ab5c;font-size:11px;letter-spacing:.10em}
+    .hero-body h2{margin:0 0 10px;font-size:clamp(32px,3.5vw,48px);line-height:1.12;letter-spacing:.055em;text-shadow:0 2px 5px #000}
+    .hero-meta{font-size:12px;color:#b9aa92;letter-spacing:.03em}
+    .hero-actions{margin-top:16px}
+    .favorite-action{padding:8px 13px;border-radius:3px!important;background:linear-gradient(180deg,rgba(37,27,20,.94),rgba(21,16,12,.96))!important;border-color:#8b6738!important;color:#ead4a5!important;font-size:12px;letter-spacing:.04em;box-shadow:none}
+    .favorite-action.on{background:linear-gradient(180deg,#762125,#501519)!important;border-color:#c49a52!important;color:#fff1cc!important}
+    .overview{max-width:920px;margin:22px 0 0;padding:18px 0 4px;border-top:1px solid rgba(167,121,62,.42);font-size:15px;line-height:1.9;color:#e2d8c7}
+    .credits{max-width:920px;margin-top:18px;padding-top:16px;border-top:1px solid rgba(167,121,62,.38);gap:11px}
+    .credit-row{grid-template-columns:128px minmax(0,1fr);gap:16px}
+    .credit-label{padding-top:6px;color:#c6ad82;font-size:11px;letter-spacing:.08em}
+    .credit-people{gap:7px 8px}
+    .person-link{padding:6px 12px;border-radius:3px;background:linear-gradient(180deg,rgba(43,31,22,.9),rgba(24,18,14,.94));border-color:#705333;color:#efd497;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:12px;letter-spacing:.03em;box-shadow:inset 0 0 0 1px rgba(204,159,78,.04)}
+    .person-link:hover,.person-link:focus-visible{background:#342419;border-color:#c59a4a;color:#fff0c9}
+    .program-section,.screening-list{margin-top:24px}
+    .section-heading{display:flex;align-items:baseline;gap:10px;margin:0 0 11px;padding:0 2px 8px;border-bottom:1px solid #64492e}
+    .section-heading::after{content:"";height:1px;flex:1;background:linear-gradient(90deg,#8a6539,transparent)}
+    .section-heading-jp{color:#ead9b7;font-family:"Yu Mincho","Hiragino Mincho ProN",Georgia,serif;font-size:17px;letter-spacing:.10em}
+    .section-heading-en{color:#aa8044;font:700 8px/1 Georgia,"Times New Roman",serif;letter-spacing:.22em}
+    .groups{margin:0;gap:7px}
+    .group{position:relative;padding:9px 14px 9px 18px;border-radius:2px;background:linear-gradient(180deg,#211811,#15100d);border-color:#64482d;color:#d9c5a0;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:12px;letter-spacing:.025em}
+    .group::before{content:"";position:absolute;left:7px;top:50%;width:4px;height:4px;border:1px solid #a77a3d;transform:translateY(-50%) rotate(45deg)}
+    .group:hover{border-color:#b88945;color:#fff0c8;background:#291c13}
+    .group.active{background:linear-gradient(180deg,#7c2527,#531719);border-color:#c59a4a;color:#fff0cc;box-shadow:inset 0 0 0 1px rgba(255,221,159,.09),0 5px 14px rgba(0,0,0,.20)}
+    .group.active::before{background:#d4a95c;border-color:#f1d99a}
+    .screening-list{margin-top:19px}
+    .episodes{gap:7px}
+    .episode{grid-template-columns:72px minmax(0,1fr) 120px;gap:17px;padding:14px 17px;border-radius:3px;border-color:#4d3928;background:linear-gradient(180deg,rgba(30,23,18,.96),rgba(20,16,13,.98));transition:border-color .15s ease,background .15s ease,transform .15s ease}
+    .episode:hover{border-color:#8e683a;background:linear-gradient(180deg,#261b14,#18120e);transform:translateX(2px)}
+    .ep-no{align-self:stretch;display:flex;align-items:center;padding-right:13px;border-right:1px solid #61482e;color:#d2a34f;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:10px;letter-spacing:.05em}
+    .episode-title{color:#f0e2c7;font-family:"Yu Mincho","Hiragino Mincho ProN",Georgia,serif;font-size:16px;line-height:1.4;letter-spacing:.03em}
+    .episode-main small{margin-top:5px;color:#8f8374;font-size:10px;letter-spacing:.025em}
+    .episode-state{justify-content:flex-end;align-items:center;color:#d7c5a6;font-size:11px;white-space:nowrap}
+    .episode-state.watched{color:#9ac89b}
+    header{padding:16px 20px 18px;background:radial-gradient(circle at 11% 20%,rgba(133,37,38,.13),transparent 20rem),linear-gradient(180deg,#271c16,#17110e)}
+    .brand-kicker{font-size:9px;letter-spacing:.30em}
+    .brand h1{font-size:33px;letter-spacing:.075em}
+    .brand-mark{width:27px;height:27px;border:1px solid #b88b3e;border-radius:50%;font-size:13px;vertical-align:middle;box-shadow:inset 0 0 0 3px rgba(184,139,62,.08)}
+    .brand p{margin-top:7px;font-size:11px;letter-spacing:.16em;color:#d0b98f}
+    @media(max-width:900px){
+      .hero-layout{grid-template-columns:170px minmax(0,1fr);gap:28px}.hero-poster{width:170px}.hero-poster-fallback{width:170px;min-height:255px}.hero-body h2{font-size:36px}
+    }
+    @media(max-width:700px){
+      .hero{padding:22px 18px 24px}.hero-layout{grid-template-columns:112px minmax(0,1fr);gap:20px}.hero-poster{width:112px;box-shadow:0 10px 24px rgba(0,0,0,.55),0 0 0 4px rgba(31,22,16,.88),0 0 0 5px #5a4024}.hero-poster-fallback{width:112px;min-height:168px}.hero-kicker{font-size:7px;margin-bottom:8px}.hero-body h2{font-size:28px}.overview{grid-column:1/-1;font-size:13px;line-height:1.75}.credits{grid-column:1/-1}.credit-row{grid-template-columns:1fr;gap:5px}.credit-label{padding-top:0}.episode{grid-template-columns:58px minmax(0,1fr);gap:11px;padding:12px}.episode-state{grid-column:2;justify-content:flex-start}.ep-no{padding-right:9px}.episode-title{font-size:14px}.section-heading-jp{font-size:15px}.brand h1{font-size:27px}
+    }
+    @media(max-width:440px){
+      .hero-layout{grid-template-columns:90px minmax(0,1fr);gap:16px}.hero-poster{width:90px}.hero-poster-fallback{width:90px;min-height:135px}.hero-body h2{font-size:23px}.hero-actions{margin-top:11px}.favorite-action{padding:6px 9px;font-size:11px}.program-section,.screening-list{margin-top:20px}
+    }
+
   </style>
 </head>
 <body>
@@ -148,10 +216,10 @@ function startScanPolling(openModal=true){if(openModal)showScanModal();if(scanPo
 async function runScan(){if(scanRunning){showScanModal();return}const b=$('scanButton');b.disabled=true;showScanModal();renderScanProgress({running:true,progress:{phase:'PREPARING',message:'スキャンを開始しています…',current:0,total:0,elapsedMs:0}});try{await api('/api/scan',{method:'POST'});scanRunning=true;b.textContent='進捗を表示';startScanPolling(true)}catch(e){scanRunning=false;b.disabled=false;b.textContent='再スキャン';renderScanProgress({running:false,progress:{phase:'FAILED',message:'再スキャンを開始できませんでした',error:e.message,elapsedMs:0}})}}
 function card(w){const c=node('article','card'),poster=node('div','poster');if(w.posterUrl){const img=document.createElement('img');img.src=w.posterUrl;img.alt=`${w.title} ポスター`;img.loading='lazy';img.onerror=()=>{poster.replaceChildren(node('div','poster-fallback',w.title))};poster.append(img)}else poster.append(node('div','poster-fallback',w.title));c.append(poster);const body=node('div','card-body');body.append(node('div','badge',w.category+(w.favorite?' · ★ お気に入り':'')));body.append(node('h2','',w.title));body.append(node('div','source',w.sourceTitle&&w.sourceTitle!==w.title?w.sourceTitle:''));if(w.progress.total)body.append(node('div','meta',`視聴 ${w.progress.watched}/${w.progress.total} (${w.progress.percent}%)`));const f=node('div','card-foot');f.append(node('span','',w.yearOrPeriod||'年不明'));f.append(node('span',w.availableVideoCount?'available':'',w.availableVideoCount?`${w.availableVideoCount}/${w.videoCount} 利用可`:`${w.videoCount}動画`));body.append(f);c.append(body);c.onclick=()=>location.hash=`#/work/${w.id}`;return c}
 async function loadWorks(reset=false){if(state.loading)return;state.loading=true;if(reset){state.offset=0;works.replaceChildren()}const p=new URLSearchParams({limit:PAGE,offset:state.offset,sort:state.sort});if(state.q)p.set('q',state.q);if(state.category)p.set('category',state.category);try{const d=await api('/api/works?'+p);state.total=d.total;for(const w of d.items)works.append(card(w));state.offset+=d.items.length;loadWrap.hidden=state.offset>=state.total}finally{state.loading=false}}
-async function showWork(id){$('continueSection').hidden=true;$('nextSection').hidden=true;$('catalog').hidden=true;$('detail').hidden=false;const w=await api(`/api/works/${id}`),r=document.createDocumentFragment(),h=node('div','hero');if(w.backdropUrl){h.classList.add('has-backdrop');h.style.backgroundImage=`url("${w.backdropUrl}")`}const layout=node('div','hero-layout'),posterSlot=node('div');if(w.posterUrl){const img=document.createElement('img');img.className='hero-poster';img.src=w.posterUrl;img.alt=`${w.title} ポスター`;img.onerror=()=>posterSlot.replaceChildren(node('div','hero-poster hero-poster-fallback',w.title));posterSlot.append(img)}else posterSlot.append(node('div','hero-poster hero-poster-fallback',w.title));layout.append(posterSlot);const heroBody=node('div','hero-body'),line=node('div','hero-line'),title=node('div');title.append(node('div','badge',w.category),node('h2','',w.title),node('div','meta',`視聴 ${w.progress.watched}/${w.progress.total} · 検出字幕 ${w.availableSubtitleCount??0}`));line.append(title);const a=node('div','hero-actions'),fav=node('button','action'+(w.favorite?' on':''),w.favorite?'★ お気に入り':'☆ お気に入り');fav.onclick=async()=>{w.favorite=!w.favorite;await api(`/api/me/works/${w.id}/favorite`,jo('PUT',{favorite:w.favorite}));fav.textContent=w.favorite?'★ お気に入り':'☆ お気に入り';fav.classList.toggle('on',w.favorite)};a.append(fav);line.append(a);heroBody.append(line);if(w.tmdb?.overview)heroBody.append(node('p','overview',w.tmdb.overview));const credits=node('div','credits'),director=creditRow('監督／演出',w.director),cast=creditRow('主な出演者／声優',w.cast);if(director)credits.append(director);if(cast)credits.append(cast);if(credits.childElementCount)heroBody.append(credits);layout.append(heroBody);h.append(layout);r.append(h);if(w.groups.length){const g=node('div','groups');w.groups.forEach((x,i)=>{const b=node('button','group'+(i===0?' active':''),`${x.name} (${x.watchedCount}/${x.videoCount})`);b.onclick=()=>{document.querySelectorAll('.group').forEach(q=>q.classList.toggle('active',q===b));loadEpisodes(w.id,x.id)};g.append(b)});r.append(g);const ep=node('div','episodes');ep.id='episodes';r.append(ep);const vd=node('div');vd.id='videoDetail';r.append(vd)}else r.append(node('div','empty','この作品には登録済み動画がありません。'));$('workDetail').replaceChildren(r);if(w.groups.length)loadEpisodes(w.id,w.groups[0].id)}
+async function showWork(id){$('continueSection').hidden=true;$('nextSection').hidden=true;$('catalog').hidden=true;$('detail').hidden=false;const w=await api(`/api/works/${id}`),r=document.createDocumentFragment(),h=node('div','hero');if(w.backdropUrl){h.classList.add('has-backdrop');h.style.backgroundImage=`url("${w.backdropUrl}")`}const layout=node('div','hero-layout'),posterSlot=node('div');if(w.posterUrl){const img=document.createElement('img');img.className='hero-poster';img.src=w.posterUrl;img.alt=`${w.title} ポスター`;img.onerror=()=>posterSlot.replaceChildren(node('div','hero-poster hero-poster-fallback',w.title));posterSlot.append(img)}else posterSlot.append(node('div','hero-poster hero-poster-fallback',w.title));layout.append(posterSlot);const heroBody=node('div','hero-body'),line=node('div','hero-line'),title=node('div','hero-title-block');title.append(node('div','hero-kicker','FEATURE PRESENTATION'),node('div','badge',w.category),node('h2','',w.title),node('div','meta hero-meta',`視聴 ${w.progress.watched}/${w.progress.total} · 検出字幕 ${w.availableSubtitleCount??0}`));const a=node('div','hero-actions'),fav=node('button','action favorite-action'+(w.favorite?' on':''),w.favorite?'★ お気に入り':'☆ お気に入り');fav.onclick=async()=>{w.favorite=!w.favorite;await api(`/api/me/works/${w.id}/favorite`,jo('PUT',{favorite:w.favorite}));fav.textContent=w.favorite?'★ お気に入り':'☆ お気に入り';fav.classList.toggle('on',w.favorite)};a.append(fav);title.append(a);line.append(title);heroBody.append(line);if(w.tmdb?.overview)heroBody.append(node('p','overview',w.tmdb.overview));const credits=node('div','credits'),director=creditRow('監督／演出',w.director),cast=creditRow('主な出演者／声優',w.cast);if(director)credits.append(director);if(cast)credits.append(cast);if(credits.childElementCount)heroBody.append(credits);layout.append(heroBody);h.append(layout);r.append(h);if(w.groups.length){const program=node('section','program-section'),programHead=node('div','section-heading');programHead.append(node('span','section-heading-jp','上映プログラム'),node('small','section-heading-en','PROGRAM'));const g=node('div','groups');w.groups.forEach((x,i)=>{const b=node('button','group'+(i===0?' active':''),`${x.name} (${x.watchedCount}/${x.videoCount})`);b.onclick=()=>{document.querySelectorAll('.group').forEach(q=>q.classList.toggle('active',q===b));loadEpisodes(w.id,x.id)};g.append(b)});program.append(programHead,g);r.append(program);const listing=node('section','screening-list'),listHead=node('div','section-heading');listHead.append(node('span','section-heading-jp','上映目録'),node('small','section-heading-en','SCREENING LIST'));const ep=node('div','episodes');ep.id='episodes';listing.append(listHead,ep);r.append(listing);const vd=node('div');vd.id='videoDetail';r.append(vd)}else r.append(node('div','empty','この作品には登録済み動画がありません。'));$('workDetail').replaceChildren(r);if(w.groups.length)loadEpisodes(w.id,w.groups[0].id)}
 function es(v){if(v.state.watched)return'✓ 視聴済み';if(v.state.positionMs>0)return`▶ ${ft(v.state.positionMs)}`;return'○ 未視聴'}
 function episodeTech(v){const f=v.file||{},parts=[];if(f.width&&f.height)parts.push(`${f.width}×${f.height}`);if(f.videoCodec)parts.push(String(f.videoCodec).toUpperCase());if(f.durationMs)parts.push(ft(f.durationMs));if(f.subtitleCount)parts.push(`字幕 ${f.subtitleCount}`);return parts.join(' · ')}
-async function loadEpisodes(w,g){const e=$('episodes'),d=await api(`/api/works/${w}/videos?groupId=${g}`);e.replaceChildren();for(const v of d.items){const r=node('div','episode'),main=node('div','episode-main');main.append(node('div','',v.episodeTitle||'タイトル未設定'));const tech=episodeTech(v);if(tech)main.append(node('small','',tech));r.append(node('div','ep-no',v.episodeOrType||v.contentType),main,node('div','episode-state'+(v.state.watched?' watched':''),(v.state.favorite?'★ · ':'')+es(v)));r.onclick=()=>showVideo(v.id);e.append(r)}}
+async function loadEpisodes(w,g){const e=$('episodes'),d=await api(`/api/works/${w}/videos?groupId=${g}`);e.replaceChildren();for(const v of d.items){const r=node('div','episode'),main=node('div','episode-main');main.append(node('div','episode-title',v.episodeTitle||'タイトル未設定'));const tech=episodeTech(v);if(tech)main.append(node('small','',tech));r.append(node('div','ep-no',v.episodeOrType||v.contentType),main,node('div','episode-state'+(v.state.watched?' watched':''),(v.state.favorite?'★ · ':'')+es(v)));r.onclick=()=>showVideo(v.id);e.append(r)}}
 function addTech(container,label,value){const item=node('div','tech-item');item.append(node('strong','',label),node('span','',value));container.append(item)}
 let activePlayer=null,playerPrepareTimer=null;
 function closePlayerModal(){const m=$('playerModal');if(playerPrepareTimer){clearInterval(playerPrepareTimer);playerPrepareTimer=null}if(activePlayer){try{activePlayer.pause()}catch{}activePlayer.removeAttribute('src');activePlayer.load();activePlayer=null}m.dataset.requestToken='';m.hidden=true;document.body.style.overflow=''}
