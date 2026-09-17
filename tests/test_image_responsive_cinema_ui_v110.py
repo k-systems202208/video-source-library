@@ -48,7 +48,7 @@ class ImageResponsiveCinemaUiTests(unittest.TestCase):
         self.assertIn('function loadBackgroundResilient',HTML)
         self.assertIn('_image_retry=',HTML)
         self.assertIn('resolve_or_repair_cached_tmdb_image',SERVER)
-        self.assertIn('private, max-age=3600',SERVER)
+        self.assertIn('private, max-age=300',SERVER)
 
     def test_existing_features_remain(self):
         self.assertIn('FEATURE PRESENTATION',HTML)
