@@ -152,7 +152,7 @@ class TmdbUiAndSafetyTests(unittest.TestCase):
         self.assertIn('text="TMDb同期"', launcher)
         self.assertIn("sync_tmdb_library", launcher)
         self.assertIn("/tmdb-image/(poster|backdrop)/", server)
-        self.assertIn("resolve_cached_tmdb_image", server)
+        self.assertIn("resolve_or_repair_cached_tmdb_image", server)
         self.assertIn("posterUrl", html)
         self.assertIn("backdropUrl", html)
         self.assertIn("poster-fallback", html)
