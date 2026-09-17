@@ -171,7 +171,7 @@ class SecureServerTests(unittest.TestCase):
         status, _, html = self.request("GET", "/")
         self.assertEqual(status, 200); self.assertIn("manifest.webmanifest", html); self.assertIn("serviceWorker.register", html)
         status, _, manifest = self.request("GET", "/manifest.webmanifest")
-        self.assertEqual(status, 200); self.assertIn("自宅動画ライブラリ", manifest)
+        self.assertEqual(status, 200); self.assertIn("関町北映画館", manifest)
         status, _, sw = self.request("GET", "/service-worker.js")
         self.assertEqual(status, 200); self.assertIn("/api/", sw); self.assertIn("/video/", sw); self.assertIn("offline.html", sw)
 
