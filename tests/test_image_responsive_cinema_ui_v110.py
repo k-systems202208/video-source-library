@@ -21,8 +21,8 @@ class ImageResponsiveCinemaUiTests(unittest.TestCase):
         self.assertIn('@media(min-width:768px) and (max-width:1199px)',HTML)
         self.assertIn('@media(max-width:767px)',HTML)
 
-    def test_header_is_centered_full_width_and_header_controls_are_removed(self):
-        self.assertIn('SEKIMACHI_KITA_CINEMA_HEADER_V1',HTML)
+    def test_header_brand_is_centered_compact_and_header_controls_are_removed(self):
+        self.assertIn('SEKIMACHI_KITA_CINEMA_HEADER_V2',HTML)
         self.assertIn('<title>関町北映画館</title>',HTML)
         self.assertIn('<strong>関町北映画館</strong>',HTML)
         self.assertNotIn('シネマ蔵書館',HTML)
@@ -30,10 +30,10 @@ class ImageResponsiveCinemaUiTests(unittest.TestCase):
         self.assertNotIn('id="scanButton"',HTML)
         self.assertNotIn('映画で、また会える。',HTML)
         self.assertIn('justify-content:center!important',HTML)
-        self.assertIn('width:100%!important;max-width:none!important',HTML)
-        self.assertIn('min-height:112px;padding:16px 0 18px!important',HTML)
-        self.assertIn('min-height:96px;padding:12px 0!important',HTML)
-        self.assertIn('min-height:74px;padding:8px 0!important',HTML)
+        self.assertIn('width:fit-content!important',HTML)
+        self.assertIn('min-height:112px;padding:16px 20px 18px!important',HTML)
+        self.assertIn('min-height:96px;padding:12px 20px!important',HTML)
+        self.assertIn('min-height:74px;padding:8px 52px!important',HTML)
 
     def test_catalog_copy_and_initial_scroll_behavior(self):
         self.assertIn('アーカイブに収められた作品から、次の一本を。',HTML)
@@ -49,6 +49,7 @@ class ImageResponsiveCinemaUiTests(unittest.TestCase):
         self.assertIn('_image_retry=',HTML)
         self.assertIn('resolve_or_repair_cached_tmdb_image',SERVER)
         self.assertIn('private, max-age=300',SERVER)
+        self.assertIn("if(w.backdropUrl){loadBackgroundResilient(h,w.backdropUrl)}const layout",HTML)
 
     def test_existing_features_remain(self):
         self.assertIn('FEATURE PRESENTATION',HTML)
