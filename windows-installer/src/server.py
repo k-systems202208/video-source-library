@@ -54,6 +54,9 @@ STATIC_FILES = {
     "/offline.html": ("offline.html", "text/html; charset=utf-8"),
     "/diagnostics.html": ("diagnostics.html", "text/html; charset=utf-8"),
     "/icon.svg": ("icon.svg", "image/svg+xml"),
+    "/cinema-header.svg": ("cinema-header.svg", "image/svg+xml"),
+    "/cinema-sidebar.svg": ("cinema-sidebar.svg", "image/svg+xml"),
+    "/cinema-footer.svg": ("cinema-footer.svg", "image/svg+xml"),
 }
 
 

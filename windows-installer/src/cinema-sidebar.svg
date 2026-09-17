@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 980" preserveAspectRatio="xMidYMax slice">
+<defs>
+ <linearGradient id="panel" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#100d0a"/><stop offset=".5" stop-color="#21150f"/><stop offset="1" stop-color="#0e0b09"/></linearGradient>
+ <linearGradient id="night" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#100c0a"/><stop offset="1" stop-color="#24150c"/></linearGradient>
+ <linearGradient id="lamp" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffe0a0"/><stop offset="1" stop-color="#bc7428"/></linearGradient>
+ <pattern id="grain" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M0 4h18M0 13h18" stroke="#8c5c2f" stroke-opacity=".08"/><path d="M4 0v18M13 0v18" stroke="#000" stroke-opacity=".12"/></pattern>
+</defs>
+<rect width="320" height="980" fill="url(#panel)"/><rect width="320" height="980" fill="url(#grain)"/><rect x="8" y="8" width="304" height="964" rx="10" fill="none" stroke="#7b5b34" stroke-width="2"/>
+<g opacity=".95" transform="translate(0 560)"><rect width="320" height="420" fill="url(#night)"/><path d="M25 420V210l55-45 55 45v210zM122 420V165l69-58 69 58v255zM242 420V225l38-31 40 31v195z" fill="#2f1b10" stroke="#8c5728" stroke-width="3"/><rect x="143" y="145" width="98" height="80" rx="4" fill="#e8c98b" stroke="#7b4f25" stroke-width="4"/><rect x="153" y="157" width="78" height="56" fill="#55321c"/><path d="M58 271h48v69H58zM150 262h31v54h-31zM193 262h31v54h-31zM262 280h28v48h-28z" fill="#e9c46f" opacity=".72"/><path d="M39 420v-105h93v105M137 420v-83h113v83" fill="none" stroke="#a46d35" stroke-width="5"/><g fill="url(#lamp)"><circle cx="51" cy="228" r="8"/><circle cx="275" cy="246" r="8"/><circle cx="117" cy="326" r="6"/></g><path d="M0 350q82-38 160 0t160 0v130H0z" fill="#080706" opacity=".7"/></g>
+<g opacity=".5"><path d="M25 64h270M25 92h270M25 120h270M25 148h270M25 176h270M25 204h270M25 232h270M25 260h270M25 288h270M25 316h270M25 344h270M25 372h270M25 400h270M25 428h270M25 456h270M25 484h270" stroke="#6f4a28" stroke-width="1"/></g>
+</svg>
