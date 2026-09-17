@@ -1,0 +1,39 @@
+name: Apply navigation people menu
+on:
+  push:
+    branches: [fix/navigation-people-menu-136]
+    paths:
+      - scripts/apply-navigation-people-menu-136.py
+      - .github/workflows/apply-navigation-people-menu-136.yml
+jobs:
+  apply:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/navigation-people-menu-136
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Apply navigation patch
+        run: python scripts/apply-navigation-people-menu-136.py
+      - name: Compile changed Python
+        run: python -m py_compile windows-installer/src/library_service.py windows-installer/src/server.py
+      - name: Run targeted regression tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p "test_navigation_people_menu_v110.py"
+          python -m unittest discover -s tests -p "test_image_responsive_cinema_ui_v110.py"
+          python -m unittest discover -s tests -p "test_phase2.py"
+          python -m unittest discover -s tests -p "test_cinema_library_final_polish_v110.py"
+      - name: Commit product changes and remove temporary helpers
+        shell: pwsh
+        run: |
+          git config user.name "k-systems202208"
+          git config user.email "110336339+k-systems202208@users.noreply.github.com"
+          git rm scripts/apply-navigation-people-menu-136.py .github/workflows/apply-navigation-people-menu-136.yml
+          git add windows-installer/src/video-library.html windows-installer/src/server.py windows-installer/src/library_service.py
+          git commit -m "1.1.0: 左メニュー遷移修正と人物名鑑を追加 (#136)"
+          git push origin HEAD:fix/navigation-people-menu-136
