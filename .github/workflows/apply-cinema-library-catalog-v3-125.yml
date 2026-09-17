@@ -33,7 +33,7 @@ jobs:
           tests.test_cinema_library_detail_v2_v110
           tests.test_cinema_library_base_design_v110
           tests.test_poster_ui_polish_v110
-          tests.test_person_links_v110
+          tests.test_credits_people_ui_v110
           tests.test_phase2
           tests.test_phase4
       - name: Commit product changes and remove temporary helpers
