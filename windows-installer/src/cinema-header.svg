@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 180" preserveAspectRatio="xMidYMid slice">
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#36090d"/><stop offset=".55" stop-color="#781a20"/><stop offset="1" stop-color="#1a0c0b"/></linearGradient>
+ <linearGradient id="wood" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#2b160c"/><stop offset=".2" stop-color="#6d3c1d"/><stop offset=".5" stop-color="#2e170d"/><stop offset=".78" stop-color="#7a4520"/><stop offset="1" stop-color="#241109"/></linearGradient>
+ <radialGradient id="glow"><stop stop-color="#ffd98b" stop-opacity=".9"/><stop offset=".35" stop-color="#d89a3d" stop-opacity=".35"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+ <pattern id="folds" width="110" height="180" patternUnits="userSpaceOnUse"><path d="M0 0 Q28 92 55 180 Q82 92 110 0" fill="none" stroke="#150507" stroke-opacity=".55" stroke-width="18"/><path d="M22 0 Q45 95 55 180 Q65 95 88 0" fill="none" stroke="#a32a31" stroke-opacity=".24" stroke-width="8"/></pattern>
+</defs>
+<rect width="1600" height="180" fill="url(#bg)"/><rect width="1600" height="180" fill="url(#folds)"/>
+<g opacity=".9"><rect y="145" width="1600" height="35" fill="url(#wood)"/><rect y="145" width="1600" height="2" fill="#c89443"/><rect y="174" width="1600" height="2" fill="#8e652e"/></g>
+<g transform="translate(330 8)"><ellipse cx="0" cy="52" rx="82" ry="68" fill="url(#glow)"/><path d="M-15 0h30l7 21-12 20h-20l-12-20z" fill="#d6a04b" stroke="#4c2d13" stroke-width="3"/><rect x="-6" y="21" width="12" height="29" rx="5" fill="#ffe5a5"/></g>
+<g transform="translate(1270 8)"><ellipse cx="0" cy="52" rx="82" ry="68" fill="url(#glow)"/><path d="M-15 0h30l7 21-12 20h-20l-12-20z" fill="#d6a04b" stroke="#4c2d13" stroke-width="3"/><rect x="-6" y="21" width="12" height="29" rx="5" fill="#ffe5a5"/></g>
+<path d="M0 0h1600v14H0z" fill="#120907" opacity=".75"/>
+</svg>
