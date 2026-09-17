@@ -47,3 +47,5 @@ jobs:
           git add -A
           git commit -m "1.1.0: シネマ蔵書館の最終UIポリッシュを行う (#127)"
           git push origin HEAD:feat/cinema-library-final-polish-127
+
+# rerun after catalog v3 regression expectation update
