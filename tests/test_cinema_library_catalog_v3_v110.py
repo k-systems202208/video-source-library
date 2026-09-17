@@ -33,8 +33,8 @@ class CinemaLibraryCatalogV3Tests(unittest.TestCase):
     def test_home_sections_and_existing_behaviour_remain(self) -> None:
         self.assertIn("上映中 <small>NOW SHOWING</small>", self.html)
         self.assertIn("次回上映 <small>COMING SOON</small>", self.html)
-        self.assertIn("c.onclick=()=>openInWork(x.workId,x.videoId)", self.html)
-        self.assertIn("c.onclick=()=>location.hash=`#/work/${w.id}`", self.html)
+        self.assertIn("makeOpenable(c,()=>openInWork(x.workId,x.videoId))", self.html)
+        self.assertIn("makeOpenable(c,()=>{location.hash=`#/work/${w.id}`})", self.html)
         self.assertIn("const PAGE=60", self.html)
 
     def test_detail_v2_is_retained(self) -> None:
