@@ -373,7 +373,7 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(size))
-            self._common(cache="public, max-age=3600")
+            self._common(cache="no-store")
             self.end_headers()
             if not head:
                 try:

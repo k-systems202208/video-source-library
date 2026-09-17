@@ -24,13 +24,18 @@ _UNMATCHED = "UNMATCHED"
 _MATCHER_VERSION = 7
 _MATCHER_VERSION_CACHE_KEY = "tmdb:matcher-version"
 _SEARCH_CACHE_VERSION = 3
-_IMAGE_CACHE_REPAIR_VERSION = 2
+_IMAGE_CACHE_REPAIR_VERSION = 3
 _IMAGE_CACHE_REPAIR_KEY = "tmdb:image-cache-repair-version"
 
-# v3時代に誤MATCHEDだったTRICKは、後続matcherでtv/19616へ修正されても
-# workId.jpg が残り続けたため、既存インストールで一度だけ画像を取り直す。
-_LEGACY_STALE_IMAGE_WORKS: set[tuple[str, str]] = {
-    ("TRICK", "2000-2003"),
+# 過去の誤候補画像が workId 名のローカルキャッシュとして残った作品。
+# matcherの既存MATCHEDは維持し、TMDb詳細を同じIDから再取得して画像だけ取り直す。
+# タイトルは _normalize_title() 後の値で保持し、全角/半角記号などの表記揺れに耐える。
+_STALE_IMAGE_REPAIR_WORKS: set[tuple[str, str]] = {
+    ("trick", "2000-2003"),
+    ("pricelessあるわけねぇだろんなもん", "2012"),
+    ("スマイル", "2009"),
+    ("ビギナーズ", "2012"),
+    ("プライド", "2004"),
 }
 
 # 440作品の実機監査で確認済みの「同一作品だがTMDb側の表記が異なる」名称。
@@ -220,6 +225,16 @@ def _work_audit_key(work: sqlite3.Row | dict[str, Any]) -> tuple[str, str]:
         str(_work_value(work, "official_title", "") or "").strip(),
         str(_work_value(work, "year_or_period", "") or "").strip(),
     )
+
+
+def _requires_image_cache_repair(work: sqlite3.Row | dict[str, Any]) -> bool:
+    period = str(_work_value(work, "year_or_period", "") or "").strip()
+    titles = {
+        _normalize_title(_work_value(work, "official_title", "")),
+        _normalize_title(_work_value(work, "source_title", "")),
+    }
+    titles.discard("")
+    return any((title, period) in _STALE_IMAGE_REPAIR_WORKS for title in titles)
 
 
 def _audit_approved_candidate(
@@ -820,7 +835,7 @@ def sync_tmdb_library(
                 )
                 status = _MATCHED
                 reason = "EXISTING_MATCH"
-                if legacy_image_repair and _work_audit_key(work) in _LEGACY_STALE_IMAGE_WORKS:
+                if legacy_image_repair and _requires_image_cache_repair(work):
                     candidate = _refresh_matched_candidate_details(tmdb, candidate)
                     _upsert_link(connection, int(work["id"]), status, candidate)
                     connection.commit()
@@ -835,7 +850,7 @@ def sync_tmdb_library(
             backdrop_cached = False
             if status == _MATCHED and candidate is not None:
                 force_poster_refresh, force_backdrop_refresh = _image_refresh_flags(existing, status, candidate)
-                if legacy_image_repair and _work_audit_key(work) in _LEGACY_STALE_IMAGE_WORKS:
+                if legacy_image_repair and _requires_image_cache_repair(work):
                     force_poster_refresh = True
                     force_backdrop_refresh = True
                 try:
