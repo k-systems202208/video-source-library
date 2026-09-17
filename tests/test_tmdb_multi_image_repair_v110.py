@@ -135,12 +135,14 @@ class TmdbMultiImageRepairV110Tests(unittest.TestCase):
 
     def test_header_brand_has_centered_override_for_all_breakpoints(self):
         html = (SRC / "video-library.html").read_text(encoding="utf-8")
-        marker = html[html.index("/* SEKIMACHI_KITA_CINEMA_HEADER_V1 */"):html.index("/* NAVIGATION_PEOPLE_MENU_V1 */")]
+        marker = html[html.index("/* SEKIMACHI_KITA_CINEMA_HEADER_V2 */"):html.index("/* NAVIGATION_PEOPLE_MENU_V1 */")]
         self.assertIn("justify-content:center!important", marker)
         self.assertIn("@media(min-width:1200px)", marker)
         self.assertIn("@media(min-width:768px) and (max-width:1199px)", marker)
         self.assertIn("@media(max-width:767px)", marker)
         self.assertNotIn("justify-self:start", marker)
+        self.assertIn("width:fit-content!important", marker)
+        self.assertNotIn("width:100%!important;max-width:none!important", marker)
 
 
 if __name__ == "__main__":
