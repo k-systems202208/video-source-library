@@ -43,7 +43,7 @@ class NavigationPeopleMenuSourceTests(unittest.TestCase):
         self.assertIn('id="peopleDirectory"', HTML)
         self.assertIn('id="peopleDirectoryList"', HTML)
         self.assertIn("showPeopleDirectory(role)", HTML)
-        self.assertIn("#/people\\/(directors|cast)", HTML)
+        self.assertIn("location.hash.match(/^#\\/people\\/(directors|cast)$/)", HTML)
         self.assertIn("/api/people?role=", HTML)
         self.assertIn("NAVIGATION_PEOPLE_MENU_V1", HTML)
 
