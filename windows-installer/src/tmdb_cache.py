@@ -8,10 +8,26 @@ from typing import Any
 from database import now_iso
 
 
+# 2026-09-17: image-cache repair v3 succeeded for the other reported titles,
+# but the PRICELESS workId cache survived on one real library.  Keep the public
+# cache key used by tmdb_sync stable while moving only its physical marker to a
+# new generation.  Existing installations therefore run the small, targeted
+# _STALE_IMAGE_REPAIR_WORKS migration one more time, then persist the new marker
+# and return to the normal no-op path on subsequent syncs.
+_CACHE_STORAGE_KEY_OVERRIDES = {
+    "tmdb:image-cache-repair-version": "tmdb:image-cache-repair-version:gen2",
+}
+
+
+def _storage_key(cache_key: str) -> str:
+    key = str(cache_key)
+    return _CACHE_STORAGE_KEY_OVERRIDES.get(key, key)
+
+
 def get_cached_json(connection: sqlite3.Connection, cache_key: str, *, now: str | None = None) -> Any | None:
     row = connection.execute(
         "SELECT payload_json, expires_at FROM tmdb_api_cache WHERE cache_key=?",
-        (str(cache_key),),
+        (_storage_key(cache_key),),
     ).fetchone()
     if row is None:
         return None
@@ -41,9 +57,9 @@ def put_cached_json(
             fetched_at=excluded.fetched_at,
             expires_at=excluded.expires_at
         """,
-        (str(cache_key), json.dumps(payload, ensure_ascii=False, separators=(",", ":")), fetched_at or now_iso(), expires_at),
+        (_storage_key(cache_key), json.dumps(payload, ensure_ascii=False, separators=(",", ":")), fetched_at or now_iso(), expires_at),
     )
 
 
 def delete_cached_json(connection: sqlite3.Connection, cache_key: str) -> None:
-    connection.execute("DELETE FROM tmdb_api_cache WHERE cache_key=?", (str(cache_key),))
+    connection.execute("DELETE FROM tmdb_api_cache WHERE cache_key=?", (_storage_key(cache_key),))
