@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 180" preserveAspectRatio="xMidYMid slice">
+<defs>
+  <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#3a2418"/><stop offset=".42" stop-color="#17100c"/><stop offset="1" stop-color="#090706"/></linearGradient>
+  <linearGradient id="curtain" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#711a20"/><stop offset=".48" stop-color="#3d0d12"/><stop offset="1" stop-color="#17080a"/></linearGradient>
+  <radialGradient id="lamp"><stop stop-color="#fff2be" stop-opacity=".95"/><stop offset=".22" stop-color="#d99f4c" stop-opacity=".78"/><stop offset="1" stop-color="#d99f4c" stop-opacity="0"/></radialGradient>
+  <linearGradient id="marquee" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#d8b36a"/><stop offset=".16" stop-color="#80602c"/><stop offset=".22" stop-color="#24160d"/><stop offset=".84" stop-color="#120d09"/><stop offset=".9" stop-color="#89672e"/><stop offset="1" stop-color="#d8b36a"/></linearGradient>
+  <filter id="grain"><feTurbulence baseFrequency=".78" numOctaves="2" stitchTiles="stitch" type="fractalNoise"/><feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 .13 0"/></filter>
+  <filter id="glow"><feGaussianBlur stdDeviation="10"/></filter>
+</defs>
+<rect width="1600" height="180" fill="url(#wood)"/>
+<rect x="0" y="10" width="1600" height="124" fill="url(#curtain)"/>
+<path d="M0 10 Q80 58 160 10 T320 10 T480 10 T640 10 T800 10 T960 10 T1120 10 T1280 10 T1440 10 T1600 10 V42 Q1510 76 1420 42 T1240 42 T1060 42 T880 42 T700 42 T520 42 T340 42 T160 42 T0 42Z" fill="#8d2428" opacity=".42"/>
+<path d="M0 18 C95 58 90 96 0 132 M1600 18 C1505 58 1510 96 1600 132" fill="none" stroke="#a8413d" stroke-width="42" opacity=".28"/>
+<g opacity=".92">
+  <rect x="470" y="30" width="660" height="94" rx="5" fill="url(#marquee)"/>
+  <rect x="484" y="42" width="632" height="70" rx="3" fill="#17100c" stroke="#c59643" stroke-width="2"/>
+  <rect x="498" y="51" width="604" height="52" rx="2" fill="#e8d2a0" opacity=".08"/>
+</g>
+<g>
+  <circle cx="350" cy="54" r="65" fill="url(#lamp)" filter="url(#glow)"/>
+  <circle cx="1250" cy="54" r="65" fill="url(#lamp)" filter="url(#glow)"/>
+  <path d="M350 0v29m-12 0h24l-5 24h-14zM1250 0v29m-12 0h24l-5 24h-14z" stroke="#d8ac61" stroke-width="3" fill="#5c3a1e"/>
+  <circle cx="350" cy="49" r="9" fill="#ffe7a3"/><circle cx="1250" cy="49" r="9" fill="#ffe7a3"/>
+</g>
+<rect y="132" width="1600" height="48" fill="url(#wood)"/>
+<path d="M0 135h1600M0 169h1600" stroke="#ae7b35" stroke-width="2" opacity=".8"/>
+<rect width="1600" height="180" filter="url(#grain)" opacity=".42"/>
+</svg>
