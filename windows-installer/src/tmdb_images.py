@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any, Callable
 from urllib.request import Request, urlopen
@@ -8,6 +9,7 @@ from urllib.request import Request, urlopen
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p"
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 _ALLOWED_SUFFIXES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+_REPAIR_LOCK = threading.Lock()
 
 
 def _safe_suffix(remote_path: str) -> str:
@@ -98,3 +100,53 @@ def resolve_cached_tmdb_image(
     if not path.is_file():
         return None
     return path, image_content_type(path)
+
+
+def resolve_or_repair_cached_tmdb_image(
+    connection: sqlite3.Connection,
+    image_root: Path | str,
+    work_id: int,
+    kind: str,
+    *,
+    image_downloader: Callable[..., Path] = download_tmdb_image,
+) -> tuple[Path, str] | None:
+    """Resolve a cached TMDb image and repair a missing cache file on demand.
+
+    The database already stores TMDb's image path for MATCHED works.  If the
+    corresponding local cache file has disappeared or a previous sync did not
+    finish downloading it, fetch only that image from image.tmdb.org.  A single
+    process-wide lock avoids duplicate writes to the same .tmp file when a
+    catalog and a home strip request the same work at once.
+    """
+    resolved = resolve_cached_tmdb_image(connection, image_root, work_id, kind)
+    if resolved is not None:
+        return resolved
+
+    column = {"poster": "poster_path", "backdrop": "backdrop_path"}.get(kind)
+    if column is None:
+        return None
+    row = connection.execute(
+        f"SELECT {column} image_path FROM tmdb_work_links WHERE work_id=? AND match_status='MATCHED'",
+        (int(work_id),),
+    ).fetchone()
+    if row is None or not row["image_path"]:
+        return None
+    remote_path = str(row["image_path"])
+    try:
+        target = cached_image_path(image_root, int(work_id), kind, remote_path)
+    except ValueError:
+        return None
+
+    with _REPAIR_LOCK:
+        if not target.is_file():
+            try:
+                image_downloader(
+                    remote_path,
+                    target,
+                    size="w500" if kind == "poster" else "w1280",
+                )
+            except Exception:
+                return None
+    if not target.is_file():
+        return None
+    return target, image_content_type(target)
