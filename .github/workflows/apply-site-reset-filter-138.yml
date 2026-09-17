@@ -1,0 +1,38 @@
+name: Apply site reset and person-filter fix #138
+
+on:
+  push:
+    branches:
+      - fix/site-reset-person-filter-138
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/site-reset-person-filter-138
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply patch
+        run: python scripts/apply-site-reset-filter-138.py
+      - name: Targeted tests
+        run: |
+          python -m unittest discover -s tests -p 'test_home_reset_person_filter_v110.py'
+          python -m unittest discover -s tests -p 'test_navigation_people_menu_v110.py'
+          python -m unittest discover -s tests -p 'test_image_responsive_cinema_ui_v110.py'
+      - name: Commit product changes
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm scripts/apply-site-reset-filter-138.py .github/workflows/apply-site-reset-filter-138.yml
+          git add windows-installer/src/video-library.html tests/test_home_reset_person_filter_v110.py docs/60-1.1.0-home-reset-person-filter.md
+          git commit -m '1.1.0: サイト名初期化と人物フィルター解除を修正 (#138)'
+          git push origin HEAD:fix/site-reset-person-filter-138
