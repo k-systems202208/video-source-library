@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 180" preserveAspectRatio="xMidYMid slice">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#2c090b"/><stop offset="1" stop-color="#0e0908"/></linearGradient>
+  <linearGradient id="wood" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#2a160c"/><stop offset=".3" stop-color="#5a3519"/><stop offset=".55" stop-color="#1d1009"/><stop offset=".8" stop-color="#643a1b"/><stop offset="1" stop-color="#24140b"/></linearGradient>
+  <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f1d18c"/><stop offset=".45" stop-color="#8b5d22"/><stop offset=".7" stop-color="#d4a85c"/><stop offset="1" stop-color="#6b4217"/></linearGradient>
+  <radialGradient id="lamp"><stop stop-color="#fff0b2" stop-opacity=".95"/><stop offset=".35" stop-color="#e7a94e" stop-opacity=".65"/><stop offset="1" stop-color="#d37b22" stop-opacity="0"/></radialGradient>
+  <filter id="grain"><feTurbulence baseFrequency=".75" numOctaves="3" seed="7" type="fractalNoise"/><feColorMatrix values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 .12 0"/><feBlend mode="soft-light" in2="SourceGraphic"/></filter>
+</defs>
+<rect width="1600" height="180" fill="url(#bg)"/>
+<g opacity=".9">
+  <path d="M0 0h1600v105C1400 79 1230 116 1030 91 800 61 645 121 420 90 260 68 125 95 0 78Z" fill="#6e141a"/>
+  <path d="M0 0h1600v75C1380 57 1210 91 1000 68 785 44 605 98 402 69 250 48 122 73 0 59Z" fill="#3d0b0e" opacity=".62"/>
+  <g stroke="#25070a" stroke-width="16" opacity=".45">
+    <path d="M80 0c-5 33-6 66 7 100"/><path d="M180 0c-9 30-10 66 4 103"/><path d="M300 0c-10 34-8 68 8 106"/><path d="M440 0c-11 30-12 66 2 105"/><path d="M600 0c-9 30-8 66 7 103"/><path d="M780 0c-11 33-10 65 5 104"/><path d="M970 0c-9 32-6 66 8 101"/><path d="M1160 0c-10 30-9 65 7 105"/><path d="M1340 0c-11 34-10 69 4 105"/><path d="M1510 0c-7 32-7 65 6 100"/>
+  </g>
+</g>
+<rect y="112" width="1600" height="68" fill="url(#wood)"/>
+<rect y="108" width="1600" height="6" fill="url(#gold)"/>
+<rect y="170" width="1600" height="5" fill="url(#gold)" opacity=".75"/>
+<g opacity=".96">
+  <rect x="500" y="47" width="600" height="91" rx="7" fill="#160f0b" stroke="url(#gold)" stroke-width="5"/>
+  <rect x="520" y="62" width="560" height="61" rx="3" fill="#d9bd7b" opacity=".16" stroke="#b98739" stroke-width="2"/>
+  <circle cx="535" cy="132" r="3" fill="#e6bc64"/><circle cx="1065" cy="132" r="3" fill="#e6bc64"/>
+</g>
+<g>
+  <rect x="255" y="0" width="4" height="40" fill="#4b2c14"/><path d="M238 39h38l-7 22h-24Z" fill="#8b5927" stroke="#d5a75a"/><circle cx="257" cy="60" r="55" fill="url(#lamp)"/><circle cx="257" cy="58" r="8" fill="#ffd47b"/>
+  <rect x="1340" y="0" width="4" height="40" fill="#4b2c14"/><path d="M1323 39h38l-7 22h-24Z" fill="#8b5927" stroke="#d5a75a"/><circle cx="1342" cy="60" r="55" fill="url(#lamp)"/><circle cx="1342" cy="58" r="8" fill="#ffd47b"/>
+</g>
+<rect width="1600" height="180" fill="transparent" filter="url(#grain)" opacity=".5"/>
+</svg>
