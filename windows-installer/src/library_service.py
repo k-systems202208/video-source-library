@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from typing import Any
 
@@ -110,6 +111,37 @@ def list_works(
             for r in rows
         ],
     }
+
+
+_PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||\r?\n|\s+/\s+)\s*")
+
+def list_people(connection: sqlite3.Connection, *, role: str) -> dict[str, Any]:
+    key = str(role or '').strip().casefold()
+    role_map = {
+        'director': ('director', 'director_or_direction'),
+        'directors': ('director', 'director_or_direction'),
+        'cast': ('cast', 'main_cast_or_voice_actors'),
+    }
+    if key not in role_map:
+        raise ValueError('role must be director or cast')
+    normalized_role, column = role_map[key]
+    rows = connection.execute(
+        f"SELECT id,{column} credits FROM works WHERE TRIM(COALESCE({column},''))<>''"
+    ).fetchall()
+    counts: dict[str, int] = {}
+    for row in rows:
+        seen: set[str] = set()
+        for raw in _PERSON_SPLIT_RE.split(str(row['credits'] or '')):
+            name = re.sub(r"\s*(?:ほか|他)$", '', raw.strip()).strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            counts[name] = counts.get(name, 0) + 1
+    items = [
+        {'name': name, 'workCount': count}
+        for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0].casefold()))
+    ]
+    return {'role': normalized_role, 'total': len(items), 'items': items}
 
 
 def get_work(connection: sqlite3.Connection, work_id: int, *, user_id: int | None = None) -> dict[str, Any] | None:
