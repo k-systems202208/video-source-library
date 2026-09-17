@@ -133,10 +133,14 @@ class TmdbMultiImageRepairV110Tests(unittest.TestCase):
         self.assertIn('self._common(cache="no-store")', segment)
         self.assertNotIn("max-age=3600", segment)
 
-    def test_desktop_header_brand_is_left_aligned_only_in_desktop_rule(self):
+    def test_header_brand_has_centered_override_for_all_breakpoints(self):
         html = (SRC / "video-library.html").read_text(encoding="utf-8")
-        desktop = html[html.index("@media(min-width:1200px){"):html.index("@media(min-width:768px) and (max-width:1199px){")]
-        self.assertIn("header .brand{justify-self:start}", desktop)
+        marker = html[html.index("/* SEKIMACHI_KITA_CINEMA_HEADER_V1 */"):html.index("/* NAVIGATION_PEOPLE_MENU_V1 */")]
+        self.assertIn("justify-content:center!important", marker)
+        self.assertIn("@media(min-width:1200px)", marker)
+        self.assertIn("@media(min-width:768px) and (max-width:1199px)", marker)
+        self.assertIn("@media(max-width:767px)", marker)
+        self.assertNotIn("justify-self:start", marker)
 
 
 if __name__ == "__main__":
