@@ -127,11 +127,11 @@ class TmdbMultiImageRepairV110Tests(unittest.TestCase):
                 self.assertEqual(row["poster_path"], "/correct-smile-poster.jpg")
                 self.assertEqual(row["backdrop_path"], "/correct-smile-backdrop.jpg")
 
-    def test_tmdb_images_are_not_browser_cached_after_repair(self):
+    def test_tmdb_images_use_short_private_browser_cache(self):
         source = (SRC / "server.py").read_text(encoding="utf-8")
         segment = source[source.index("def _serve_tmdb_image"):source.index("def do_GET")]
-        self.assertIn('self._common(cache="no-store")', segment)
-        self.assertNotIn("max-age=3600", segment)
+        self.assertIn('self._common(cache="private, max-age=300")', segment)
+        self.assertNotIn('cache="no-store"', segment)
 
     def test_header_brand_has_centered_override_for_all_breakpoints(self):
         html = (SRC / "video-library.html").read_text(encoding="utf-8")
