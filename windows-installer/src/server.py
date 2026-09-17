@@ -26,7 +26,7 @@ from scan_runner import scan_library
 from subtitle_stream import resolve_subtitle_file, subtitle_file_to_webvtt
 from scanner import latest_scan_status, mime_type_for_extension, resolve_video_file
 from tailscale_identity import parse_tailscale_identity
-from tmdb_images import resolve_cached_tmdb_image
+from tmdb_images import resolve_or_repair_cached_tmdb_image
 from user_state import (
     PlaybackSessionStore,
     continue_watching,
@@ -360,7 +360,7 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
 
         def _serve_tmdb_image(self, kind: str, work_id: int, *, head: bool = False) -> None:
             with connect(db_path) as connection:
-                resolved = resolve_cached_tmdb_image(connection, app_data_root / "TMDbImages", work_id, kind)
+                resolved = resolve_or_repair_cached_tmdb_image(connection, app_data_root / "TMDbImages", work_id, kind)
             if resolved is None:
                 self._error(404, "TMDB_IMAGE_NOT_FOUND", "TMDb画像が見つかりません。")
                 return
@@ -373,7 +373,7 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(size))
-            self._common(cache="no-store")
+            self._common(cache="private, max-age=3600")
             self.end_headers()
             if not head:
                 try:
