@@ -17,7 +17,7 @@ class HomeResetPersonFilterTests(unittest.TestCase):
         self.assertIn('function clearPersonSearchFilter()', HTML)
         self.assertIn("state.person='';state.q='';$('search').value='';return true", HTML)
         self.assertNotIn("$('headerSearch').value=''", HTML)
-        self.assertIn("async function showLibraryRoute(target='catalog'){clearPersonSearchFilter();", HTML)
+        self.assertIn("async function showLibraryRoute(target='catalog',scrollTarget=true){clearPersonSearchFilter();", HTML)
         self.assertIn("await loadHome();await loadWorks(true);updateCinemaNavActive();", HTML)
         self.assertNotIn("if(!works.children.length)await loadWorks(true)", HTML)
 
