@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#120e0c">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg">
-  <title>シネマ蔵書館</title>
+  <title>関町北映画館</title>
   <style>
     :root{color-scheme:dark;--bg:#111318;--panel:#191c22;--panel2:#14171c;--line:#303641;--text:#f2f4f7;--muted:#a8b0bd;--accent:#e7b85c;--accent2:#f6d994;--danger:#ef8b8b;--ok:#83cf9a}
     *{box-sizing:border-box}.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -303,6 +303,36 @@
     }
     @media(max-width:480px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.card .source{display:none}.card-foot{font-size:10px}.hero-layout{grid-template-columns:82px minmax(0,1fr)}.hero-poster{width:82px}.hero h2{font-size:26px}.header-search{font-size:12px}}
 
+
+    /* SEKIMACHI_KITA_CINEMA_HEADER_V1 */
+    header{
+      display:flex!important;align-items:center!important;justify-content:center!important;
+      min-height:112px;padding:16px 20px 18px!important
+    }
+    header .brand{
+      justify-self:auto!important;margin:0 auto!important;text-align:center!important;
+      width:min(760px,78vw);min-width:0
+    }
+    .brand.cinema-home-reset{text-align:center!important}
+    header .brand p,.header-search-wrap,.header-actions{display:none!important}
+    @media(min-width:1200px){
+      header{display:flex!important;justify-content:center!important}
+      header .brand{justify-self:auto!important;width:min(760px,72%);padding:10px 22px}
+    }
+    @media(min-width:768px) and (max-width:1199px){
+      header{display:flex!important;justify-content:center!important;min-height:96px;padding:12px 68px!important}
+      header .brand{width:min(650px,86%);padding:8px 18px}
+      header .brand-kicker{display:none}
+      header .brand h1{font-size:clamp(24px,3.6vw,31px)}
+    }
+    @media(max-width:767px){
+      header{display:flex!important;justify-content:center!important;min-height:74px;padding:8px 56px!important;margin-bottom:12px}
+      header .brand{width:100%;max-width:620px;padding:6px 10px;border-width:2px}
+      header .brand-kicker{display:none}
+      header .brand h1{font-size:clamp(18px,5.4vw,24px);white-space:nowrap}
+      header .brand-mark{font-size:.7em}
+    }
+
     /* NAVIGATION_PEOPLE_MENU_V1 */
     .people-directory[hidden]{display:none}.people-directory{padding:2px 0 28px}.people-heading{margin-bottom:16px}.people-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}.people-card{min-height:76px;text-align:left;border:1px solid #72552d;border-radius:5px;background:linear-gradient(180deg,rgba(45,31,22,.94),rgba(23,18,15,.96));color:var(--cream);padding:13px 14px;cursor:pointer;box-shadow:inset 0 1px rgba(255,255,255,.04)}.people-card:hover,.people-card:focus-visible{border-color:var(--accent);outline:none;transform:translateY(-1px)}.people-card strong{display:block;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:16px}.people-card small{display:block;margin-top:5px;color:var(--muted);font-size:11px}.cinema-nav-item.active{background:linear-gradient(90deg,rgba(126,28,28,.78),rgba(68,21,18,.55));border-color:#a36a32;color:#fff0c2}@media(max-width:767px){.people-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.people-card{min-height:68px;padding:11px}.people-card strong{font-size:14px}}@media(max-width:420px){.people-grid{grid-template-columns:1fr}}
 
@@ -313,7 +343,7 @@
 <div class="cinema-nav-backdrop" id="cinemaNavBackdrop"></div>
 <aside class="cinema-nav" id="cinemaNav" aria-label="館内メニュー">
   <button class="cinema-nav-close" id="cinemaNavClose" type="button" aria-label="館内メニューを閉じる">×</button>
-  <button class="cinema-nav-brand cinema-home-reset" id="cinemaNavBrandReset" type="button" aria-label="シネマ蔵書館を初期状態で再読み込み"><span aria-hidden="true">◉</span><strong>シネマ蔵書館</strong><small>PRIVATE CINEMA ARCHIVE</small></button>
+  <button class="cinema-nav-brand cinema-home-reset" id="cinemaNavBrandReset" type="button" aria-label="関町北映画館を初期状態で再読み込み"><span aria-hidden="true">◉</span><strong>関町北映画館</strong><small>PRIVATE CINEMA ARCHIVE</small></button>
   <nav>
     <button class="cinema-nav-item" type="button" data-route="#/home/continue"><span class="cinema-nav-icon">●</span><span>上映中<small>いま観られる作品</small></span></button>
     <button class="cinema-nav-item" type="button" data-route="#/home/next"><span class="cinema-nav-icon">◆</span><span>次回上映<small>次に観る作品</small></span></button>
@@ -325,9 +355,7 @@
 </aside>
 <div class="app">
   <header>
-    <button class="brand cinema-home-reset" id="headerBrandReset" type="button" aria-label="シネマ蔵書館を初期状態で再読み込み"><div class="brand-kicker">PRIVATE CINEMA ARCHIVE</div><h1><span class="brand-mark" aria-hidden="true">◉</span> シネマ蔵書館</h1><p>映画で、また会える。</p></button>
-    <label class="header-search-wrap"><span class="sr-only">作品検索</span><input id="headerSearch" class="header-search" type="search" placeholder="作品・俳優・監督を検索..."></label>
-    <div class="header-actions"><div><div class="user" id="currentUser"></div><div class="stats" id="stats">読み込み中...</div><div class="scan-status" id="scanStatus"></div></div><button class="ghost" id="scanButton">再スキャン</button></div>
+    <button class="brand cinema-home-reset" id="headerBrandReset" type="button" aria-label="関町北映画館を初期状態で再読み込み"><div class="brand-kicker">PRIVATE CINEMA ARCHIVE</div><h1><span class="brand-mark" aria-hidden="true">◉</span> 関町北映画館</h1></button>
   </header>
   <main>
     <section id="continueSection" class="home-strip" hidden><h2><span class="section-icon" aria-hidden="true">●</span> 上映中 <small>NOW SHOWING</small></h2><div class="strip-shell"><div id="continueStrip" class="strip"></div><button class="strip-scroll-hint" type="button" data-strip-target="continueStrip" aria-label="上映中の次の作品を表示"><span aria-hidden="true">›</span></button></div></section>
@@ -391,8 +419,6 @@ function updateCinemaNavActive(){const hash=location.hash||'#/library';document.
 document.querySelectorAll('.cinema-nav-item[data-route]').forEach(b=>b.onclick=()=>{const next=b.dataset.route;if(location.hash===next)route();else location.hash=next;setCinemaNav(false)});
 function resetCinemaHome(){history.replaceState(null,'',location.pathname+location.search);location.reload()}
 $('cinemaNavBrandReset').onclick=resetCinemaHome;$('headerBrandReset').onclick=resetCinemaHome;
-$('headerSearch').addEventListener('input',e=>{$('search').value=e.target.value;$('search').dispatchEvent(new Event('input',{bubbles:true}))});
-$('search').addEventListener('input',e=>{if(document.activeElement!==$('headerSearch'))$('headerSearch').value=e.target.value});
 window.addEventListener('hashchange',()=>setCinemaNav(false));
 async function api(p,o={}){const r=await fetch(p,{...o,headers:{Accept:'application/json',...(o.headers||{})}});const text=await r.text();let d={};try{d=text?JSON.parse(text):{}}catch{d={}}if(!r.ok)throw new Error(d?.error?.message||`HTTP ${r.status}`);return d}
 function jo(method,x){return{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(x)}}
@@ -401,7 +427,7 @@ function techValue(v,fallback='未取得'){return v===null||v===undefined||v==='
 function splitCreditPeople(value){const raw=String(value||'').trim();if(!raw)return[];const items=raw.split(/\s*(?:、|,|，|;|；|\||\r?\n|\s+\/\s+)\s*/u).map(x=>x.trim()).filter(Boolean);return[...new Set(items)]}
 function creditRow(label,value){const names=splitCreditPeople(value);if(!names.length)return null;const row=node('div','credit-row'),people=node('div','credit-people');row.append(node('strong','credit-label',label));for(const name of names){const b=node('button','person-link',name);b.type='button';b.title=`${name} の登録作品を表示`;b.onclick=()=>{location.hash=`#/person/${encodeURIComponent(name)}`};people.append(b)}row.append(people);return row}
 async function showPersonWorks(name){const person=String(name||'').trim();if(!person){location.hash='#/library';return}state.person=person;state.q=person;state.category='';$('search').value=person;$('detail').hidden=true;$('peopleDirectory').hidden=true;$('catalog').hidden=false;$('continueSection').hidden=true;$('nextSection').hidden=true;document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('active',(x.dataset.category||'')===''));const msg=node('div','notice person-filter');msg.append('人物「',node('strong','',person),'」が関わる登録作品');$('message').replaceChildren(msg);updateCinemaNavActive();await loadWorks(true)}
-function clearPersonSearchFilter(){if(!state.person)return false;state.person='';state.q='';$('search').value='';$('headerSearch').value='';return true}
+function clearPersonSearchFilter(){if(!state.person)return false;state.person='';state.q='';$('search').value='';return true}
 async function showPeopleDirectory(role){const isDirector=role==='directors';clearPersonSearchFilter();$('detail').hidden=true;$('catalog').hidden=true;$('continueSection').hidden=true;$('nextSection').hidden=true;$('peopleDirectory').hidden=false;$('peopleDirectoryKicker').textContent=isDirector?'DIRECTOR / DIRECTION DIRECTORY':'CAST / VOICE DIRECTORY';$('peopleDirectoryTitle').textContent=isDirector?'監督／演出':'主な出演者／声優';$('peopleDirectoryDescription').textContent=isDirector?'監督・演出家から、この蔵書館の作品を探します。':'出演者・声優から、この蔵書館の作品を探します。';const list=$('peopleDirectoryList');list.replaceChildren(node('div','notice','人物名鑑を読み込んでいます…'));try{const d=await api(`/api/people?role=${isDirector?'director':'cast'}`);$('peopleDirectoryCount').textContent=`${Number(d.total||0).toLocaleString()} 人`;list.replaceChildren();for(const p of d.items){const b=node('button','people-card');b.type='button';b.append(node('strong','',p.name),node('small','',`${p.workCount} 作品`));b.onclick=()=>{location.hash=`#/person/${encodeURIComponent(p.name)}`};list.append(b)}if(!d.items.length)list.append(node('div','empty','登録された人物情報がありません。'))}catch(e){list.replaceChildren(node('div','error',`人物名鑑を取得できませんでした。 ${e.message}`))}updateCinemaNavActive()}
 function preferJapaneseAudio(p){const tracks=p.audioTracks;if(!tracks||!tracks.length)return false;let jp=-1;for(let i=0;i<tracks.length;i++){const t=tracks[i],lang=String(t.language||'').toLowerCase().replace('_','-'),label=String(t.label||'').toLowerCase();if(lang==='ja'||lang==='jpn'||lang.startsWith('ja-')||lang.startsWith('jpn-')||label.includes('japanese')||label.includes('日本語')){jp=i;break}}if(jp<0)return false;for(let i=0;i<tracks.length;i++)tracks[i].enabled=i===jp;return true}
 function subtitleLanguage(s){const x=String(s?.language||'').toLowerCase().replace('_','-');if(x==='jp'||x==='jpn'||x==='japanese')return'ja';if(x==='eng'||x==='english')return'en';return x||'und'}
@@ -412,8 +438,8 @@ function formatClock(ms){if(ms===null||ms===undefined)return'—';const s=Math.m
 function showScanModal(){ $('scanModal').hidden=false }
 function hideScanModal(){ $('scanModal').hidden=true }
 function renderScanProgress(s){const p=s.progress||{};const running=!!s.running;scanRunning=running;$('scanPhase').textContent=phaseLabel(p.phase);$('scanMessage').textContent=p.message||'スキャン状況を確認中';const bar=$('scanBar'),total=Number(p.total||0),current=Number(p.current||0),percent=Number(p.percent||0);bar.classList.toggle('indeterminate',running&&total<=0);bar.style.width=(total>0?Math.max(0,Math.min(100,percent)):0)+'%';$('scanProgressText').textContent=total>0?`${current.toLocaleString()} / ${total.toLocaleString()}`:'対象数を確認中';$('scanPercent').textContent=total>0?`${percent}%`:'—';$('scanMatched').textContent=Number(p.filesMatched||0).toLocaleString();$('scanMissing').textContent=Number(p.filesMissing||0).toLocaleString();$('scanNew').textContent=Number(p.filesNew||0).toLocaleString();$('scanSubtitles').textContent=Number(p.subtitlesFound||0).toLocaleString();$('scanSubtitleUnmatched').textContent=Number(p.subtitlesUnmatched||0).toLocaleString();$('scanProbed').textContent=Number(p.filesProbed||0).toLocaleString();$('scanCurrentItem').textContent=p.currentItem||(!running&&p.phase==='SUCCESS'?'すべての処理が完了しました':'—');$('scanElapsed').textContent=formatClock(p.elapsedMs);$('scanEta').textContent=running?formatClock(p.etaMs):'—';const er=$('scanError');er.hidden=!p.error;er.textContent=p.error?`エラー: ${p.error}`:'';$('scanClose').textContent=running?'閉じる（処理は継続）':'閉じる';$('scanButton').textContent=running?'進捗を表示':'再スキャン';$('scanButton').disabled=false;if(running){$('scanStatus').textContent=`${phaseLabel(p.phase)} ${total>0?percent+'%':''}`.trim()}else if(p.phase==='FAILED'){$('scanStatus').textContent='スキャン失敗'}}
-async function loadStats(){const s=await api('/api/stats');$('stats').textContent=`${s.works}作品 / ${s.videos}動画 / 字幕 ${s.subtitles??0}`;const w=$('categories');w.replaceChildren();const a=node('button','chip active','すべて');a.dataset.category='';w.append(a);for(const c of s.categories){const b=node('button','chip',`${c.name} ${c.workCount}`);b.dataset.category=c.name;w.append(b)}}
-async function loadUser(){const r=await api('/api/current-user');$('currentUser').textContent=r.authenticated?`利用者: ${r.user.displayName}`:'匿名利用'}
+async function loadStats(){const s=await api('/api/stats');const stats=$('stats');if(stats)stats.textContent=`${s.works}作品 / ${s.videos}動画 / 字幕 ${s.subtitles??0}`;const w=$('categories');w.replaceChildren();const a=node('button','chip active','すべて');a.dataset.category='';w.append(a);for(const c of s.categories){const b=node('button','chip',`${c.name} ${c.workCount}`);b.dataset.category=c.name;w.append(b)}}
+async function loadUser(){const currentUser=$('currentUser');if(!currentUser)return;const r=await api('/api/current-user');currentUser.textContent=r.authenticated?`利用者: ${r.user.displayName}`:'匿名利用'}
 async function loadHome(){try{const [cw,nu]=await Promise.all([api('/api/me/continue-watching'),api('/api/me/next-up')]);renderStrip('continueSection','continueStrip',cw.items,true);renderStrip('nextSection','nextStrip',nu.items,false)}catch(e){$('continueSection').hidden=true;$('nextSection').hidden=true}}
 function renderStrip(secId,stripId,items,progress){const sec=$(secId),strip=$(stripId);strip.replaceChildren();sec.hidden=!items.length;for(const x of items){const c=node('div','mini'),media=node('div');if(x.posterUrl){const img=document.createElement('img');img.className='mini-poster';img.src=x.posterUrl;img.alt=`${x.workTitle} ポスター`;img.loading='lazy';img.onerror=()=>media.replaceChildren(posterFallback(x.workTitle,true));media.append(img)}else media.append(posterFallback(x.workTitle,true));const body=node('div','mini-body');body.append(node('strong','',x.workTitle));body.append(node('small','',[x.groupName,x.episodeOrType,x.episodeTitle].filter(Boolean).join(' · ')));if(progress&&x.percent!==null){const p=node('div','progress'),b=node('span');b.style.width=Math.max(0,Math.min(100,x.percent))+'%';p.append(b);body.append(p);body.append(node('small','',`${ft(x.positionMs)} から再開`))}c.append(media,body);makeOpenable(c,()=>openInWork(x.workId,x.videoId));strip.append(c)}setupStripNavigation(sec,strip)}
 async function loadScan(){const e=$('scanStatus');try{const s=await api('/api/scan/status');if(!s.videoRootConfigured){e.textContent='動画フォルダー未設定';$('scanButton').disabled=true;return s}if(s.running){renderScanProgress(s);if(!scanPollTimer)startScanPolling(false);return s}scanRunning=false;$('scanButton').textContent='再スキャン';$('scanButton').disabled=false;if(!s.latest){e.textContent='未スキャン';return s}const x=s.latest;e.textContent=`一致 ${x.filesMatched} / 欠落 ${x.filesMissing} / 新規 ${x.filesNew} / 字幕 ${x.subtitlesMatched??0}${x.subtitlesUnmatched?` (+未紐付${x.subtitlesUnmatched})`:''}${x.probeErrors?` / probeエラー ${x.probeErrors}`:''}`;return s}catch{e.textContent='';return null}}
@@ -440,9 +466,9 @@ $('playerClose').onclick=closePlayerModal;$('playerModal').addEventListener('cli
 async function openInWork(w,v){location.hash=`#/work/${w}`;await showWork(w);await showVideo(v)}
 async function showLibraryRoute(target='catalog'){clearPersonSearchFilter();$('message').replaceChildren();$('detail').hidden=true;$('peopleDirectory').hidden=true;$('catalog').hidden=false;await loadHome();await loadWorks(true);updateCinemaNavActive();const id=target==='continue'?'continueSection':target==='next'?'nextSection':'catalog';const el=$(id);if(el&& !el.hidden)setTimeout(()=>el.scrollIntoView({behavior:'smooth',block:'start'}),30);else if(target!=='catalog')setTimeout(()=>$('catalog').scrollIntoView({behavior:'smooth',block:'start'}),30)}
 function route(){const people=location.hash.match(/^#\/people\/(directors|cast)$/);if(people){showPeopleDirectory(people[1]);return}const p=location.hash.match(/^#\/person\/(.+)$/);if(p){let name=p[1];try{name=decodeURIComponent(name)}catch{}showPersonWorks(name);return}const m=location.hash.match(/^#\/work\/(\d+)$/);if(m){showWork(+m[1]);updateCinemaNavActive();return}if(location.hash==='#/home/continue'){showLibraryRoute('continue');return}if(location.hash==='#/home/next'){showLibraryRoute('next');return}showLibraryRoute('catalog')}
-let timer;$('search').oninput=e=>{clearTimeout(timer);timer=setTimeout(()=>{state.person='';$('message').replaceChildren();state.q=e.target.value.trim();loadWorks(true)},250)};$('sort').onchange=e=>{state.sort=e.target.value;loadWorks(true)};$('categories').onclick=e=>{const b=e.target.closest('.chip');if(!b)return;state.person='';$('message').replaceChildren();state.category=b.dataset.category||'';document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('active',x===b));loadWorks(true)};$('loadMore').onclick=()=>loadWorks(false);$('back').onclick=()=>location.hash=state.person?`#/person/${encodeURIComponent(state.person)}`:'#/library';$('scanButton').onclick=runScan;$('scanClose').onclick=hideScanModal;window.onhashchange=route;
+let timer;$('search').oninput=e=>{clearTimeout(timer);timer=setTimeout(()=>{state.person='';$('message').replaceChildren();state.q=e.target.value.trim();loadWorks(true)},250)};$('sort').onchange=e=>{state.sort=e.target.value;loadWorks(true)};$('categories').onclick=e=>{const b=e.target.closest('.chip');if(!b)return;state.person='';$('message').replaceChildren();state.category=b.dataset.category||'';document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('active',x===b));loadWorks(true)};$('loadMore').onclick=()=>loadWorks(false);$('back').onclick=()=>location.hash=state.person?`#/person/${encodeURIComponent(state.person)}`:'#/library';$('scanClose').onclick=hideScanModal;window.onhashchange=route;
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js').catch(()=>{}))}
-(async()=>{await Promise.all([loadStats(),loadUser(),loadScan(),loadHome()]);route()})();
+(async()=>{await Promise.all([loadStats(),loadHome()]);route()})();
 </script>
 </body>
 </html>

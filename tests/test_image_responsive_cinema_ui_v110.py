@@ -19,9 +19,15 @@ class ImageResponsiveCinemaUiTests(unittest.TestCase):
         self.assertIn('@media(min-width:1200px)',HTML)
         self.assertIn('@media(min-width:768px) and (max-width:1199px)',HTML)
         self.assertIn('@media(max-width:767px)',HTML)
-    def test_header_search_reuses_existing_search(self):
-        self.assertIn('id="headerSearch"',HTML)
-        self.assertIn("$('search').dispatchEvent(new Event('input'",HTML)
+    def test_header_is_centered_and_header_controls_are_removed(self):
+        self.assertIn('SEKIMACHI_KITA_CINEMA_HEADER_V1',HTML)
+        self.assertIn('<title>関町北映画館</title>',HTML)
+        self.assertIn('<strong>関町北映画館</strong>',HTML)
+        self.assertNotIn('シネマ蔵書館',HTML)
+        self.assertNotIn('id="headerSearch"',HTML)
+        self.assertNotIn('id="scanButton"',HTML)
+        self.assertNotIn('映画で、また会える。',HTML)
+        self.assertIn('justify-content:center!important',HTML)
     def test_existing_features_remain(self):
         self.assertIn('FEATURE PRESENTATION',HTML)
         self.assertIn('上映プログラム',HTML)
