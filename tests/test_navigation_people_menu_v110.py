@@ -66,7 +66,7 @@ class NavigationPeopleMenuServiceTests(unittest.TestCase):
             rows = connection.execute("SELECT id FROM works ORDER BY id LIMIT 3").fetchall()
             connection.execute(
                 "UPDATE works SET director_or_direction=?, main_cast_or_voice_actors=? WHERE id=?",
-                ("堤幸彦、木村ひさし ほか", "仲間由紀恵、阿部寛", int(rows[0]["id"])),
+                ("堤幸彦、木村ひさし ほか、佐藤卓哉・浜崎博嗣", "仲間由紀恵、阿部寛", int(rows[0]["id"])),
             )
             connection.execute(
                 "UPDATE works SET director_or_direction=?, main_cast_or_voice_actors=? WHERE id=?",
@@ -108,6 +108,9 @@ class NavigationPeopleMenuServiceTests(unittest.TestCase):
         self.assertEqual(directors["items"][0]["workCount"], 2)
         self.assertEqual(directors["items"][0]["profileUrl"], "/tmdb-person-image/9101")
         self.assertIn({"name": "木村ひさし", "workCount": 1}, directors["items"])
+        self.assertIn({"name": "佐藤卓哉", "workCount": 1}, directors["items"])
+        self.assertIn({"name": "浜崎博嗣", "workCount": 1}, directors["items"])
+        self.assertNotIn({"name": "佐藤卓哉・浜崎博嗣", "workCount": 1}, directors["items"])
         self.assertEqual(cast["items"][0], {"name": "仲間由紀恵", "workCount": 2})
 
     def test_people_http_endpoint(self) -> None:
