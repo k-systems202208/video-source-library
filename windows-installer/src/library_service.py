@@ -135,10 +135,16 @@ def list_people(connection: sqlite3.Connection, *, role: str) -> dict[str, Any]:
             name = str(raw or '').strip()
             name = re.sub(r"\s*(?:ほか|他)(?:[（(][^）)]*[）)])?$", '', name).strip()
             name = re.sub(r"[（(](?:各話ゲスト多数?|声)[）)]$", '', name).strip()
-            if not name or name in seen:
-                continue
-            seen.add(name)
-            counts[name] = counts.get(name, 0) + 1
+            names = [name]
+            if normalized_role == 'director' and '・' in name:
+                parts = [part.strip() for part in name.split('・')]
+                if len(parts) > 1 and all(parts) and all(re.search(r"[\u3400-\u9fff々〆ヵヶ]", part) for part in parts):
+                    names = parts
+            for candidate in names:
+                if not candidate or candidate in seen:
+                    continue
+                seen.add(candidate)
+                counts[candidate] = counts.get(candidate, 0) + 1
     profile_by_name: dict[str, tuple[int, str] | None] = {}
     db_role = 'DIRECTOR' if normalized_role == 'director' else 'CAST'
     person_rows = connection.execute(
