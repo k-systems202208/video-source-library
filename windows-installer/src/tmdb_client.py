@@ -141,6 +141,13 @@ class TmdbClient:
         value = self.get_json("/search/tv", params)
         return value if isinstance(value, dict) else {}
 
+    def search_person(self, query: str, *, language: str = "ja-JP") -> dict[str, Any]:
+        value = self.get_json(
+            "/search/person",
+            {"query": query, "language": language, "include_adult": "false"},
+        )
+        return value if isinstance(value, dict) else {}
+
     def movie_details(self, movie_id: int, *, language: str = "ja-JP") -> dict[str, Any]:
         value = self.get_json(f"/movie/{int(movie_id)}", {"language": language})
         return value if isinstance(value, dict) else {}
