@@ -113,7 +113,7 @@ def list_works(
     }
 
 
-_PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||\r?\n|\s+/\s+)\s*")
+_PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 
 def list_people(connection: sqlite3.Connection, *, role: str) -> dict[str, Any]:
     key = str(role or '').strip().casefold()
@@ -132,7 +132,9 @@ def list_people(connection: sqlite3.Connection, *, role: str) -> dict[str, Any]:
     for row in rows:
         seen: set[str] = set()
         for raw in _PERSON_SPLIT_RE.split(str(row['credits'] or '')):
-            name = re.sub(r"\s*(?:ほか|他)$", '', raw.strip()).strip()
+            name = str(raw or '').strip()
+            name = re.sub(r"\s*(?:ほか|他)(?:[（(][^）)]*[）)])?$", '', name).strip()
+            name = re.sub(r"[（(](?:各話ゲスト多数?|声)[）)]$", '', name).strip()
             if not name or name in seen:
                 continue
             seen.add(name)
