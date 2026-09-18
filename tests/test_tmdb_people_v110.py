@@ -1536,7 +1536,13 @@ class TmdbDirectorPhase2Tests(unittest.TestCase):
             self.assertEqual(audit["summary"]["totalDirectors"], 3)
             self.assertEqual(audit["summary"]["profileReady"], 1)
             self.assertEqual(audit["summary"]["directorCreditNotFound"], 2)
-            self.assertTrue(Path(audit["csvReport"]).is_file())
+            self.assertEqual(audit["summary"]["needsReview"], 2)
+            csv_path = Path(audit["csvReport"])
+            self.assertTrue(csv_path.is_file())
+            csv_text = csv_path.read_text(encoding="utf-8-sig")
+            self.assertIn("resolution", csv_text.splitlines()[0])
+            self.assertIn("constrainedSearchIds", csv_text.splitlines()[0])
+            self.assertIn("directorCreditNameSample", csv_text.splitlines()[0])
 
     def test_director_second_pass_requires_search_person_to_be_in_director_crew(self):
         class SearchDirectorClient:
