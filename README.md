@@ -369,6 +369,7 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 - [監督／演出 顔写真機能の撤回](docs/77-1.1.0-director-profile-images-withdrawn.md)
 - [TMDb作品画像キャッシュ識別修正](docs/78-1.1.0-tmdb-image-cache-identity.md)
 - [1.1.0 ソース・ドキュメント最終整合性監査](docs/79-1.1.0-final-consistency-audit.md)
+- [1.1.0 正式リリースノート](docs/80-1.1.0-release.md)
 
 ### 実装履歴
 Phase別・バージョン別の詳細記録は `docs/` 配下に保持します。過去時点の設計判断を残すため、履歴文書は現在仕様へ機械的に書き換えません。
