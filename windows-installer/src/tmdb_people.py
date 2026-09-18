@@ -413,6 +413,7 @@ def sync_tmdb_people_library(
     matched_ids: set[int] = set()
     cached_ids: set[int] = set()
     failures = 0
+    matched_by_search = 0
 
     with connect(database_path) as connection:
         initialize_database(connection)
@@ -442,6 +443,7 @@ def sync_tmdb_people_library(
                     image_downloader=image_downloader,
                 )
                 matched_ids.update(int(value) for value in result.get("personIds") or [])
+                matched_by_search += int(result.get("matchedBySearch") or 0)
                 for person_id in result.get("personIds") or []:
                     row = connection.execute(
                         "SELECT profile_path FROM tmdb_people WHERE tmdb_person_id=?",
@@ -465,6 +467,7 @@ def sync_tmdb_people_library(
                         "total": total,
                         "matchedPeople": len(matched_ids),
                         "profileCached": len(cached_ids),
+                        "matchedBySearch": matched_by_search,
                         "failures": failures,
                         "currentItem": str(work["official_title"]),
                     }
@@ -478,6 +481,7 @@ def sync_tmdb_people_library(
         "totalWorks": len(works),
         "matchedPeople": len(matched_ids),
         "profileCached": len(cached_ids),
+        "matchedBySearch": matched_by_search,
         "failures": failures,
         "completed": failures == 0,
     }
