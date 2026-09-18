@@ -106,7 +106,7 @@ class TmdbRuntimeAuditTests(unittest.TestCase):
             with Path(result["csvReport"]).open("r", encoding="utf-8-sig", newline="") as handle:
                 row = next(csv.DictReader(handle))
             self.assertEqual(row["appVersion"], "1.1.0")
-            self.assertEqual(row["matcherVersion"], "7")
+            self.assertEqual(row["matcherVersion"], "8")
             self.assertEqual(row["mediaType"], "tv")
             self.assertEqual(int(row["tmdbId"]), 71404)
 
