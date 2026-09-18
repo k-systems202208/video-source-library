@@ -18,6 +18,8 @@ _PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 _CREDITS_TTL_DAYS = 30
 _PEOPLE_SYNC_VERSION = 2
 _PEOPLE_SYNC_CACHE_KEY = "tmdb:people-sync-version"
+_PEOPLE_AUDIT_VERSION = 1
+_PEOPLE_AUDIT_CACHE_KEY = "tmdb:people-audit-version"
 
 
 def _clean_local_person_label(value: str | None) -> str:
@@ -410,6 +412,26 @@ def mark_people_sync_complete(connection: sqlite3.Connection) -> None:
     )
 
 
+def people_audit_required(connection: sqlite3.Connection) -> bool:
+    payload = get_cached_json(connection, _PEOPLE_AUDIT_CACHE_KEY)
+    if not isinstance(payload, dict):
+        return True
+    try:
+        return int(payload.get("version") or 0) < _PEOPLE_AUDIT_VERSION
+    except (TypeError, ValueError):
+        return True
+
+
+def mark_people_audit_complete(connection: sqlite3.Connection) -> None:
+    put_cached_json(
+        connection,
+        _PEOPLE_AUDIT_CACHE_KEY,
+        {"version": _PEOPLE_AUDIT_VERSION},
+        fetched_at=now_iso(),
+        expires_at=None,
+    )
+
+
 def sync_tmdb_people_library(
     database_path: Path | str,
     image_root: Path | str,
@@ -734,6 +756,10 @@ def audit_tmdb_people_profiles(
         "reasons": dict(sorted(reason_counts.items())),
     }
     json_path, csv_path = _write_people_audit_report(report_dir, rows, summary)
+    with connect(database_path) as connection:
+        initialize_database(connection)
+        mark_people_audit_complete(connection)
+        connection.commit()
     return {
         "summary": summary,
         "jsonReport": str(json_path),
