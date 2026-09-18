@@ -48,6 +48,7 @@ class TmdbPeopleAuditTests(unittest.TestCase):
         external_no: int,
         title: str,
         cast: str,
+        year: str = "",
         status: str | None = None,
         media_type: str | None = None,
         tmdb_id: int | None = None,
@@ -56,10 +57,11 @@ class TmdbPeopleAuditTests(unittest.TestCase):
         connection.execute(
             """
             INSERT INTO works(
-                external_work_no,category,official_title,main_cast_or_voice_actors,created_at,updated_at
-            ) VALUES(?,?,?,?,?,?)
+                external_work_no,category,year_or_period,official_title,
+                main_cast_or_voice_actors,created_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?)
             """,
-            (external_no, "日本映画・ドラマ", title, cast, stamp, stamp),
+            (external_no, "日本映画・ドラマ", year, title, cast, stamp, stamp),
         )
         work_id = int(connection.execute("SELECT last_insert_rowid()").fetchone()[0])
         if status is not None:
@@ -160,16 +162,80 @@ class TmdbPeopleAuditTests(unittest.TestCase):
             self.assertEqual(summary["profileReady"], 1)
             self.assertEqual(summary["personNoProfile"], 1)
             self.assertEqual(summary["noMatchedWork"], 1)
+            self.assertEqual(summary["needsReview"], 1)
 
             payload = json.loads(Path(report["jsonReport"]).read_text(encoding="utf-8"))
             by_name = {item["name"]: item for item in payload["items"]}
             self.assertEqual(by_name["写真あり俳優"]["reason"], "PROFILE_READY")
             self.assertEqual(by_name["写真なし俳優"]["reason"], "PERSON_NO_PROFILE")
+            self.assertEqual(by_name["写真なし俳優"]["resolution"], "TMDB_PROFILE_MISSING")
             self.assertEqual(by_name["作品未照合俳優"]["reason"], "NO_MATCHED_WORK")
+            self.assertEqual(by_name["作品未照合俳優"]["resolution"], "")
             self.assertEqual(by_name["作品未照合俳優"]["localWorks"], ["Unmatched Work [UNMATCHED]"])
             self.assertEqual(by_name["写真あり俳優"]["localWorks"], ["Ready Work [MATCHED movie:101]"])
             csv_header = Path(report["csvReport"]).read_text(encoding="utf-8-sig").splitlines()[0]
             self.assertIn("localWorks", csv_header)
+            self.assertIn("resolution", csv_header)
+
+    def test_audit_marks_reviewed_residuals_without_forcing_person_links(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = self._db(root)
+            with connect(db) as connection:
+                self._insert_work(
+                    connection,
+                    external_no=1,
+                    title="男はつらいよ",
+                    year="1969-2019",
+                    cast="渥美清",
+                    status="REVIEW",
+                    media_type="movie",
+                    tmdb_id=125271,
+                )
+                self._insert_work(
+                    connection,
+                    external_no=2,
+                    title="半分の月がのぼる空",
+                    year="2006",
+                    cast="橋本淳",
+                    status="UNMATCHED",
+                )
+                self._insert_work(
+                    connection,
+                    external_no=3,
+                    title="スケバン刑事",
+                    year="1985",
+                    cast="渡辺千秋",
+                    status="MATCHED",
+                    media_type="tv",
+                    tmdb_id=89351,
+                )
+
+            report = audit_tmdb_people_profiles(
+                db,
+                root / "diagnostics",
+                "token",
+                client=AuditClient(),
+            )
+            payload = json.loads(Path(report["jsonReport"]).read_text(encoding="utf-8"))
+            by_name = {item["name"]: item for item in payload["items"]}
+
+            self.assertEqual(by_name["渥美清"]["reason"], "NO_MATCHED_WORK")
+            self.assertEqual(
+                by_name["渥美清"]["resolution"],
+                "INTENTIONAL_AGGREGATE_REVIEW",
+            )
+            self.assertEqual(by_name["橋本淳"]["reason"], "NO_MATCHED_WORK")
+            self.assertEqual(
+                by_name["橋本淳"]["resolution"],
+                "INTENTIONAL_STRUCTURE_UNMATCHED",
+            )
+            self.assertEqual(by_name["渡辺千秋"]["reason"], "CREDIT_PERSON_NOT_FOUND")
+            self.assertEqual(
+                by_name["渡辺千秋"]["resolution"],
+                "VERIFIED_CAST_TMDB_PERSON_UNAVAILABLE",
+            )
+            self.assertEqual(report["summary"]["needsReview"], 0)
 
     def test_audit_classifies_credit_mismatch_search_outside_and_ambiguous(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -345,6 +411,22 @@ class TmdbPeopleAuditTests(unittest.TestCase):
                     connection,
                     "tmdb:people-audit-version",
                     {"version": 6},
+                    fetched_at=now_iso(),
+                    expires_at=None,
+                )
+                connection.commit()
+                self.assertTrue(people_audit_required(connection))
+
+    def test_people_audit_v7_marker_requires_v8_reaudit(self):
+        from tmdb_cache import put_cached_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = self._db(Path(tmp))
+            with connect(db) as connection:
+                put_cached_json(
+                    connection,
+                    "tmdb:people-audit-version",
+                    {"version": 7},
                     fetched_at=now_iso(),
                     expires_at=None,
                 )
