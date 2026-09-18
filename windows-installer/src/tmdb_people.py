@@ -851,7 +851,7 @@ def repair_reviewed_bad_work_links(connection: sqlite3.Connection) -> int:
                 (stamp, stamp, work_id),
             )
             connection.execute(
-                "DELETE FROM tmdb_work_people WHERE work_id=? AND role='CAST'",
+                "DELETE FROM tmdb_work_people WHERE work_id=?",
                 (work_id,),
             )
             repaired += 1
