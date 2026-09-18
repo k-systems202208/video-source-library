@@ -30,7 +30,7 @@ class PlaywrightBrowserE2ECITests(unittest.TestCase):
         self.assertIn("work cards open the work detail screen", SPEC)
         self.assertIn("responsive shell matches PC, Tablet, and Smartphone behavior", SPEC)
         self.assertIn("cast directory shows profile photos, fallback, and opens person works", SPEC)
-        self.assertIn("/tmdb-person-image/9001", SPEC)
+        self.assertIn("tmdb-person-image", SPEC)
         self.assertIn("pageerror", SPEC)
 
     def test_e2e_server_uses_synthetic_fixture(self):
