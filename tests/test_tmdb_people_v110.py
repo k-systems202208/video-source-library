@@ -18,7 +18,7 @@ from library_service import list_people
 from server import create_server
 from tmdb_client import TmdbClient
 from tmdb_images import cached_person_image_path
-from tmdb_people import sync_cast_people_for_work
+from tmdb_people import mark_people_sync_complete, people_sync_required, sync_cast_people_for_work
 
 
 class FakeResponse:
@@ -200,6 +200,23 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
                 count = int(connection.execute("SELECT COUNT(*) FROM tmdb_work_people").fetchone()[0])
             self.assertEqual(result["matched"], 0)
             self.assertEqual(count, 0)
+
+    def test_people_sync_marker_is_one_time(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "library.db"
+            with connect(db) as connection:
+                initialize_database(connection)
+                self.assertTrue(people_sync_required(connection))
+                mark_people_sync_complete(connection)
+                connection.commit()
+                self.assertFalse(people_sync_required(connection))
+
+    def test_launcher_starts_background_people_sync_after_browser_start(self):
+        launcher = (SRC / "launcher.py").read_text(encoding="utf-8")
+        self.assertIn("def _start_people_sync_if_needed", launcher)
+        self.assertIn("sync_tmdb_people_library(", launcher)
+        self.assertIn("self.open_browser()\\n        self._start_people_sync_if_needed()", launcher)
+        self.assertIn("次回起動時に自動再試行します", launcher)
 
     def test_person_image_is_served_through_local_application_route(self):
         with tempfile.TemporaryDirectory() as tmp:
