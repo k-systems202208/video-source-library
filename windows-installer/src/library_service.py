@@ -140,27 +140,26 @@ def list_people(connection: sqlite3.Connection, *, role: str) -> dict[str, Any]:
             seen.add(name)
             counts[name] = counts.get(name, 0) + 1
     profile_by_name: dict[str, tuple[int, str] | None] = {}
-    db_role = 'DIRECTOR' if normalized_role == 'director' else 'CAST'
-    person_rows = connection.execute(
-        """
-        SELECT wp.local_name,wp.tmdb_person_id,p.profile_path
-        FROM tmdb_work_people wp
-        JOIN tmdb_people p ON p.tmdb_person_id=wp.tmdb_person_id
-        WHERE wp.role=?
-        """,
-        (db_role,),
-    ).fetchall()
-    grouped: dict[str, dict[int, str]] = {}
-    for person_row in person_rows:
-        if not person_row['profile_path']:
-            continue
-        grouped.setdefault(str(person_row['local_name']), {})[
-            int(person_row['tmdb_person_id'])
-        ] = str(person_row['profile_path'])
-    for local_name, candidates in grouped.items():
-        profile_by_name[local_name] = (
-            next(iter(candidates.items())) if len(candidates) == 1 else None
-        )
+    if normalized_role == 'cast':
+        person_rows = connection.execute(
+            """
+            SELECT wp.local_name,wp.tmdb_person_id,p.profile_path
+            FROM tmdb_work_people wp
+            JOIN tmdb_people p ON p.tmdb_person_id=wp.tmdb_person_id
+            WHERE wp.role='CAST'
+            """
+        ).fetchall()
+        grouped: dict[str, dict[int, str]] = {}
+        for person_row in person_rows:
+            if not person_row['profile_path']:
+                continue
+            grouped.setdefault(str(person_row['local_name']), {})[
+                int(person_row['tmdb_person_id'])
+            ] = str(person_row['profile_path'])
+        for local_name, candidates in grouped.items():
+            profile_by_name[local_name] = (
+                next(iter(candidates.items())) if len(candidates) == 1 else None
+            )
 
     items = []
     for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0].casefold())):
