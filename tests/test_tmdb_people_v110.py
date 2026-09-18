@@ -307,7 +307,7 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
             def search_person(self, query, *, language="ja-JP"):
                 return {
                     "results": [
-                        {"id": 1964804, "name": query, "original_name": query, "profile_path": "/wrong.jpg"}
+                        {"id": 1964804, "name": "山田邦子（別人）", "original_name": "山田邦子（別人）", "profile_path": "/wrong.jpg"}
                     ]
                 }
 
@@ -469,7 +469,7 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
                 self.assertEqual(result["matchedByUniqueExactSearch"], 0)
                 self.assertEqual(count, 0)
 
-    def test_person_search_result_outside_work_credits_is_rejected(self):
+    def test_non_exact_person_search_result_outside_work_credits_is_rejected(self):
         class WrongSearchClient:
             def movie_credits(self, movie_id, *, language="ja-JP"):
                 return {
@@ -481,7 +481,7 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
             def search_person(self, query, *, language="ja-JP"):
                 return {
                     "results": [
-                        {"id": 999, "name": query, "original_name": query, "profile_path": "/wrong.jpg"}
+                        {"id": 999, "name": "別名俳優X", "original_name": "別名俳優X", "profile_path": "/wrong.jpg"}
                     ]
                 }
 
