@@ -7,12 +7,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-from database import now_iso
+from database import connect, initialize_database, now_iso
 from tmdb_cache import get_cached_json, put_cached_json
 from tmdb_images import cached_person_image_path, download_tmdb_image
 
 _PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||\r?\n|\s+/\s+)\s*")
 _CREDITS_TTL_DAYS = 30
+_PEOPLE_SYNC_VERSION = 1
+_PEOPLE_SYNC_CACHE_KEY = "tmdb:people-sync-version"
 
 
 def split_local_people(value: str | None) -> list[str]:
@@ -239,4 +241,112 @@ def sync_cast_people_for_work(
         "matched": len(matched_ids),
         "profileCached": len(set(cached_ids)),
         "personIds": sorted(set(matched_ids)),
+    }
+
+
+def people_sync_required(connection: sqlite3.Connection) -> bool:
+    payload = get_cached_json(connection, _PEOPLE_SYNC_CACHE_KEY)
+    if not isinstance(payload, dict):
+        return True
+    try:
+        return int(payload.get("version") or 0) < _PEOPLE_SYNC_VERSION
+    except (TypeError, ValueError):
+        return True
+
+
+def mark_people_sync_complete(connection: sqlite3.Connection) -> None:
+    put_cached_json(
+        connection,
+        _PEOPLE_SYNC_CACHE_KEY,
+        {"version": _PEOPLE_SYNC_VERSION},
+        fetched_at=now_iso(),
+        expires_at=None,
+    )
+
+
+def sync_tmdb_people_library(
+    database_path: Path | str,
+    image_root: Path | str,
+    access_token: str,
+    *,
+    client: Any | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    image_downloader: Callable[..., Path] = download_tmdb_image,
+) -> dict[str, Any]:
+    from tmdb_client import TmdbClient
+
+    token = str(access_token or "").strip()
+    if not token:
+        raise ValueError("TMDb API Read Access Token is not configured")
+    tmdb = client or TmdbClient(token)
+    matched_ids: set[int] = set()
+    cached_ids: set[int] = set()
+    failures = 0
+
+    with connect(database_path) as connection:
+        initialize_database(connection)
+        works = connection.execute(
+            """
+            SELECT w.id,w.official_title,w.main_cast_or_voice_actors,
+                   t.media_type,t.tmdb_id
+            FROM works w
+            JOIN tmdb_work_links t ON t.work_id=w.id
+            WHERE t.match_status='MATCHED'
+              AND t.tmdb_id IS NOT NULL
+              AND TRIM(COALESCE(w.main_cast_or_voice_actors,''))<>''
+            ORDER BY w.external_work_no
+            """
+        ).fetchall()
+        total = len(works)
+        for index, work in enumerate(works, start=1):
+            try:
+                result = sync_cast_people_for_work(
+                    connection,
+                    tmdb,
+                    work_id=int(work["id"]),
+                    media_type=str(work["media_type"]),
+                    tmdb_id=int(work["tmdb_id"]),
+                    local_cast=str(work["main_cast_or_voice_actors"] or ""),
+                    image_root=image_root,
+                    image_downloader=image_downloader,
+                )
+                matched_ids.update(int(value) for value in result.get("personIds") or [])
+                for person_id in result.get("personIds") or []:
+                    row = connection.execute(
+                        "SELECT profile_path FROM tmdb_people WHERE tmdb_person_id=?",
+                        (int(person_id),),
+                    ).fetchone()
+                    if row is not None and row["profile_path"]:
+                        try:
+                            if cached_person_image_path(
+                                image_root, int(person_id), str(row["profile_path"])
+                            ).is_file():
+                                cached_ids.add(int(person_id))
+                        except ValueError:
+                            pass
+            except Exception:
+                failures += 1
+
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "current": index,
+                        "total": total,
+                        "matchedPeople": len(matched_ids),
+                        "profileCached": len(cached_ids),
+                        "failures": failures,
+                        "currentItem": str(work["official_title"]),
+                    }
+                )
+
+        if failures == 0:
+            mark_people_sync_complete(connection)
+        connection.commit()
+
+    return {
+        "totalWorks": len(works),
+        "matchedPeople": len(matched_ids),
+        "profileCached": len(cached_ids),
+        "failures": failures,
+        "completed": failures == 0,
     }
