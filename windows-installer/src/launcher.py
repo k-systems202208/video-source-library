@@ -27,7 +27,7 @@ from paths import CONFIG_PATH, DATABASE_PATH, DATA_ROOT, RUNTIME_PATH
 from remote_access import disable_remote_access, enable_remote_access, get_remote_status
 from scan_runner import scan_library
 from server import create_server
-from tmdb_people import people_sync_required, sync_tmdb_people_library
+from tmdb_people import audit_tmdb_people_profiles, people_audit_required, people_sync_required, sync_tmdb_people_library
 from tmdb_sync import sync_tmdb_library
 
 APP_NAME = "自宅動画ライブラリ"
@@ -913,29 +913,48 @@ class VideoLibraryLauncher(tk.Tk):
         try:
             with connect(DATABASE_PATH) as connection:
                 initialize_database(connection)
-                if not people_sync_required(connection):
+                sync_required = people_sync_required(connection)
+                audit_required = people_audit_required(connection)
+                if not sync_required and not audit_required:
                     return
         except Exception as exc:
             self._append_log(f"出演者写真同期の確認に失敗: {exc}")
             return
 
-        self._append_log("出演者／声優の顔写真をバックグラウンド同期します。")
+        if sync_required:
+            self._append_log("出演者／声優の顔写真をバックグラウンド同期します。")
+        else:
+            self._append_log("出演者／声優の顔写真監査をバックグラウンド実行します。")
         self.people_thread = threading.Thread(
             target=self._people_sync_worker,
-            args=(token,),
+            args=(token, sync_required),
             daemon=True,
             name="VideoLibraryPeopleSync",
         )
         self.people_thread.start()
 
-    def _people_sync_worker(self, token: str) -> None:
+    def _people_sync_worker(self, token: str, sync_required: bool) -> None:
         try:
-            report = sync_tmdb_people_library(
-                DATABASE_PATH,
-                TMDB_IMAGE_PATH,
-                token,
-                report_dir=TMDB_REPORT_OUTPUT_PATH,
-            )
+            if sync_required:
+                report = sync_tmdb_people_library(
+                    DATABASE_PATH,
+                    TMDB_IMAGE_PATH,
+                    token,
+                    report_dir=TMDB_REPORT_OUTPUT_PATH,
+                )
+            else:
+                report = {
+                    "matchedPeople": 0,
+                    "matchedBySearch": 0,
+                    "profileCached": 0,
+                    "failures": 0,
+                    "completed": True,
+                    "peopleAudit": audit_tmdb_people_profiles(
+                        DATABASE_PATH,
+                        TMDB_REPORT_OUTPUT_PATH,
+                        token,
+                    ),
+                }
         except Exception as exc:
             self.after(0, lambda e=exc: self._people_sync_failed(e))
             return
