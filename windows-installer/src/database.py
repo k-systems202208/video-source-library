@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def now_iso() -> str:
@@ -293,7 +293,7 @@ def initialize_database(connection: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS tmdb_work_people (
             work_id INTEGER NOT NULL,
-            role TEXT NOT NULL CHECK(role IN ('CAST')),
+            role TEXT NOT NULL CHECK(role IN ('CAST','DIRECTOR')),
             local_name TEXT NOT NULL,
             tmdb_person_id INTEGER NOT NULL,
             character_text TEXT,
@@ -357,6 +357,46 @@ def initialize_database(connection: sqlite3.Connection) -> None:
     _add_column_if_missing(connection, "scan_runs", "subtitles_matched", "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(connection, "scan_runs", "subtitles_unmatched", "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(connection, "scan_runs", "probe_errors", "INTEGER NOT NULL DEFAULT 0")
+
+    table_row = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='tmdb_work_people'"
+    ).fetchone()
+    table_sql = str(table_row["sql"] or "") if table_row is not None else ""
+    if table_sql and "DIRECTOR" not in table_sql:
+        connection.execute("ALTER TABLE tmdb_work_people RENAME TO tmdb_work_people_v6")
+        connection.execute(
+            """
+            CREATE TABLE tmdb_work_people (
+                work_id INTEGER NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('CAST','DIRECTOR')),
+                local_name TEXT NOT NULL,
+                tmdb_person_id INTEGER NOT NULL,
+                character_text TEXT,
+                billing_order INTEGER,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(work_id, role, local_name),
+                FOREIGN KEY(work_id) REFERENCES works(id) ON DELETE CASCADE,
+                FOREIGN KEY(tmdb_person_id) REFERENCES tmdb_people(tmdb_person_id) ON DELETE CASCADE
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO tmdb_work_people(
+                work_id,role,local_name,tmdb_person_id,character_text,billing_order,created_at,updated_at
+            )
+            SELECT work_id,role,local_name,tmdb_person_id,character_text,billing_order,created_at,updated_at
+            FROM tmdb_work_people_v6
+            """
+        )
+        connection.execute("DROP TABLE tmdb_work_people_v6")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tmdb_work_people_person ON tmdb_work_people(tmdb_person_id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tmdb_work_people_local_name ON tmdb_work_people(role, local_name)"
+        )
 
     row = connection.execute(
         "SELECT schema_version FROM schema_info ORDER BY rowid LIMIT 1"

@@ -84,7 +84,7 @@ class TmdbClientTests(unittest.TestCase):
 
 
 class TmdbDatabaseTests(unittest.TestCase):
-    def test_schema6_tables_and_schema5_upgrade_preserve_user_state(self):
+    def test_schema7_tables_and_schema5_upgrade_preserve_user_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "library.db"
             with connect(db) as connection:
@@ -112,14 +112,92 @@ class TmdbDatabaseTests(unittest.TestCase):
                 connection.commit()
                 initialize_database(connection)
                 connection.commit()
-                self.assertEqual(SCHEMA_VERSION, 6)
-                self.assertEqual(int(connection.execute("SELECT schema_version FROM schema_info").fetchone()[0]), 6)
+                self.assertEqual(SCHEMA_VERSION, 7)
+                self.assertEqual(int(connection.execute("SELECT schema_version FROM schema_info").fetchone()[0]), 7)
                 self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tmdb_work_links'").fetchone())
                 self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tmdb_api_cache'").fetchone())
                 self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'tmdb_people\'").fetchone())
                 self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'tmdb_work_people\'").fetchone())
                 favorite = int(connection.execute("SELECT favorite FROM user_work_state WHERE user_id=? AND work_id=?", (user_id, work_id)).fetchone()[0])
                 self.assertEqual(favorite, 1)
+
+    def test_schema6_people_links_upgrade_to_schema7_and_allow_directors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "library.db"
+            with connect(db) as connection:
+                initialize_database(connection)
+                stamp = now_iso()
+                connection.execute(
+                    "INSERT INTO works(external_work_no,category,official_title,created_at,updated_at) VALUES(1,'映画','作品',?,?)",
+                    (stamp, stamp),
+                )
+                work_id = int(connection.execute("SELECT id FROM works WHERE external_work_no=1").fetchone()[0])
+                connection.execute(
+                    """
+                    INSERT INTO tmdb_people(
+                        tmdb_person_id,display_name,profile_path,created_at,updated_at
+                    ) VALUES(101,'出演者','/cast.jpg',?,?)
+                    """,
+                    (stamp, stamp),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO tmdb_work_people(
+                        work_id,role,local_name,tmdb_person_id,billing_order,created_at,updated_at
+                    ) VALUES(?,'CAST','出演者',101,0,?,?)
+                    """,
+                    (work_id, stamp, stamp),
+                )
+                connection.execute("ALTER TABLE tmdb_work_people RENAME TO tmdb_work_people_v7")
+                connection.execute(
+                    """
+                    CREATE TABLE tmdb_work_people (
+                        work_id INTEGER NOT NULL,
+                        role TEXT NOT NULL CHECK(role IN ('CAST')),
+                        local_name TEXT NOT NULL,
+                        tmdb_person_id INTEGER NOT NULL,
+                        character_text TEXT,
+                        billing_order INTEGER,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY(work_id, role, local_name),
+                        FOREIGN KEY(work_id) REFERENCES works(id) ON DELETE CASCADE,
+                        FOREIGN KEY(tmdb_person_id) REFERENCES tmdb_people(tmdb_person_id) ON DELETE CASCADE
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO tmdb_work_people
+                    SELECT * FROM tmdb_work_people_v7
+                    """
+                )
+                connection.execute("DROP TABLE tmdb_work_people_v7")
+                connection.execute("UPDATE schema_info SET schema_version=6")
+                connection.commit()
+
+                initialize_database(connection)
+                cast = connection.execute(
+                    "SELECT local_name,tmdb_person_id FROM tmdb_work_people WHERE role='CAST'"
+                ).fetchone()
+                self.assertEqual((cast["local_name"], int(cast["tmdb_person_id"])), ("出演者", 101))
+                connection.execute(
+                    """
+                    INSERT INTO tmdb_people(
+                        tmdb_person_id,display_name,profile_path,created_at,updated_at
+                    ) VALUES(202,'監督','/director.jpg',?,?)
+                    """,
+                    (stamp, stamp),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO tmdb_work_people(
+                        work_id,role,local_name,tmdb_person_id,billing_order,created_at,updated_at
+                    ) VALUES(?,'DIRECTOR','監督',202,0,?,?)
+                    """,
+                    (work_id, stamp, stamp),
+                )
+                self.assertEqual(int(connection.execute("SELECT schema_version FROM schema_info").fetchone()[0]), 7)
 
     def test_tmdb_json_cache_round_trip_and_expiry(self):
         with tempfile.TemporaryDirectory() as tmp:

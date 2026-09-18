@@ -18,7 +18,7 @@ from library_service import list_people
 from server import create_server
 from tmdb_client import TmdbClient
 from tmdb_images import cached_person_image_path
-from tmdb_people import mark_people_sync_complete, people_sync_required, person_name_queries, repair_reviewed_bad_work_links, split_local_people, sync_cast_people_for_work
+from tmdb_people import audit_tmdb_director_profiles, mark_people_sync_complete, people_sync_required, person_name_queries, repair_reviewed_bad_work_links, split_local_people, sync_cast_people_for_work, sync_director_people_for_work
 from tmdb_people_reviewed_aliases import REVIEWED_PERSON_CREDIT_ALIASES
 from tmdb_people_reviewed_overrides import REVIEWED_WORK_PERSON_OVERRIDES
 
@@ -1335,6 +1335,23 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
                 connection.commit()
                 self.assertTrue(people_sync_required(connection))
 
+    def test_people_sync_v8_marker_requires_v9_resync(self):
+        from tmdb_cache import put_cached_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "library.db"
+            with connect(db) as connection:
+                initialize_database(connection)
+                put_cached_json(
+                    connection,
+                    "tmdb:people-sync-version",
+                    {"version": 8},
+                    fetched_at=now_iso(),
+                    expires_at=None,
+                )
+                connection.commit()
+                self.assertTrue(people_sync_required(connection))
+
     def test_people_sync_marker_is_one_time(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "library.db"
@@ -1398,6 +1415,152 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
                 thread.join(timeout=5)
+
+
+class TmdbDirectorPhase2Tests(unittest.TestCase):
+    def _database_with_directors(self, root: Path, directors: str):
+        db = root / "library.db"
+        with connect(db) as connection:
+            initialize_database(connection)
+            stamp = now_iso()
+            connection.execute(
+                """
+                INSERT INTO works(
+                    external_work_no,category,official_title,director_or_direction,created_at,updated_at
+                ) VALUES(1,'日本映画・ドラマ','監督テスト',?,?,?)
+                """,
+                (directors, stamp, stamp),
+            )
+            work_id = int(connection.execute("SELECT last_insert_rowid()").fetchone()[0])
+            connection.execute(
+                """
+                INSERT INTO tmdb_work_links(
+                    work_id,media_type,tmdb_id,match_status,created_at,updated_at
+                ) VALUES(?,'movie',500,'MATCHED',?,?)
+                """,
+                (work_id, stamp, stamp),
+            )
+            connection.commit()
+        return db, work_id
+
+    def test_movie_director_matches_only_directing_crew_and_caches_profile(self):
+        class DirectorClient:
+            def movie_credits(self, movie_id, *, language="ja-JP"):
+                return {
+                    "cast": [],
+                    "crew": [
+                        {
+                            "id": 201,
+                            "name": "山田太郎",
+                            "original_name": "山田太郎",
+                            "department": "Directing",
+                            "job": "Director",
+                            "profile_path": "/director.jpg",
+                            "known_for_department": "Directing",
+                        },
+                        {
+                            "id": 202,
+                            "name": "制作太郎",
+                            "original_name": "制作太郎",
+                            "department": "Production",
+                            "job": "Producer",
+                            "profile_path": "/producer.jpg",
+                        },
+                        {
+                            "id": 203,
+                            "name": "助監督太郎",
+                            "original_name": "助監督太郎",
+                            "department": "Directing",
+                            "job": "Assistant Director",
+                            "profile_path": "/assistant.jpg",
+                        },
+                    ],
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db, work_id = self._database_with_directors(root, "山田太郎、制作太郎、助監督太郎")
+
+            def downloader(remote_path, destination, *, size):
+                target = Path(destination)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(b"profile")
+                return target
+
+            with connect(db) as connection:
+                result = sync_director_people_for_work(
+                    connection,
+                    DirectorClient(),
+                    work_id=work_id,
+                    media_type="movie",
+                    tmdb_id=500,
+                    local_directors="山田太郎、制作太郎、助監督太郎",
+                    image_root=root / "TMDbImages",
+                    image_downloader=downloader,
+                )
+                links = connection.execute(
+                    "SELECT role,local_name,tmdb_person_id FROM tmdb_work_people ORDER BY local_name"
+                ).fetchall()
+                people = list_people(connection, role="director")
+
+            self.assertEqual(result["matched"], 1)
+            self.assertEqual(result["unmatched"], 2)
+            self.assertEqual([(row["role"], row["local_name"], int(row["tmdb_person_id"])) for row in links], [
+                ("DIRECTOR", "山田太郎", 201),
+            ])
+            by_name = {item["name"]: item for item in people["items"]}
+            self.assertEqual(by_name["山田太郎"]["profileUrl"], "/tmdb-person-image/201")
+            self.assertNotIn("profileUrl", by_name["制作太郎"])
+            self.assertNotIn("profileUrl", by_name["助監督太郎"])
+            self.assertTrue(cached_person_image_path(root / "TMDbImages", 201, "/director.jpg").is_file())
+
+            audit = audit_tmdb_director_profiles(db, root / "diagnostics")
+            self.assertEqual(audit["summary"]["totalDirectors"], 3)
+            self.assertEqual(audit["summary"]["profileReady"], 1)
+            self.assertEqual(audit["summary"]["directorCreditNotFound"], 2)
+            self.assertTrue(Path(audit["csvReport"]).is_file())
+
+    def test_tv_aggregate_director_jobs_are_supported(self):
+        class TvDirectorClient:
+            def tv_aggregate_credits(self, tv_id, *, language="ja-JP"):
+                return {
+                    "cast": [],
+                    "crew": [
+                        {
+                            "id": 301,
+                            "name": "佐藤監督",
+                            "original_name": "佐藤監督",
+                            "jobs": [{"job": "Director", "episode_count": 8}],
+                            "profile_path": "/sato.jpg",
+                            "known_for_department": "Directing",
+                        }
+                    ],
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db, work_id = self._database_with_directors(root, "佐藤監督")
+            with connect(db) as connection:
+                connection.execute(
+                    "UPDATE tmdb_work_links SET media_type='tv',tmdb_id=600 WHERE work_id=?",
+                    (work_id,),
+                )
+                connection.commit()
+                result = sync_director_people_for_work(
+                    connection,
+                    TvDirectorClient(),
+                    work_id=work_id,
+                    media_type="tv",
+                    tmdb_id=600,
+                    local_directors="佐藤監督",
+                    image_root=root / "TMDbImages",
+                    image_downloader=lambda remote_path, destination, *, size: Path(destination),
+                )
+                link = connection.execute(
+                    "SELECT role,local_name,tmdb_person_id FROM tmdb_work_people"
+                ).fetchone()
+            self.assertEqual(result["matched"], 1)
+            self.assertEqual((link["role"], link["local_name"], int(link["tmdb_person_id"])), ("DIRECTOR", "佐藤監督", 301))
 
 
 if __name__ == "__main__":

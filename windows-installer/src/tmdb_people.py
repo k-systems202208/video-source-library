@@ -24,7 +24,7 @@ from tmdb_people_reviewed_overrides import (
 
 _PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 _CREDITS_TTL_DAYS = 30
-_PEOPLE_SYNC_VERSION = 8
+_PEOPLE_SYNC_VERSION = 9
 _PEOPLE_SYNC_CACHE_KEY = "tmdb:people-sync-version"
 _PEOPLE_AUDIT_VERSION = 8
 _PEOPLE_AUDIT_CACHE_KEY = "tmdb:people-audit-version"
@@ -280,6 +280,53 @@ def _cast_index(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     index: dict[str, list[dict[str, Any]]] = {}
     for item in cast:
         if not isinstance(item, dict):
+            continue
+        try:
+            person_id = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        if person_id <= 0:
+            continue
+        for field in ("name", "original_name"):
+            key = normalize_person_name(item.get(field))
+            if key:
+                index.setdefault(key, []).append(item)
+    return index
+
+
+def _is_directing_credit(item: dict[str, Any]) -> bool:
+    # TMDb's Directing department also contains assistant/supervision roles.
+    # For the first automatic director pass, require an explicit director job
+    # rather than accepting every crew member in the department.
+    jobs: list[str] = []
+    direct_job = str(item.get("job") or "").strip()
+    if direct_job:
+        jobs.append(direct_job)
+    aggregate_jobs = item.get("jobs")
+    if isinstance(aggregate_jobs, list):
+        for job in aggregate_jobs:
+            if isinstance(job, dict):
+                value = str(job.get("job") or "").strip()
+                if value:
+                    jobs.append(value)
+    accepted = {
+        "director",
+        "series director",
+        "episode director",
+        "co-director",
+        "chief director",
+        "supervising director",
+    }
+    return any(value.casefold() in accepted for value in jobs)
+
+
+def _director_index(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    crew = payload.get("crew")
+    if not isinstance(crew, list):
+        return {}
+    index: dict[str, list[dict[str, Any]]] = {}
+    for item in crew:
+        if not isinstance(item, dict) or not _is_directing_credit(item):
             continue
         try:
             person_id = int(item.get("id"))
@@ -685,6 +732,94 @@ def sync_cast_people_for_work(
         "personIds": sorted(set(matched_ids)),
     }
 
+def sync_director_people_for_work(
+    connection: sqlite3.Connection,
+    client: Any,
+    *,
+    work_id: int,
+    media_type: str,
+    tmdb_id: int,
+    local_directors: str | None,
+    image_root: Path | str,
+    image_downloader: Callable[..., Path] = download_tmdb_image,
+) -> dict[str, Any]:
+    names = split_local_people(local_directors)
+    if not names:
+        connection.execute(
+            "DELETE FROM tmdb_work_people WHERE work_id=? AND role='DIRECTOR'",
+            (int(work_id),),
+        )
+        connection.commit()
+        return {
+            "matched": 0,
+            "unmatched": 0,
+            "profileCached": 0,
+            "personIds": [],
+        }
+
+    payload = _cached_credits(connection, client, media_type, tmdb_id)
+    index = _director_index(payload)
+    resolved_people: list[tuple[int, str, dict[str, Any]]] = []
+    unmatched = 0
+    for local_order, local_name in enumerate(names):
+        candidates: dict[int, dict[str, Any]] = {}
+        for query in person_name_queries(local_name):
+            for item in index.get(normalize_person_name(query), []):
+                try:
+                    person_id = int(item.get("id"))
+                except (TypeError, ValueError):
+                    continue
+                if person_id > 0:
+                    candidates[person_id] = item
+        if len(candidates) != 1:
+            unmatched += 1
+            continue
+        resolved_people.append((local_order, local_name, next(iter(candidates.values()))))
+
+    connection.execute(
+        "DELETE FROM tmdb_work_people WHERE work_id=? AND role='DIRECTOR'",
+        (int(work_id),),
+    )
+    matched_ids: list[int] = []
+    cached_ids: list[int] = []
+    stamp = now_iso()
+    for local_order, local_name, item in resolved_people:
+        person_id, profile_path, profile_changed = _upsert_person(connection, item)
+        connection.execute(
+            """
+            INSERT INTO tmdb_work_people(
+                work_id,role,local_name,tmdb_person_id,character_text,billing_order,created_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?)
+            ON CONFLICT(work_id,role,local_name) DO UPDATE SET
+                tmdb_person_id=excluded.tmdb_person_id,
+                character_text=excluded.character_text,
+                billing_order=excluded.billing_order,
+                updated_at=excluded.updated_at
+            """,
+            (int(work_id), "DIRECTOR", local_name, person_id, None, local_order, stamp, stamp),
+        )
+        matched_ids.append(person_id)
+        if profile_path:
+            try:
+                target = cached_person_image_path(image_root, person_id, profile_path)
+                if profile_changed and target.is_file():
+                    target.unlink()
+                if not target.is_file():
+                    image_downloader(profile_path, target, size="w185")
+                if target.is_file():
+                    cached_ids.append(person_id)
+            except Exception:
+                pass
+
+    connection.commit()
+    return {
+        "matched": len(matched_ids),
+        "unmatched": unmatched,
+        "profileCached": len(set(cached_ids)),
+        "personIds": sorted(set(matched_ids)),
+    }
+
+
 def repair_reviewed_bad_work_links(connection: sqlite3.Connection) -> int:
     repaired = 0
     stamp = now_iso()
@@ -716,7 +851,7 @@ def repair_reviewed_bad_work_links(connection: sqlite3.Connection) -> int:
                 (stamp, stamp, work_id),
             )
             connection.execute(
-                "DELETE FROM tmdb_work_people WHERE work_id=? AND role='CAST'",
+                "DELETE FROM tmdb_work_people WHERE work_id=?",
                 (work_id,),
             )
             repaired += 1
@@ -782,6 +917,8 @@ def sync_tmdb_people_library(
         raise ValueError("TMDb API Read Access Token is not configured")
     tmdb = client or TmdbClient(token)
     matched_ids: set[int] = set()
+    cast_person_ids: set[int] = set()
+    director_ids: set[int] = set()
     cached_ids: set[int] = set()
     failures = 0
     matched_by_search = 0
@@ -797,37 +934,62 @@ def sync_tmdb_people_library(
         repaired_work_links = repair_reviewed_bad_work_links(connection)
         works = connection.execute(
             """
-            SELECT w.id,w.official_title,w.main_cast_or_voice_actors,
+            SELECT w.id,w.official_title,w.main_cast_or_voice_actors,w.director_or_direction,
                    t.media_type,t.tmdb_id
             FROM works w
             JOIN tmdb_work_links t ON t.work_id=w.id
             WHERE t.match_status='MATCHED'
               AND t.tmdb_id IS NOT NULL
-              AND TRIM(COALESCE(w.main_cast_or_voice_actors,''))<>''
+              AND (
+                    TRIM(COALESCE(w.main_cast_or_voice_actors,''))<>''
+                 OR TRIM(COALESCE(w.director_or_direction,''))<>''
+              )
             ORDER BY w.external_work_no
             """
         ).fetchall()
         total = len(works)
         for index, work in enumerate(works, start=1):
+            work_person_ids: set[int] = set()
             try:
-                result = sync_cast_people_for_work(
-                    connection,
-                    tmdb,
-                    work_id=int(work["id"]),
-                    media_type=str(work["media_type"]),
-                    tmdb_id=int(work["tmdb_id"]),
-                    local_cast=str(work["main_cast_or_voice_actors"] or ""),
-                    image_root=image_root,
-                    image_downloader=image_downloader,
-                )
-                matched_ids.update(int(value) for value in result.get("personIds") or [])
-                matched_by_search += int(result.get("matchedBySearch") or 0)
-                matched_by_combined += int(result.get("matchedByCombinedCredits") or 0)
-                matched_by_unique_exact += int(result.get("matchedByUniqueExactSearch") or 0)
-                matched_by_credit_alias += int(result.get("matchedByCreditAlias") or 0)
-                matched_by_reviewed_alias += int(result.get("matchedByReviewedAlias") or 0)
-                matched_by_reviewed_work_person += int(result.get("matchedByReviewedWorkPerson") or 0)
-                for person_id in result.get("personIds") or []:
+                if str(work["main_cast_or_voice_actors"] or "").strip():
+                    cast_result = sync_cast_people_for_work(
+                        connection,
+                        tmdb,
+                        work_id=int(work["id"]),
+                        media_type=str(work["media_type"]),
+                        tmdb_id=int(work["tmdb_id"]),
+                        local_cast=str(work["main_cast_or_voice_actors"] or ""),
+                        image_root=image_root,
+                        image_downloader=image_downloader,
+                    )
+                    cast_ids = {int(value) for value in cast_result.get("personIds") or []}
+                    cast_person_ids.update(cast_ids)
+                    matched_ids.update(cast_ids)
+                    work_person_ids.update(cast_ids)
+                    matched_by_search += int(cast_result.get("matchedBySearch") or 0)
+                    matched_by_combined += int(cast_result.get("matchedByCombinedCredits") or 0)
+                    matched_by_unique_exact += int(cast_result.get("matchedByUniqueExactSearch") or 0)
+                    matched_by_credit_alias += int(cast_result.get("matchedByCreditAlias") or 0)
+                    matched_by_reviewed_alias += int(cast_result.get("matchedByReviewedAlias") or 0)
+                    matched_by_reviewed_work_person += int(cast_result.get("matchedByReviewedWorkPerson") or 0)
+
+                if str(work["director_or_direction"] or "").strip():
+                    director_result = sync_director_people_for_work(
+                        connection,
+                        tmdb,
+                        work_id=int(work["id"]),
+                        media_type=str(work["media_type"]),
+                        tmdb_id=int(work["tmdb_id"]),
+                        local_directors=str(work["director_or_direction"] or ""),
+                        image_root=image_root,
+                        image_downloader=image_downloader,
+                    )
+                    current_directors = {int(value) for value in director_result.get("personIds") or []}
+                    director_ids.update(current_directors)
+                    matched_ids.update(current_directors)
+                    work_person_ids.update(current_directors)
+
+                for person_id in work_person_ids:
                     row = connection.execute(
                         "SELECT profile_path FROM tmdb_people WHERE tmdb_person_id=?",
                         (int(person_id),),
@@ -849,6 +1011,7 @@ def sync_tmdb_people_library(
                         "current": index,
                         "total": total,
                         "matchedPeople": len(matched_ids),
+                        "matchedDirectors": len(director_ids),
                         "profileCached": len(cached_ids),
                         "matchedBySearch": matched_by_search,
                         "matchedByCombinedCredits": matched_by_combined,
@@ -869,6 +1032,8 @@ def sync_tmdb_people_library(
     result = {
         "totalWorks": len(works),
         "matchedPeople": len(matched_ids),
+        "matchedCast": len(cast_person_ids),
+        "matchedDirectors": len(director_ids),
         "profileCached": len(cached_ids),
         "matchedBySearch": matched_by_search,
         "matchedByCombinedCredits": matched_by_combined,
@@ -887,8 +1052,11 @@ def sync_tmdb_people_library(
             token,
             client=tmdb,
         )
+        result["directorAudit"] = audit_tmdb_director_profiles(
+            database_path,
+            report_dir,
+        )
     return result
-
 
 def _person_audit_reason(
     *,
@@ -1180,6 +1348,153 @@ def audit_tmdb_people_profiles(
         initialize_database(connection)
         mark_people_audit_complete(connection)
         connection.commit()
+    return {
+        "summary": summary,
+        "jsonReport": str(json_path),
+        "csvReport": str(csv_path),
+    }
+
+
+
+def _write_director_audit_report(
+    report_dir: Path | str,
+    rows: list[dict[str, Any]],
+    summary: dict[str, Any],
+) -> tuple[Path, Path]:
+    destination = Path(report_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    json_path = destination / f"tmdb-director-audit-{stamp}.json"
+    csv_path = destination / f"tmdb-director-audit-{stamp}.csv"
+    json_path.write_text(
+        json.dumps({"summary": summary, "items": rows}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    fields = [
+        "name",
+        "workCount",
+        "reason",
+        "tmdbPersonIds",
+        "profilePaths",
+        "matchedWorkCount",
+        "matchedWorks",
+        "localWorks",
+    ]
+    with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    "name": row.get("name", ""),
+                    "workCount": row.get("workCount", 0),
+                    "reason": row.get("reason", ""),
+                    "tmdbPersonIds": "|".join(str(v) for v in row.get("tmdbPersonIds", [])),
+                    "profilePaths": "|".join(str(v) for v in row.get("profilePaths", [])),
+                    "matchedWorkCount": row.get("matchedWorkCount", 0),
+                    "matchedWorks": " | ".join(row.get("matchedWorks", [])),
+                    "localWorks": " | ".join(row.get("localWorks", [])),
+                }
+            )
+    return json_path, csv_path
+
+
+def audit_tmdb_director_profiles(
+    database_path: Path | str,
+    report_dir: Path | str,
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    with connect(database_path) as connection:
+        initialize_database(connection)
+        work_rows = connection.execute(
+            """
+            SELECT
+                w.id,w.official_title,w.year_or_period,w.director_or_direction,
+                t.match_status,t.media_type,t.tmdb_id
+            FROM works w
+            LEFT JOIN tmdb_work_links t ON t.work_id=w.id
+            WHERE TRIM(COALESCE(w.director_or_direction,''))<>''
+            ORDER BY w.external_work_no
+            """
+        ).fetchall()
+        occurrences: dict[str, list[sqlite3.Row]] = {}
+        for work in work_rows:
+            for local_name in split_local_people(work["director_or_direction"]):
+                occurrences.setdefault(local_name, []).append(work)
+
+        all_links = connection.execute(
+            """
+            SELECT wp.local_name,wp.tmdb_person_id,p.profile_path
+            FROM tmdb_work_people wp
+            JOIN tmdb_people p ON p.tmdb_person_id=wp.tmdb_person_id
+            WHERE wp.role='DIRECTOR'
+            """
+        ).fetchall()
+        links_by_name: dict[str, dict[int, str | None]] = {}
+        for link in all_links:
+            links_by_name.setdefault(str(link["local_name"]), {})[
+                int(link["tmdb_person_id"])
+            ] = str(link["profile_path"]) if link["profile_path"] else None
+
+        for local_name, person_works in occurrences.items():
+            linked_profiles = links_by_name.get(local_name, {})
+            linked_ids = set(linked_profiles)
+            matched_works = [
+                work
+                for work in person_works
+                if str(work["match_status"] or "") == "MATCHED" and work["tmdb_id"] is not None
+            ]
+            if len(linked_ids) > 1:
+                reason = "AMBIGUOUS"
+            elif len(linked_ids) == 1:
+                person_id = next(iter(linked_ids))
+                reason = "PROFILE_READY" if linked_profiles.get(person_id) else "PERSON_NO_PROFILE"
+            elif not matched_works:
+                reason = "NO_MATCHED_WORK"
+            else:
+                reason = "DIRECTOR_CREDIT_NOT_FOUND"
+
+            local_work_labels: list[str] = []
+            for work in person_works:
+                year = str(work["year_or_period"] or "").strip()
+                status = str(work["match_status"] or "NO_LINK").strip() or "NO_LINK"
+                media_type = str(work["media_type"] or "").strip()
+                tmdb_id = work["tmdb_id"]
+                suffix = status
+                if media_type and tmdb_id is not None:
+                    suffix = f"{status} {media_type}:{int(tmdb_id)}"
+                title = str(work["official_title"] or "").strip()
+                local_work_labels.append(
+                    f"{title} ({year}) [{suffix}]" if year else f"{title} [{suffix}]"
+                )
+            rows.append(
+                {
+                    "name": local_name,
+                    "workCount": len(person_works),
+                    "reason": reason,
+                    "tmdbPersonIds": sorted(linked_ids),
+                    "profilePaths": sorted({path for path in linked_profiles.values() if path}),
+                    "matchedWorkCount": len(matched_works),
+                    "matchedWorks": [
+                        f"{work['official_title']} [{work['media_type']}:{work['tmdb_id']}]"
+                        for work in matched_works
+                    ],
+                    "localWorks": local_work_labels,
+                }
+            )
+
+    reason_counts = Counter(str(row["reason"]) for row in rows)
+    summary = {
+        "totalDirectors": len(rows),
+        "profileReady": reason_counts.get("PROFILE_READY", 0),
+        "personNoProfile": reason_counts.get("PERSON_NO_PROFILE", 0),
+        "noMatchedWork": reason_counts.get("NO_MATCHED_WORK", 0),
+        "directorCreditNotFound": reason_counts.get("DIRECTOR_CREDIT_NOT_FOUND", 0),
+        "ambiguous": reason_counts.get("AMBIGUOUS", 0),
+        "needsReview": sum(1 for row in rows if str(row.get("reason") or "") != "PROFILE_READY"),
+        "reasons": dict(sorted(reason_counts.items())),
+    }
+    json_path, csv_path = _write_director_audit_report(report_dir, rows, summary)
     return {
         "summary": summary,
         "jsonReport": str(json_path),
