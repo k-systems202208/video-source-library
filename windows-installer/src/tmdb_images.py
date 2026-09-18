@@ -27,6 +27,11 @@ def cached_image_path(image_root: Path | str, work_id: int, kind: str, remote_pa
     return root / kind / f"{int(work_id)}{suffix}"
 
 
+def cached_person_image_path(image_root: Path | str, person_id: int, remote_path: str) -> Path:
+    suffix = _safe_suffix(remote_path)
+    return Path(image_root) / "person" / f"{int(person_id)}{suffix}"
+
+
 def image_content_type(path: Path | str) -> str:
     return _ALLOWED_SUFFIXES.get(Path(path).suffix.casefold(), "application/octet-stream")
 
@@ -145,6 +150,36 @@ def resolve_or_repair_cached_tmdb_image(
                     target,
                     size="w500" if kind == "poster" else "w1280",
                 )
+            except Exception:
+                return None
+    if not target.is_file():
+        return None
+    return target, image_content_type(target)
+
+
+def resolve_or_repair_cached_tmdb_person_image(
+    connection: sqlite3.Connection,
+    image_root: Path | str,
+    person_id: int,
+    *,
+    image_downloader: Callable[..., Path] = download_tmdb_image,
+) -> tuple[Path, str] | None:
+    row = connection.execute(
+        "SELECT profile_path FROM tmdb_people WHERE tmdb_person_id=?",
+        (int(person_id),),
+    ).fetchone()
+    if row is None or not row["profile_path"]:
+        return None
+    remote_path = str(row["profile_path"])
+    try:
+        target = cached_person_image_path(image_root, int(person_id), remote_path)
+    except ValueError:
+        return None
+
+    with _REPAIR_LOCK:
+        if not target.is_file():
+            try:
+                image_downloader(remote_path, target, size="w185")
             except Exception:
                 return None
     if not target.is_file():
