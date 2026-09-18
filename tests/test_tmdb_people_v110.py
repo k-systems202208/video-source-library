@@ -1335,6 +1335,23 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
                 connection.commit()
                 self.assertTrue(people_sync_required(connection))
 
+    def test_people_sync_v8_marker_requires_v9_resync(self):
+        from tmdb_cache import put_cached_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "library.db"
+            with connect(db) as connection:
+                initialize_database(connection)
+                put_cached_json(
+                    connection,
+                    "tmdb:people-sync-version",
+                    {"version": 8},
+                    fetched_at=now_iso(),
+                    expires_at=None,
+                )
+                connection.commit()
+                self.assertTrue(people_sync_required(connection))
+
     def test_people_sync_marker_is_one_time(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "library.db"
