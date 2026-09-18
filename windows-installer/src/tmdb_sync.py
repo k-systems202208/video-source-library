@@ -17,7 +17,7 @@ from database import connect, initialize_database, now_iso
 from tmdb_cache import get_cached_json, put_cached_json
 from tmdb_client import TmdbClient
 from tmdb_images import cached_image_path, cached_person_image_path, download_tmdb_image
-from tmdb_people import sync_cast_people_for_work
+from tmdb_people import mark_people_sync_complete, sync_cast_people_for_work
 
 _MATCHED = "MATCHED"
 _REVIEW = "REVIEW"
@@ -784,6 +784,7 @@ def sync_tmdb_library(
     rows: list[dict[str, Any]] = []
     people_matched_ids: set[int] = set()
     people_profile_cached_ids: set[int] = set()
+    people_sync_failures = 0
 
     with connect(database_path) as connection:
         initialize_database(connection)
@@ -919,7 +920,7 @@ def sync_tmdb_library(
                 except Exception:
                     # Person photos are enrichment only.  Preserve a completed
                     # work match even if credits/profile retrieval is temporarily unavailable.
-                    pass
+                    people_sync_failures += 1
             else:
                 connection.execute(
                     "DELETE FROM tmdb_work_people WHERE work_id=? AND role='CAST'",
@@ -962,6 +963,8 @@ def sync_tmdb_library(
 
         _store_matcher_version(connection)
         _store_image_cache_repair_version(connection)
+        if people_sync_failures == 0:
+            mark_people_sync_complete(connection)
         connection.commit()
 
     summary = {
@@ -975,6 +978,7 @@ def sync_tmdb_library(
         "backdropCached": sum(1 for item in rows if item["backdropCached"]),
         "peopleMatched": len(people_matched_ids),
         "peopleProfileCached": len(people_profile_cached_ids),
+        "peopleSyncFailures": people_sync_failures,
     }
     json_path, csv_path = _write_report(Path(report_dir), rows, summary)
     return {
