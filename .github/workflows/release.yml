@@ -49,6 +49,7 @@ jobs:
             "should_release=true" >> $env:GITHUB_OUTPUT
             Write-Host "$tag is not published yet."
           }
+          exit 0
 
       - uses: actions/setup-python@v5
         if: steps.release_check.outputs.should_release == 'true'

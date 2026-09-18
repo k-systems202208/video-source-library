@@ -18,6 +18,7 @@ class ReleaseWorkflowV110Tests(unittest.TestCase):
         self.assertIn("gh release view", workflow)
         self.assertIn("should_release=false", workflow)
         self.assertIn("should_release=true", workflow)
+        self.assertIn("exit 0", workflow)
         self.assertIn("Build Windows installer", workflow)
         self.assertIn("Verify and package release assets", workflow)
         self.assertIn("gh @args", workflow)
