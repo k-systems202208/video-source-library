@@ -447,7 +447,7 @@ class TmdbPeopleAuditTests(unittest.TestCase):
         self.assertIn("people_audit_required", launcher)
         self.assertIn("audit_tmdb_people_profiles", launcher)
         self.assertIn("if not sync_required and not audit_required", launcher)
-        self.assertIn("人物写真監査をバックグラウンド実行します。", launcher)
+        self.assertIn("出演者／声優の顔写真監査をバックグラウンド実行します。", launcher)
 
     def test_manual_tmdb_sync_returns_people_audit(self):
         sync_source = (SRC / "tmdb_sync.py").read_text(encoding="utf-8")
