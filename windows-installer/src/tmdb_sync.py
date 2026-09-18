@@ -18,6 +18,10 @@ from tmdb_cache import get_cached_json, put_cached_json
 from tmdb_client import TmdbClient
 from tmdb_images import cached_image_path, cached_person_image_path, download_tmdb_image
 from tmdb_people import audit_tmdb_people_profiles, mark_people_sync_complete, sync_cast_people_for_work
+from tmdb_people_reviewed_overrides import (
+    REVIEWED_AGGREGATE_WORKS,
+    REVIEWED_SPECIAL_UNMATCHED_WORKS,
+)
 
 _MATCHED = "MATCHED"
 _REVIEW = "REVIEW"
@@ -66,19 +70,10 @@ _AUDIT_APPROVED_MATCHES: dict[tuple[str, str], tuple[str, int, str]] = {
     ("仰げば尊し", "2016"): ("tv", 83474, "2016"),
 }
 
-# 1つのTMDb作品へ自動確定してはいけないローカル集約項目。
-_AUDIT_AGGREGATE_WORKS: set[tuple[str, str]] = {
-    ("男はつらいよ", "1969-2019"),
-    ("仁義なき戦い", "1973-1974"),
-    ("福岡恋愛白書", "2011-2016"),
-    ("殺人分析班シリーズ", "2016-2019"),
-}
-
-# TMDbのシリーズ構造とローカル管理単位が一致しないため自動紐付けしない項目。
-_AUDIT_SPECIAL_UNMATCHED: set[tuple[str, str]] = {
-    ("3年B組金八先生 第6シリーズ", "2001"),
-    ("半分の月がのぼる空", "2006"),
-}
+# 監査済みルールは人物監査でも同じ定義を参照する。
+# matcher側の挙動はv8から変更しない。
+_AUDIT_AGGREGATE_WORKS = REVIEWED_AGGREGATE_WORKS
+_AUDIT_SPECIAL_UNMATCHED = REVIEWED_SPECIAL_UNMATCHED_WORKS
 
 # Existing MATCHED links normally stay fixed after matcher v4.  These audited
 # signatures are exceptions because the stored TMDb work was confirmed to be a

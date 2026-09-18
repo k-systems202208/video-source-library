@@ -22,3 +22,26 @@ REVIEWED_WORK_PERSON_OVERRIDES: dict[tuple[str, int, str], int] = {
 REVIEWED_BAD_WORK_MATCHES: tuple[tuple[str, str, str, int], ...] = (
     ("半分の月がのぼる空", "2006", "tv", 34746),
 )
+
+
+# Local library entries intentionally representing multiple installments.
+# A single TMDb movie/TV id must never be promoted to MATCHED for these rows.
+REVIEWED_AGGREGATE_WORKS: set[tuple[str, str]] = {
+    ("男はつらいよ", "1969-2019"),
+    ("仁義なき戦い", "1973-1974"),
+    ("福岡恋愛白書", "2011-2016"),
+    ("殺人分析班シリーズ", "2016-2019"),
+}
+
+# Local/TMDb structures known not to have a safe one-to-one work mapping.
+REVIEWED_SPECIAL_UNMATCHED_WORKS: set[tuple[str, str]] = {
+    ("3年B組金八先生 第6シリーズ", "2001"),
+    ("半分の月がのぼる空", "2006"),
+}
+
+# Cast members verified in primary/official material, but for whom the current
+# TMDb work credits + person search do not provide a safely identifiable person
+# id. These entries are diagnostic only and NEVER create a person link.
+REVIEWED_MISSING_TMDB_PEOPLE: set[tuple[str, int, str]] = {
+    ("tv", 89351, "渡辺千秋"),  # スケバン刑事 (1985)
+}

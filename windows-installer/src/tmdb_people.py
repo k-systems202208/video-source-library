@@ -14,13 +14,19 @@ from database import connect, initialize_database, now_iso
 from tmdb_cache import get_cached_json, put_cached_json
 from tmdb_images import cached_person_image_path, download_tmdb_image
 from tmdb_people_reviewed_aliases import REVIEWED_PERSON_CREDIT_ALIASES
-from tmdb_people_reviewed_overrides import REVIEWED_BAD_WORK_MATCHES, REVIEWED_WORK_PERSON_OVERRIDES
+from tmdb_people_reviewed_overrides import (
+    REVIEWED_AGGREGATE_WORKS,
+    REVIEWED_BAD_WORK_MATCHES,
+    REVIEWED_MISSING_TMDB_PEOPLE,
+    REVIEWED_SPECIAL_UNMATCHED_WORKS,
+    REVIEWED_WORK_PERSON_OVERRIDES,
+)
 
 _PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 _CREDITS_TTL_DAYS = 30
 _PEOPLE_SYNC_VERSION = 8
 _PEOPLE_SYNC_CACHE_KEY = "tmdb:people-sync-version"
-_PEOPLE_AUDIT_VERSION = 7
+_PEOPLE_AUDIT_VERSION = 8
 _PEOPLE_AUDIT_CACHE_KEY = "tmdb:people-audit-version"
 
 
@@ -910,6 +916,40 @@ def _person_audit_reason(
     return "CREDIT_PERSON_NOT_FOUND"
 
 
+def _people_audit_resolution(
+    local_name: str,
+    person_works: list[sqlite3.Row],
+    *,
+    reason: str,
+) -> str:
+    if reason == "PERSON_NO_PROFILE":
+        return "TMDB_PROFILE_MISSING"
+
+    if reason == "NO_MATCHED_WORK":
+        work_keys = {
+            (
+                str(work["official_title"] or "").strip(),
+                str(work["year_or_period"] or "").strip(),
+            )
+            for work in person_works
+        }
+        if work_keys and work_keys.issubset(REVIEWED_AGGREGATE_WORKS):
+            return "INTENTIONAL_AGGREGATE_REVIEW"
+        if work_keys and work_keys.issubset(REVIEWED_SPECIAL_UNMATCHED_WORKS):
+            return "INTENTIONAL_STRUCTURE_UNMATCHED"
+
+    if reason == "CREDIT_PERSON_NOT_FOUND":
+        for work in person_works:
+            media_type = str(work["media_type"] or "").strip()
+            tmdb_id = work["tmdb_id"]
+            if not media_type or tmdb_id is None:
+                continue
+            if (media_type, int(tmdb_id), str(local_name or "").strip()) in REVIEWED_MISSING_TMDB_PEOPLE:
+                return "VERIFIED_CAST_TMDB_PERSON_UNAVAILABLE"
+
+    return ""
+
+
 def _write_people_audit_report(
     report_dir: Path | str,
     rows: list[dict[str, Any]],
@@ -928,6 +968,7 @@ def _write_people_audit_report(
         "name",
         "workCount",
         "reason",
+        "resolution",
         "tmdbPersonIds",
         "profilePaths",
         "matchedWorkCount",
@@ -948,6 +989,7 @@ def _write_people_audit_report(
                     "name": row.get("name", ""),
                     "workCount": row.get("workCount", 0),
                     "reason": row.get("reason", ""),
+                    "resolution": row.get("resolution", ""),
                     "tmdbPersonIds": "|".join(str(v) for v in row.get("tmdbPersonIds", [])),
                     "profilePaths": "|".join(str(v) for v in row.get("profilePaths", [])),
                     "matchedWorkCount": row.get("matchedWorkCount", 0),
@@ -1089,11 +1131,17 @@ def audit_tmdb_people_profiles(
                 constrained_search_ids=constrained_ids,
                 search_result_ids=search_ids,
             )
+            resolution = _people_audit_resolution(
+                local_name,
+                person_works,
+                reason=reason,
+            )
             rows.append(
                 {
                     "name": local_name,
                     "workCount": len(person_works),
                     "reason": reason,
+                    "resolution": resolution,
                     "tmdbPersonIds": sorted(linked_ids),
                     "profilePaths": sorted(
                         {path for path in linked_profiles.values() if path}
@@ -1119,6 +1167,12 @@ def audit_tmdb_people_profiles(
         "personSearchNotInCredits": reason_counts.get("PERSON_SEARCH_NOT_IN_CREDITS", 0),
         "creditPersonNotFound": reason_counts.get("CREDIT_PERSON_NOT_FOUND", 0),
         "ambiguous": reason_counts.get("AMBIGUOUS", 0),
+        "needsReview": sum(
+            1
+            for row in rows
+            if str(row.get("reason") or "") != "PROFILE_READY"
+            and not str(row.get("resolution") or "").strip()
+        ),
         "reasons": dict(sorted(reason_counts.items())),
     }
     json_path, csv_path = _write_people_audit_report(report_dir, rows, summary)
