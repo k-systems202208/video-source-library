@@ -8,6 +8,7 @@ from __future__ import annotations
 # work's TMDb credits, and a match is accepted only when exactly one person id
 # remains.
 REVIEWED_PERSON_CREDIT_ALIASES: dict[str, tuple[str, ...]] = {
+    "千紗": ("CHISA",),
     "サイモン・キャロウ": ("Simon Callow",),
     "ジョン・トラボルタ": ("ジョン・トラヴォルタ", "John Travolta"),
     "ウィリアム・サドラー": ("William Sadler",),

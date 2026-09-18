@@ -18,8 +18,9 @@ from library_service import list_people
 from server import create_server
 from tmdb_client import TmdbClient
 from tmdb_images import cached_person_image_path
-from tmdb_people import mark_people_sync_complete, people_sync_required, person_name_queries, split_local_people, sync_cast_people_for_work
+from tmdb_people import mark_people_sync_complete, people_sync_required, person_name_queries, repair_reviewed_bad_work_links, split_local_people, sync_cast_people_for_work
 from tmdb_people_reviewed_aliases import REVIEWED_PERSON_CREDIT_ALIASES
+from tmdb_people_reviewed_overrides import REVIEWED_WORK_PERSON_OVERRIDES
 
 
 class FakeResponse:
@@ -1000,6 +1001,7 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
 
     def test_reviewed_alias_map_covers_current_real_audit_credit_not_found_names(self):
         expected = {
+            "千紗",
             "サイモン・キャロウ", "ジョン・トラボルタ", "ウィリアム・サドラー", "ジェマ・ジョーンズ",
             "ジョー・ヴィテレリ", "ユ・ジテ", "カン・ヘジョン", "キム・ビョンオク",
             "ニッキー・ブロンスキー", "カム・ジガンデイ", "クロティルド・モレ",
@@ -1009,6 +1011,179 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
             "ニコラス・ガリツィン", "増田康好", "渡辺千秋", "小原裕貴", "藤井萩花",
         }
         self.assertEqual(set(REVIEWED_PERSON_CREDIT_ALIASES), expected)
+
+    def test_seventh_match_uses_reviewed_work_person_override_only_for_exact_work(self):
+        class Client:
+            def tv_aggregate_credits(self, tv_id, *, language="ja-JP"):
+                return {"cast": []}
+
+            def search_person(self, query, *, language="ja-JP"):
+                return {"results": []}
+
+            def person_combined_credits(self, person_id, *, language="ja-JP"):
+                return {"cast": []}
+
+            def person_details(self, person_id, *, language="ja-JP"):
+                if int(person_id) == 107961:
+                    return {
+                        "id": 107961,
+                        "name": "石坂浩二",
+                        "original_name": "石坂浩二",
+                        "profile_path": "/ishizaka.jpg",
+                        "known_for_department": "Acting",
+                    }
+                return {}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db, work_id = self._database_with_work(root, "石坂浩二")
+
+            def downloader(remote_path, destination, *, size):
+                target = Path(destination)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(b"profile")
+                return target
+
+            with connect(db) as connection:
+                result = sync_cast_people_for_work(
+                    connection,
+                    Client(),
+                    work_id=work_id,
+                    media_type="tv",
+                    tmdb_id=38041,
+                    local_cast="石坂浩二",
+                    image_root=root / "TMDbImages",
+                    image_downloader=downloader,
+                )
+                link = connection.execute(
+                    "SELECT local_name,tmdb_person_id FROM tmdb_work_people"
+                ).fetchone()
+
+            self.assertEqual(result["matchedByReviewedWorkPerson"], 1)
+            self.assertEqual((link["local_name"], link["tmdb_person_id"]), ("石坂浩二", 107961))
+            self.assertTrue(cached_person_image_path(root / "TMDbImages", 107961, "/ishizaka.jpg").is_file())
+
+            with connect(db) as connection:
+                result = sync_cast_people_for_work(
+                    connection,
+                    Client(),
+                    work_id=work_id,
+                    media_type="tv",
+                    tmdb_id=999999,
+                    local_cast="石坂浩二",
+                    image_root=root / "TMDbImages",
+                    image_downloader=downloader,
+                )
+            self.assertEqual(result["matchedByReviewedWorkPerson"], 0)
+
+    def test_seventh_match_rejects_person_details_id_mismatch(self):
+        class Client:
+            def tv_aggregate_credits(self, tv_id, *, language="ja-JP"):
+                return {"cast": []}
+
+            def search_person(self, query, *, language="ja-JP"):
+                return {"results": []}
+
+            def person_combined_credits(self, person_id, *, language="ja-JP"):
+                return {"cast": []}
+
+            def person_details(self, person_id, *, language="ja-JP"):
+                return {"id": 999999, "name": "石坂浩二", "profile_path": "/wrong.jpg"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db, work_id = self._database_with_work(root, "石坂浩二")
+            with connect(db) as connection:
+                result = sync_cast_people_for_work(
+                    connection,
+                    Client(),
+                    work_id=work_id,
+                    media_type="tv",
+                    tmdb_id=38041,
+                    local_cast="石坂浩二",
+                    image_root=root / "TMDbImages",
+                    image_downloader=lambda *args, **kwargs: None,
+                )
+                count = int(connection.execute("SELECT COUNT(*) FROM tmdb_work_people").fetchone()[0])
+            self.assertEqual(result["matchedByReviewedWorkPerson"], 0)
+            self.assertEqual(count, 0)
+
+    def test_reviewed_work_person_map_covers_current_audited_overrides(self):
+        self.assertEqual(
+            REVIEWED_WORK_PERSON_OVERRIDES,
+            {
+                ("tv", 38041, "石坂浩二"): 107961,
+                ("tv", 41756, "DAIGO"): 1111225,
+                ("tv", 46107, "大泉洋"): 40450,
+                ("tv", 83850, "春川恭亮"): 2661404,
+                ("tv", 70214, "TAKAHIRO"): 1448214,
+                ("tv", 63440, "郭智博"): 20345,
+                ("tv", 109233, "EXILE NAOTO"): 2201144,
+            },
+        )
+        self.assertEqual(REVIEWED_PERSON_CREDIT_ALIASES["千紗"], ("CHISA",))
+
+    def test_half_moon_wrong_anime_link_is_repaired_before_people_sync(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = root / "library.db"
+            with connect(db) as connection:
+                initialize_database(connection)
+                stamp = now_iso()
+                connection.execute(
+                    """
+                    INSERT INTO works(
+                        external_work_no,category,year_or_period,official_title,
+                        main_cast_or_voice_actors,created_at,updated_at
+                    ) VALUES(1,'日本映画・ドラマ','2006','半分の月がのぼる空','中山卓也',?,?)
+                    """,
+                    (stamp, stamp),
+                )
+                work_id = int(connection.execute("SELECT last_insert_rowid()").fetchone()[0])
+                connection.execute(
+                    """
+                    INSERT INTO tmdb_work_links(
+                        work_id,media_type,tmdb_id,match_status,confidence,matched_title,matched_year,
+                        created_at,updated_at
+                    ) VALUES(?,'tv',34746,'MATCHED',1.0,'半分の月がのぼる空','2006',?,?)
+                    """,
+                    (work_id, stamp, stamp),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO tmdb_people(
+                        tmdb_person_id,display_name,profile_path,created_at,updated_at
+                    ) VALUES(999,'誤人物','/wrong.jpg',?,?)
+                    """,
+                    (stamp, stamp),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO tmdb_work_people(
+                        work_id,role,local_name,tmdb_person_id,created_at,updated_at
+                    ) VALUES(?,'CAST','中山卓也',999,?,?)
+                    """,
+                    (work_id, stamp, stamp),
+                )
+                connection.commit()
+
+                self.assertEqual(repair_reviewed_bad_work_links(connection), 1)
+                link = connection.execute(
+                    "SELECT media_type,tmdb_id,match_status,matched_title FROM tmdb_work_links WHERE work_id=?",
+                    (work_id,),
+                ).fetchone()
+                people_count = int(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM tmdb_work_people WHERE work_id=?",
+                        (work_id,),
+                    ).fetchone()[0]
+                )
+
+            self.assertEqual(link["match_status"], "UNMATCHED")
+            self.assertIsNone(link["media_type"])
+            self.assertIsNone(link["tmdb_id"])
+            self.assertIsNone(link["matched_title"])
+            self.assertEqual(people_count, 0)
 
     def test_ambiguous_same_name_is_not_auto_matched(self):
         class AmbiguousClient:
@@ -1117,6 +1292,23 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
                     connection,
                     "tmdb:people-sync-version",
                     {"version": 5},
+                    fetched_at=now_iso(),
+                    expires_at=None,
+                )
+                connection.commit()
+                self.assertTrue(people_sync_required(connection))
+
+    def test_people_sync_v6_marker_requires_v7_resync(self):
+        from tmdb_cache import put_cached_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "library.db"
+            with connect(db) as connection:
+                initialize_database(connection)
+                put_cached_json(
+                    connection,
+                    "tmdb:people-sync-version",
+                    {"version": 6},
                     fetched_at=now_iso(),
                     expires_at=None,
                 )
