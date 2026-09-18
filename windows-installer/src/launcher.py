@@ -928,10 +928,12 @@ class VideoLibraryLauncher(tk.Tk):
     def _people_sync_succeeded(self, report: dict[str, Any]) -> None:
         self.people_thread = None
         matched = int(report.get("matchedPeople") or 0)
+        recovered = int(report.get("matchedBySearch") or 0)
         cached = int(report.get("profileCached") or 0)
         failures = int(report.get("failures") or 0)
         self._append_log(
-            f"出演者写真同期: 人物 {matched:,} / 顔写真 {cached:,} / 失敗 {failures:,}"
+            f"出演者写真同期: 人物 {matched:,} / 第2照合回収 {recovered:,} / "
+            f"顔写真 {cached:,} / 失敗 {failures:,}"
         )
         if failures:
             self._append_log("未完了分は次回起動時に自動再試行します。")
