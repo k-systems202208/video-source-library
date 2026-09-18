@@ -98,9 +98,11 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
         client.movie_credits(123)
         client.tv_aggregate_credits(456)
         client.search_person("ジョン・トラボルタ")
+        client.person_combined_credits(8891)
         self.assertTrue(any("/movie/123/credits" in url for url in urls))
         self.assertTrue(any("/tv/456/aggregate_credits" in url for url in urls))
         self.assertTrue(any("/search/person" in url and "query=" in url for url in urls))
+        self.assertTrue(any("/person/8891/combined_credits" in url for url in urls))
 
     def test_cast_names_are_matched_from_work_credits_and_profiles_are_cached(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -224,6 +226,113 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
             self.assertEqual(result["matchedBySearch"], 1)
             self.assertEqual((link["local_name"], link["tmdb_person_id"]), ("ジョン・トラボルタ", 8891))
             self.assertEqual(downloads, [("/travolta.jpg", "w185")])
+
+    def test_third_match_accepts_unique_search_person_whose_combined_credits_contain_work(self):
+        class CombinedClient:
+            def __init__(self):
+                self.combined_calls = 0
+
+            def tv_aggregate_credits(self, tv_id, *, language="ja-JP"):
+                return {
+                    "cast": [
+                        {
+                            "id": 777,
+                            "name": "Different Credit Record",
+                            "original_name": "Different Credit Record",
+                            "profile_path": None,
+                        }
+                    ]
+                }
+
+            def search_person(self, query, *, language="ja-JP"):
+                if query == "山田邦子":
+                    return {
+                        "results": [
+                            {
+                                "id": 1964804,
+                                "name": "山田邦子",
+                                "original_name": "山田邦子",
+                                "profile_path": "/yamada.jpg",
+                            }
+                        ]
+                    }
+                return {"results": []}
+
+            def person_combined_credits(self, person_id, *, language="ja-JP"):
+                self.combined_calls += 1
+                return {
+                    "cast": [
+                        {"id": 155375, "media_type": "tv", "name": "トップスチュワーデス物語"}
+                    ]
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db, work_id = self._database_with_work(root, "山田邦子")
+            client = CombinedClient()
+
+            def downloader(remote_path, destination, *, size):
+                target = Path(destination)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(b"profile")
+                return target
+
+            with connect(db) as connection:
+                result = sync_cast_people_for_work(
+                    connection,
+                    client,
+                    work_id=work_id,
+                    media_type="tv",
+                    tmdb_id=155375,
+                    local_cast="山田邦子",
+                    image_root=root / "TMDbImages",
+                    image_downloader=downloader,
+                )
+                link = connection.execute(
+                    "SELECT local_name,tmdb_person_id FROM tmdb_work_people"
+                ).fetchone()
+
+            self.assertEqual(result["matched"], 1)
+            self.assertEqual(result["matchedBySearch"], 0)
+            self.assertEqual(result["matchedByCombinedCredits"], 1)
+            self.assertEqual((link["local_name"], link["tmdb_person_id"]), ("山田邦子", 1964804))
+            self.assertEqual(client.combined_calls, 1)
+            self.assertTrue(cached_person_image_path(root / "TMDbImages", 1964804, "/yamada.jpg").is_file())
+
+    def test_third_match_rejects_search_person_without_target_work_in_combined_credits(self):
+        class CombinedRejectClient:
+            def tv_aggregate_credits(self, tv_id, *, language="ja-JP"):
+                return {"cast": [{"id": 777, "name": "Other", "original_name": "Other"}]}
+
+            def search_person(self, query, *, language="ja-JP"):
+                return {
+                    "results": [
+                        {"id": 1964804, "name": query, "original_name": query, "profile_path": "/wrong.jpg"}
+                    ]
+                }
+
+            def person_combined_credits(self, person_id, *, language="ja-JP"):
+                return {"cast": [{"id": 999999, "media_type": "tv", "name": "別作品"}]}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db, work_id = self._database_with_work(root, "山田邦子")
+            with connect(db) as connection:
+                result = sync_cast_people_for_work(
+                    connection,
+                    CombinedRejectClient(),
+                    work_id=work_id,
+                    media_type="tv",
+                    tmdb_id=155375,
+                    local_cast="山田邦子",
+                    image_root=root / "TMDbImages",
+                    image_downloader=lambda *args, **kwargs: None,
+                )
+                count = int(connection.execute("SELECT COUNT(*) FROM tmdb_work_people").fetchone()[0])
+
+            self.assertEqual(result["matched"], 0)
+            self.assertEqual(result["matchedByCombinedCredits"], 0)
+            self.assertEqual(count, 0)
 
     def test_person_search_result_outside_work_credits_is_rejected(self):
         class WrongSearchClient:
@@ -436,6 +545,23 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
                     connection,
                     "tmdb:people-sync-version",
                     {"version": 1},
+                    fetched_at=now_iso(),
+                    expires_at=None,
+                )
+                connection.commit()
+                self.assertTrue(people_sync_required(connection))
+
+    def test_people_sync_v2_marker_requires_v3_resync(self):
+        from tmdb_cache import put_cached_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "library.db"
+            with connect(db) as connection:
+                initialize_database(connection)
+                put_cached_json(
+                    connection,
+                    "tmdb:people-sync-version",
+                    {"version": 2},
                     fetched_at=now_iso(),
                     expires_at=None,
                 )

@@ -784,6 +784,7 @@ def sync_tmdb_library(
     rows: list[dict[str, Any]] = []
     people_matched_ids: set[int] = set()
     people_profile_cached_ids: set[int] = set()
+    people_combined_match_count = 0
     people_sync_failures = 0
 
     with connect(database_path) as connection:
@@ -903,6 +904,7 @@ def sync_tmdb_library(
                     )
                     cast_people_matched = int(people_result.get("matched") or 0)
                     cast_profiles_cached = int(people_result.get("profileCached") or 0)
+                    people_combined_match_count += int(people_result.get("matchedByCombinedCredits") or 0)
                     people_matched_ids.update(int(value) for value in people_result.get("personIds") or [])
                     for person_id in people_result.get("personIds") or []:
                         person_row = connection.execute(
@@ -978,6 +980,7 @@ def sync_tmdb_library(
         "backdropCached": sum(1 for item in rows if item["backdropCached"]),
         "peopleMatched": len(people_matched_ids),
         "peopleProfileCached": len(people_profile_cached_ids),
+        "peopleMatchedByCombinedCredits": people_combined_match_count,
         "peopleSyncFailures": people_sync_failures,
     }
     json_path, csv_path = _write_report(Path(report_dir), rows, summary)
