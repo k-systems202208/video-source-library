@@ -732,6 +732,94 @@ def sync_cast_people_for_work(
         "personIds": sorted(set(matched_ids)),
     }
 
+def sync_director_people_for_work(
+    connection: sqlite3.Connection,
+    client: Any,
+    *,
+    work_id: int,
+    media_type: str,
+    tmdb_id: int,
+    local_directors: str | None,
+    image_root: Path | str,
+    image_downloader: Callable[..., Path] = download_tmdb_image,
+) -> dict[str, Any]:
+    names = split_local_people(local_directors)
+    if not names:
+        connection.execute(
+            "DELETE FROM tmdb_work_people WHERE work_id=? AND role='DIRECTOR'",
+            (int(work_id),),
+        )
+        connection.commit()
+        return {
+            "matched": 0,
+            "unmatched": 0,
+            "profileCached": 0,
+            "personIds": [],
+        }
+
+    payload = _cached_credits(connection, client, media_type, tmdb_id)
+    index = _director_index(payload)
+    resolved_people: list[tuple[int, str, dict[str, Any]]] = []
+    unmatched = 0
+    for local_order, local_name in enumerate(names):
+        candidates: dict[int, dict[str, Any]] = {}
+        for query in person_name_queries(local_name):
+            for item in index.get(normalize_person_name(query), []):
+                try:
+                    person_id = int(item.get("id"))
+                except (TypeError, ValueError):
+                    continue
+                if person_id > 0:
+                    candidates[person_id] = item
+        if len(candidates) != 1:
+            unmatched += 1
+            continue
+        resolved_people.append((local_order, local_name, next(iter(candidates.values()))))
+
+    connection.execute(
+        "DELETE FROM tmdb_work_people WHERE work_id=? AND role='DIRECTOR'",
+        (int(work_id),),
+    )
+    matched_ids: list[int] = []
+    cached_ids: list[int] = []
+    stamp = now_iso()
+    for local_order, local_name, item in resolved_people:
+        person_id, profile_path, profile_changed = _upsert_person(connection, item)
+        connection.execute(
+            """
+            INSERT INTO tmdb_work_people(
+                work_id,role,local_name,tmdb_person_id,character_text,billing_order,created_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?)
+            ON CONFLICT(work_id,role,local_name) DO UPDATE SET
+                tmdb_person_id=excluded.tmdb_person_id,
+                character_text=excluded.character_text,
+                billing_order=excluded.billing_order,
+                updated_at=excluded.updated_at
+            """,
+            (int(work_id), "DIRECTOR", local_name, person_id, None, local_order, stamp, stamp),
+        )
+        matched_ids.append(person_id)
+        if profile_path:
+            try:
+                target = cached_person_image_path(image_root, person_id, profile_path)
+                if profile_changed and target.is_file():
+                    target.unlink()
+                if not target.is_file():
+                    image_downloader(profile_path, target, size="w185")
+                if target.is_file():
+                    cached_ids.append(person_id)
+            except Exception:
+                pass
+
+    connection.commit()
+    return {
+        "matched": len(matched_ids),
+        "unmatched": unmatched,
+        "profileCached": len(set(cached_ids)),
+        "personIds": sorted(set(matched_ids)),
+    }
+
+
 def repair_reviewed_bad_work_links(connection: sqlite3.Connection) -> int:
     repaired = 0
     stamp = now_iso()
