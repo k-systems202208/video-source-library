@@ -12,6 +12,7 @@ sys.path.insert(0, str(SRC))
 
 from database import connect, initialize_database, now_iso
 from tmdb_cache import get_cached_json, put_cached_json
+from tmdb_images import cached_image_path
 from tmdb_sync import sync_tmdb_library
 
 
@@ -152,8 +153,16 @@ class PricelessImageRepairV110Tests(unittest.TestCase):
             )
             self.assertEqual(client.detail_calls, [(70203, "ja-JP")])
             self.assertEqual(first["summary"]["matched"], 1)
-            self.assertIn(b"correct-priceless-poster", poster.read_bytes())
-            self.assertIn(b"correct-priceless-backdrop", backdrop.read_bytes())
+            self.assertEqual(poster.read_bytes(), b"wrong poster")
+            self.assertEqual(backdrop.read_bytes(), b"wrong backdrop")
+            current_poster = cached_image_path(
+                images, work_id, "poster", "/correct-priceless-poster.jpg"
+            )
+            current_backdrop = cached_image_path(
+                images, work_id, "backdrop", "/correct-priceless-backdrop.jpg"
+            )
+            self.assertIn(b"correct-priceless-poster", current_poster.read_bytes())
+            self.assertIn(b"correct-priceless-backdrop", current_backdrop.read_bytes())
 
             with connect(db) as connection:
                 row = connection.execute(
