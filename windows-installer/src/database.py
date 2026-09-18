@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def now_iso() -> str:
@@ -280,6 +280,31 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             FOREIGN KEY(work_id) REFERENCES works(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS tmdb_people (
+            tmdb_person_id INTEGER PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            original_name TEXT,
+            profile_path TEXT,
+            known_for_department TEXT,
+            synced_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS tmdb_work_people (
+            work_id INTEGER NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('CAST')),
+            local_name TEXT NOT NULL,
+            tmdb_person_id INTEGER NOT NULL,
+            character_text TEXT,
+            billing_order INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(work_id, role, local_name),
+            FOREIGN KEY(work_id) REFERENCES works(id) ON DELETE CASCADE,
+            FOREIGN KEY(tmdb_person_id) REFERENCES tmdb_people(tmdb_person_id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS tmdb_api_cache (
             cache_key TEXT PRIMARY KEY,
             payload_json TEXT NOT NULL,
@@ -291,6 +316,10 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             ON tmdb_work_links(media_type, tmdb_id);
         CREATE INDEX IF NOT EXISTS idx_tmdb_work_status
             ON tmdb_work_links(match_status);
+        CREATE INDEX IF NOT EXISTS idx_tmdb_work_people_person
+            ON tmdb_work_people(tmdb_person_id);
+        CREATE INDEX IF NOT EXISTS idx_tmdb_work_people_local_name
+            ON tmdb_work_people(role, local_name);
 
         CREATE INDEX IF NOT EXISTS idx_works_category ON works(category);
         CREATE INDEX IF NOT EXISTS idx_works_title ON works(official_title);
