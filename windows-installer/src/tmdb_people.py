@@ -18,9 +18,9 @@ from tmdb_people_reviewed_overrides import REVIEWED_BAD_WORK_MATCHES, REVIEWED_W
 
 _PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 _CREDITS_TTL_DAYS = 30
-_PEOPLE_SYNC_VERSION = 7
+_PEOPLE_SYNC_VERSION = 8
 _PEOPLE_SYNC_CACHE_KEY = "tmdb:people-sync-version"
-_PEOPLE_AUDIT_VERSION = 6
+_PEOPLE_AUDIT_VERSION = 7
 _PEOPLE_AUDIT_CACHE_KEY = "tmdb:people-audit-version"
 
 
@@ -932,6 +932,7 @@ def _write_people_audit_report(
         "profilePaths",
         "matchedWorkCount",
         "matchedWorks",
+        "localWorks",
         "searchQueries",
         "directCreditIds",
         "constrainedSearchIds",
@@ -951,6 +952,7 @@ def _write_people_audit_report(
                     "profilePaths": "|".join(str(v) for v in row.get("profilePaths", [])),
                     "matchedWorkCount": row.get("matchedWorkCount", 0),
                     "matchedWorks": " | ".join(row.get("matchedWorks", [])),
+                    "localWorks": " | ".join(row.get("localWorks", [])),
                     "searchQueries": " | ".join(row.get("searchQueries", [])),
                     "directCreditIds": "|".join(str(v) for v in row.get("directCreditIds", [])),
                     "constrainedSearchIds": "|".join(str(v) for v in row.get("constrainedSearchIds", [])),
@@ -981,7 +983,7 @@ def audit_tmdb_people_profiles(
         work_rows = connection.execute(
             """
             SELECT
-                w.id,w.official_title,w.main_cast_or_voice_actors,
+                w.id,w.official_title,w.year_or_period,w.main_cast_or_voice_actors,
                 t.match_status,t.media_type,t.tmdb_id
             FROM works w
             LEFT JOIN tmdb_work_links t ON t.work_id=w.id
@@ -1023,6 +1025,18 @@ def audit_tmdb_people_profiles(
             search_ids: set[int] = set()
             credit_names: list[str] = []
             matched_work_labels: list[str] = []
+            local_work_labels: list[str] = []
+            for work in person_works:
+                year = str(work["year_or_period"] or "").strip()
+                status = str(work["match_status"] or "NO_LINK").strip() or "NO_LINK"
+                media_type = str(work["media_type"] or "").strip()
+                tmdb_id = work["tmdb_id"]
+                suffix = status
+                if media_type and tmdb_id is not None:
+                    suffix = f"{status} {media_type}:{int(tmdb_id)}"
+                title = str(work["official_title"] or "").strip()
+                label = f"{title} ({year}) [{suffix}]" if year else f"{title} [{suffix}]"
+                local_work_labels.append(label)
 
             if not linked_ids:
                 for work in matched_works:
@@ -1086,6 +1100,7 @@ def audit_tmdb_people_profiles(
                     ),
                     "matchedWorkCount": len(matched_works),
                     "matchedWorks": matched_work_labels,
+                    "localWorks": local_work_labels,
                     "searchQueries": queries,
                     "directCreditIds": sorted(direct_ids),
                     "constrainedSearchIds": sorted(constrained_ids),
