@@ -31,9 +31,9 @@ class CinemaLibraryBaseDesignV110Tests(unittest.TestCase):
         self.assertNotIn('id="scanButton"', self.html)
         self.assertNotIn('id="headerSearch"', self.html)
 
-    def test_display_version_is_not_changed_by_design(self):
+    def test_display_version_matches_current_release(self):
         version = (ROOT / "windows-installer" / "src" / "app_version.py").read_text(encoding="utf-8")
-        self.assertIn('APP_VERSION = "1.1.0"', version)
+        self.assertIn('APP_VERSION = "1.2.0"', version)
 
 
 if __name__ == "__main__":
