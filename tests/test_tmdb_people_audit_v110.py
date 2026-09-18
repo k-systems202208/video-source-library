@@ -166,6 +166,10 @@ class TmdbPeopleAuditTests(unittest.TestCase):
             self.assertEqual(by_name["写真あり俳優"]["reason"], "PROFILE_READY")
             self.assertEqual(by_name["写真なし俳優"]["reason"], "PERSON_NO_PROFILE")
             self.assertEqual(by_name["作品未照合俳優"]["reason"], "NO_MATCHED_WORK")
+            self.assertEqual(by_name["作品未照合俳優"]["localWorks"], ["Unmatched Work [UNMATCHED]"])
+            self.assertEqual(by_name["写真あり俳優"]["localWorks"], ["Ready Work [MATCHED movie:101]"])
+            csv_header = Path(report["csvReport"]).read_text(encoding="utf-8-sig").splitlines()[0]
+            self.assertIn("localWorks", csv_header)
 
     def test_audit_classifies_credit_mismatch_search_outside_and_ambiguous(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -325,6 +329,22 @@ class TmdbPeopleAuditTests(unittest.TestCase):
                     connection,
                     "tmdb:people-audit-version",
                     {"version": 5},
+                    fetched_at=now_iso(),
+                    expires_at=None,
+                )
+                connection.commit()
+                self.assertTrue(people_audit_required(connection))
+
+    def test_people_audit_v6_marker_requires_v7_reaudit(self):
+        from tmdb_cache import put_cached_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = self._db(Path(tmp))
+            with connect(db) as connection:
+                put_cached_json(
+                    connection,
+                    "tmdb:people-audit-version",
+                    {"version": 6},
                     fetched_at=now_iso(),
                     expires_at=None,
                 )
