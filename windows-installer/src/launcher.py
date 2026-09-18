@@ -27,7 +27,7 @@ from paths import CONFIG_PATH, DATABASE_PATH, DATA_ROOT, RUNTIME_PATH
 from remote_access import disable_remote_access, enable_remote_access, get_remote_status
 from scan_runner import scan_library
 from server import create_server
-from tmdb_people import audit_tmdb_director_profiles, audit_tmdb_people_profiles, people_audit_required, people_sync_required, sync_tmdb_people_library
+from tmdb_people import audit_tmdb_people_profiles, people_audit_required, people_sync_required, sync_tmdb_people_library
 from tmdb_sync import sync_tmdb_library
 
 APP_NAME = "自宅動画ライブラリ"
@@ -928,13 +928,13 @@ class VideoLibraryLauncher(tk.Tk):
                 if not sync_required and not audit_required:
                     return
         except Exception as exc:
-            self._append_log(f"人物写真同期の確認に失敗: {exc}")
+            self._append_log(f"出演者写真同期の確認に失敗: {exc}")
             return
 
         if sync_required:
-            self._append_log("出演者／声優・監督／演出の顔写真をバックグラウンド同期します。")
+            self._append_log("出演者／声優の顔写真をバックグラウンド同期します。")
         else:
-            self._append_log("人物写真監査をバックグラウンド実行します。")
+            self._append_log("出演者／声優の顔写真監査をバックグラウンド実行します。")
         self.people_thread = threading.Thread(
             target=self._people_sync_worker,
             args=(token, sync_required),
@@ -955,8 +955,6 @@ class VideoLibraryLauncher(tk.Tk):
             else:
                 report = {
                     "matchedPeople": 0,
-                    "matchedCast": 0,
-                    "matchedDirectors": 0,
                     "matchedBySearch": 0,
                     "matchedByCombinedCredits": 0,
                     "matchedByUniqueExactSearch": 0,
@@ -972,10 +970,6 @@ class VideoLibraryLauncher(tk.Tk):
                         TMDB_REPORT_OUTPUT_PATH,
                         token,
                     ),
-                    "directorAudit": audit_tmdb_director_profiles(
-                        DATABASE_PATH,
-                        TMDB_REPORT_OUTPUT_PATH,
-                    ),
                 }
         except Exception as exc:
             self.after(0, lambda e=exc: self._people_sync_failed(e))
@@ -985,8 +979,6 @@ class VideoLibraryLauncher(tk.Tk):
     def _people_sync_succeeded(self, report: dict[str, Any]) -> None:
         self.people_thread = None
         matched = int(report.get("matchedPeople") or 0)
-        matched_cast = int(report.get("matchedCast") or 0)
-        matched_directors = int(report.get("matchedDirectors") or 0)
         recovered = int(report.get("matchedBySearch") or 0)
         recovered_combined = int(report.get("matchedByCombinedCredits") or 0)
         recovered_unique = int(report.get("matchedByUniqueExactSearch") or 0)
@@ -997,8 +989,7 @@ class VideoLibraryLauncher(tk.Tk):
         cached = int(report.get("profileCached") or 0)
         failures = int(report.get("failures") or 0)
         self._append_log(
-            f"人物写真同期: 人物 {matched:,} / 出演者・声優 {matched_cast:,} / 監督・演出 {matched_directors:,} / "
-            f"第2照合回収 {recovered:,} / "
+            f"出演者写真同期: 人物 {matched:,} / 第2照合回収 {recovered:,} / "
             f"第3照合回収 {recovered_combined:,} / 第4照合回収 {recovered_unique:,} / "
             f"第5照合回収 {recovered_alias:,} / 第6照合回収 {recovered_reviewed:,} / "
             f"第7照合回収 {recovered_work_person:,} / 誤作品リンク修復 {repaired_work_links:,} / "
@@ -1019,25 +1010,12 @@ class VideoLibraryLauncher(tk.Tk):
             )
             self._append_log(f"人物監査JSON: {audit.get('jsonReport', '')}")
             self._append_log(f"人物監査CSV : {audit.get('csvReport', '')}")
-        director_audit = report.get("directorAudit") or {}
-        director_summary = director_audit.get("summary") or {}
-        if director_audit:
-            self._append_log(
-                "監督／演出写真監査: "
-                f"写真あり {int(director_summary.get('profileReady') or 0):,} / "
-                f"TMDb人物あり写真なし {int(director_summary.get('personNoProfile') or 0):,} / "
-                f"TMDb未照合作品のみ {int(director_summary.get('noMatchedWork') or 0):,} / "
-                f"Directing credits候補なし {int(director_summary.get('directorCreditNotFound') or 0):,} / "
-                f"曖昧 {int(director_summary.get('ambiguous') or 0):,}"
-            )
-            self._append_log(f"監督監査JSON: {director_audit.get('jsonReport', '')}")
-            self._append_log(f"監督監査CSV : {director_audit.get('csvReport', '')}")
         if failures:
             self._append_log("未完了分は次回起動時に自動再試行します。")
 
     def _people_sync_failed(self, exc: Exception) -> None:
         self.people_thread = None
-        self._append_log(f"人物写真同期 ERROR: {type(exc).__name__}: {exc}")
+        self._append_log(f"出演者写真同期 ERROR: {type(exc).__name__}: {exc}")
         self._append_log("次回起動時に自動再試行します。")
 
     def _startup_scan_failed(self, exc: Exception) -> None:
