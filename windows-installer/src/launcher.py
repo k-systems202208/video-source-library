@@ -957,6 +957,8 @@ class VideoLibraryLauncher(tk.Tk):
                     "matchedPeople": 0,
                     "matchedCast": 0,
                     "matchedDirectors": 0,
+                    "matchedDirectorsExact": 0,
+                    "matchedDirectorsBySearch": 0,
                     "matchedBySearch": 0,
                     "matchedByCombinedCredits": 0,
                     "matchedByUniqueExactSearch": 0,
@@ -975,6 +977,7 @@ class VideoLibraryLauncher(tk.Tk):
                     "directorAudit": audit_tmdb_director_profiles(
                         DATABASE_PATH,
                         TMDB_REPORT_OUTPUT_PATH,
+                        token,
                     ),
                 }
         except Exception as exc:
@@ -987,6 +990,8 @@ class VideoLibraryLauncher(tk.Tk):
         matched = int(report.get("matchedPeople") or 0)
         matched_cast = int(report.get("matchedCast") or 0)
         matched_directors = int(report.get("matchedDirectors") or 0)
+        matched_directors_exact = int(report.get("matchedDirectorsExact") or 0)
+        matched_directors_by_search = int(report.get("matchedDirectorsBySearch") or 0)
         recovered = int(report.get("matchedBySearch") or 0)
         recovered_combined = int(report.get("matchedByCombinedCredits") or 0)
         recovered_unique = int(report.get("matchedByUniqueExactSearch") or 0)
@@ -997,8 +1002,9 @@ class VideoLibraryLauncher(tk.Tk):
         cached = int(report.get("profileCached") or 0)
         failures = int(report.get("failures") or 0)
         self._append_log(
-            f"人物写真同期: 人物 {matched:,} / 出演者・声優 {matched_cast:,} / 監督・演出 {matched_directors:,} / "
-            f"第2照合回収 {recovered:,} / "
+            f"人物写真同期: 人物 {matched:,} / 出演者・声優 {matched_cast:,} / 監督・演出 {matched_directors:,} "
+            f"(直接 {matched_directors_exact:,} / 第2照合 {matched_directors_by_search:,}) / "
+            f"出演者第2照合回収 {recovered:,} / "
             f"第3照合回収 {recovered_combined:,} / 第4照合回収 {recovered_unique:,} / "
             f"第5照合回収 {recovered_alias:,} / 第6照合回収 {recovered_reviewed:,} / "
             f"第7照合回収 {recovered_work_person:,} / 誤作品リンク修復 {repaired_work_links:,} / "
@@ -1027,8 +1033,11 @@ class VideoLibraryLauncher(tk.Tk):
                 f"写真あり {int(director_summary.get('profileReady') or 0):,} / "
                 f"TMDb人物あり写真なし {int(director_summary.get('personNoProfile') or 0):,} / "
                 f"TMDb未照合作品のみ {int(director_summary.get('noMatchedWork') or 0):,} / "
-                f"Directing credits候補なし {int(director_summary.get('directorCreditNotFound') or 0):,} / "
-                f"曖昧 {int(director_summary.get('ambiguous') or 0):,}"
+                f"credits表記差 {int(director_summary.get('directorCreditNameMismatch') or 0):,} / "
+                f"検索候補がDirector credits外 {int(director_summary.get('personSearchNotInDirectorCredits') or 0):,} / "
+                f"Director credits候補なし {int(director_summary.get('directorCreditNotFound') or 0):,} / "
+                f"曖昧 {int(director_summary.get('ambiguous') or 0):,} / "
+                f"要確認 {int(director_summary.get('needsReview') or 0):,}"
             )
             self._append_log(f"監督監査JSON: {director_audit.get('jsonReport', '')}")
             self._append_log(f"監督監査CSV : {director_audit.get('csvReport', '')}")
