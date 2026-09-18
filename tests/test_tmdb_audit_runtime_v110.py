@@ -93,15 +93,15 @@ class TmdbRuntimeAuditTests(unittest.TestCase):
             )
 
             self.assertEqual(result["summary"]["appVersion"], "1.1.0")
-            self.assertEqual(result["summary"]["matcherVersion"], 7)
+            self.assertEqual(result["summary"]["matcherVersion"], 8)
             self.assertEqual(result["summary"]["matched"], 1)
 
             with Path(result["jsonReport"]).open("r", encoding="utf-8") as handle:
                 payload = json.load(handle)
             self.assertEqual(payload["summary"]["appVersion"], "1.1.0")
-            self.assertEqual(payload["summary"]["matcherVersion"], 7)
+            self.assertEqual(payload["summary"]["matcherVersion"], 8)
             self.assertEqual(payload["items"][0]["appVersion"], "1.1.0")
-            self.assertEqual(payload["items"][0]["matcherVersion"], 7)
+            self.assertEqual(payload["items"][0]["matcherVersion"], 8)
 
             with Path(result["csvReport"]).open("r", encoding="utf-8-sig", newline="") as handle:
                 row = next(csv.DictReader(handle))
@@ -120,7 +120,7 @@ class TmdbRuntimeAuditTests(unittest.TestCase):
                 marker = connection.execute(
                     "SELECT payload_json FROM tmdb_api_cache WHERE cache_key='tmdb:matcher-version'"
                 ).fetchone()
-                self.assertIn('\"version\":7', marker["payload_json"])
+                self.assertIn('\"version\":8', marker["payload_json"])
 
 
 if __name__ == "__main__":
