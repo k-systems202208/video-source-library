@@ -396,6 +396,7 @@ def sync_cast_people_for_work(
             "matched": 0,
             "matchedExact": 0,
             "matchedBySearch": 0,
+            "matchedByCombinedCredits": 0,
             "unmatched": 0,
             "profileCached": 0,
             "personIds": [],
