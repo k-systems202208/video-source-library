@@ -1023,6 +1023,8 @@ def sync_tmdb_people_library(
     matched_by_credit_alias = 0
     matched_by_reviewed_alias = 0
     matched_by_reviewed_work_person = 0
+    matched_directors_exact = 0
+    matched_directors_by_search = 0
     repaired_work_links = 0
 
     with connect(database_path) as connection:
@@ -1081,6 +1083,8 @@ def sync_tmdb_people_library(
                         image_downloader=image_downloader,
                     )
                     current_directors = {int(value) for value in director_result.get("personIds") or []}
+                    matched_directors_exact += int(director_result.get("matchedExact") or 0)
+                    matched_directors_by_search += int(director_result.get("matchedBySearch") or 0)
                     director_ids.update(current_directors)
                     matched_ids.update(current_directors)
                     work_person_ids.update(current_directors)
@@ -1108,6 +1112,8 @@ def sync_tmdb_people_library(
                         "total": total,
                         "matchedPeople": len(matched_ids),
                         "matchedDirectors": len(director_ids),
+                        "matchedDirectorsExact": matched_directors_exact,
+                        "matchedDirectorsBySearch": matched_directors_by_search,
                         "profileCached": len(cached_ids),
                         "matchedBySearch": matched_by_search,
                         "matchedByCombinedCredits": matched_by_combined,
@@ -1130,6 +1136,8 @@ def sync_tmdb_people_library(
         "matchedPeople": len(matched_ids),
         "matchedCast": len(cast_person_ids),
         "matchedDirectors": len(director_ids),
+        "matchedDirectorsExact": matched_directors_exact,
+        "matchedDirectorsBySearch": matched_directors_by_search,
         "profileCached": len(cached_ids),
         "matchedBySearch": matched_by_search,
         "matchedByCombinedCredits": matched_by_combined,
@@ -1151,6 +1159,8 @@ def sync_tmdb_people_library(
         result["directorAudit"] = audit_tmdb_director_profiles(
             database_path,
             report_dir,
+            token,
+            client=tmdb,
         )
     return result
 
