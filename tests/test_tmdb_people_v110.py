@@ -359,6 +359,18 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
                 self.assertIsNotNone(row)
                 self.assertEqual(int(row["tmdb_person_id"]), 500)
 
+    def test_people_directory_splits_compound_names_and_removes_role_notes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db, work_id = self._database_with_work(
+                root,
+                "戸次重幸／櫻井翔、小林薫 ほか（各話ゲスト）、櫻井孝宏（声）",
+            )
+            with connect(db) as connection:
+                people = list_people(connection, role="cast")
+            names = {item["name"] for item in people["items"]}
+            self.assertEqual(names, {"戸次重幸", "櫻井翔", "小林薫", "櫻井孝宏"})
+
     def test_credits_api_payload_is_cached_between_syncs(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
