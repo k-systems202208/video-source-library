@@ -919,6 +919,7 @@ class VideoLibraryLauncher(tk.Tk):
                 DATABASE_PATH,
                 TMDB_IMAGE_PATH,
                 token,
+                report_dir=TMDB_REPORT_OUTPUT_PATH,
             )
         except Exception as exc:
             self.after(0, lambda e=exc: self._people_sync_failed(e))
@@ -935,6 +936,21 @@ class VideoLibraryLauncher(tk.Tk):
             f"出演者写真同期: 人物 {matched:,} / 第2照合回収 {recovered:,} / "
             f"顔写真 {cached:,} / 失敗 {failures:,}"
         )
+        audit = report.get("peopleAudit") or {}
+        audit_summary = audit.get("summary") or {}
+        if audit:
+            self._append_log(
+                "人物写真監査: "
+                f"写真あり {int(audit_summary.get('profileReady') or 0):,} / "
+                f"TMDb人物あり写真なし {int(audit_summary.get('personNoProfile') or 0):,} / "
+                f"TMDb未照合作品のみ {int(audit_summary.get('noMatchedWork') or 0):,} / "
+                f"credits表記差 {int(audit_summary.get('creditNameMismatch') or 0):,} / "
+                f"検索候補がcredits外 {int(audit_summary.get('personSearchNotInCredits') or 0):,} / "
+                f"credits候補なし {int(audit_summary.get('creditPersonNotFound') or 0):,} / "
+                f"曖昧 {int(audit_summary.get('ambiguous') or 0):,}"
+            )
+            self._append_log(f"人物監査JSON: {audit.get('jsonReport', '')}")
+            self._append_log(f"人物監査CSV : {audit.get('csvReport', '')}")
         if failures:
             self._append_log("未完了分は次回起動時に自動再試行します。")
 
