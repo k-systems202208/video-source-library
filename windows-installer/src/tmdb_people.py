@@ -24,7 +24,7 @@ from tmdb_people_reviewed_overrides import (
 
 _PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 _CREDITS_TTL_DAYS = 30
-_PEOPLE_SYNC_VERSION = 9
+_PEOPLE_SYNC_VERSION = 10
 _PEOPLE_SYNC_CACHE_KEY = "tmdb:people-sync-version"
 _PEOPLE_AUDIT_VERSION = 8
 _PEOPLE_AUDIT_CACHE_KEY = "tmdb:people-audit-version"
@@ -49,6 +49,26 @@ def split_local_people(value: str | None) -> list[str]:
             continue
         seen.add(key)
         result.append(name)
+    return result
+
+
+def split_local_directors(value: str | None) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for name in split_local_people(value):
+        parts = [part.strip() for part in name.split("・")]
+        should_split = (
+            len(parts) > 1
+            and all(part for part in parts)
+            and all(re.search(r"[\\u3400-\\u9fff々〆ヵヶ]", part) for part in parts)
+        )
+        candidates = parts if should_split else [name]
+        for candidate in candidates:
+            cleaned = _clean_local_person_label(candidate)
+            key = normalize_person_name(cleaned)
+            if cleaned and key and key not in seen:
+                seen.add(key)
+                result.append(cleaned)
     return result
 
 
@@ -339,6 +359,74 @@ def _director_index(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
             if key:
                 index.setdefault(key, []).append(item)
     return index
+
+
+def _director_by_id(payload: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    crew = payload.get("crew")
+    if not isinstance(crew, list):
+        return {}
+    result: dict[int, dict[str, Any]] = {}
+    for item in crew:
+        if not isinstance(item, dict) or not _is_directing_credit(item):
+            continue
+        try:
+            person_id = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        if person_id > 0:
+            result[person_id] = item
+    return result
+
+
+def _resolve_director_candidate(
+    connection: sqlite3.Connection,
+    client: Any,
+    payload: dict[str, Any],
+    index: dict[str, list[dict[str, Any]]],
+    local_name: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    queries = person_name_queries(local_name)
+    direct_matches: dict[int, dict[str, Any]] = {}
+    for query in queries:
+        for item in index.get(normalize_person_name(query), []):
+            try:
+                person_id = int(item.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if person_id > 0:
+                direct_matches[person_id] = item
+    if len(direct_matches) == 1:
+        return next(iter(direct_matches.values())), "EXACT"
+    if len(direct_matches) > 1:
+        return None, None
+
+    director_items = _director_by_id(payload)
+    constrained: dict[int, tuple[dict[str, Any], dict[str, Any]]] = {}
+    for query in queries:
+        search_payload = _cached_person_search(connection, client, query)
+        results = search_payload.get("results")
+        if not isinstance(results, list):
+            continue
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            try:
+                person_id = int(result.get("id"))
+            except (TypeError, ValueError):
+                continue
+            crew_item = director_items.get(person_id)
+            if crew_item is not None:
+                constrained[person_id] = (crew_item, result)
+
+    if len(constrained) != 1:
+        return None, None
+    person_id, (crew_item, search_item) = next(iter(constrained.items()))
+    resolved = dict(crew_item)
+    for field in ("name", "original_name", "profile_path", "known_for_department"):
+        if not resolved.get(field) and search_item.get(field):
+            resolved[field] = search_item.get(field)
+    resolved["id"] = person_id
+    return resolved, "CREDIT_CONSTRAINED_SEARCH"
 
 
 def _unique_candidate(index: dict[str, list[dict[str, Any]]], local_name: str) -> dict[str, Any] | None:
