@@ -215,7 +215,8 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
         launcher = (SRC / "launcher.py").read_text(encoding="utf-8")
         self.assertIn("def _start_people_sync_if_needed", launcher)
         self.assertIn("sync_tmdb_people_library(", launcher)
-        self.assertIn("self.open_browser()", launcher)\n        self.assertIn("self._start_people_sync_if_needed()", launcher)
+        self.assertIn("self.open_browser()", launcher)
+        self.assertIn("self._start_people_sync_if_needed()", launcher)
         self.assertIn("次回起動時に自動再試行します", launcher)
 
     def test_person_image_is_served_through_local_application_route(self):
