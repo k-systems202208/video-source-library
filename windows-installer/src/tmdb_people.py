@@ -11,17 +11,24 @@ from database import connect, initialize_database, now_iso
 from tmdb_cache import get_cached_json, put_cached_json
 from tmdb_images import cached_person_image_path, download_tmdb_image
 
-_PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||\r?\n|\s+/\s+)\s*")
+_PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 _CREDITS_TTL_DAYS = 30
-_PEOPLE_SYNC_VERSION = 1
+_PEOPLE_SYNC_VERSION = 2
 _PEOPLE_SYNC_CACHE_KEY = "tmdb:people-sync-version"
+
+
+def _clean_local_person_label(value: str | None) -> str:
+    name = str(value or "").strip()
+    name = re.sub(r"\s*(?:ほか|他)(?:[（(][^）)]*[）)])?$", "", name).strip()
+    name = re.sub(r"[（(](?:各話ゲスト多数?|声)[）)]$", "", name).strip()
+    return name
 
 
 def split_local_people(value: str | None) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
     for raw in _PERSON_SPLIT_RE.split(str(value or "")):
-        name = re.sub(r"\s*(?:ほか|他)$", "", raw.strip()).strip()
+        name = _clean_local_person_label(raw)
         if not name:
             continue
         key = normalize_person_name(name)
@@ -39,6 +46,54 @@ def normalize_person_name(value: str | None) -> str:
 
 def _credits_cache_key(media_type: str, tmdb_id: int) -> str:
     return f"tmdb:credits:v1:{media_type}:{int(tmdb_id)}:ja-JP"
+
+
+def person_name_queries(local_name: str) -> list[str]:
+    text = str(local_name or "").strip()
+    values: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str | None) -> None:
+        candidate = str(value or "").strip()
+        key = normalize_person_name(candidate)
+        if candidate and key and key not in seen:
+            seen.add(key)
+            values.append(candidate)
+
+    add(text)
+    add(re.sub(r"[（(][^）)]*[）)]", "", text).strip())
+    for match in re.findall(r"[（(]([^）)]*)[）)]", text):
+        alternate = str(match or "").strip()
+        alternate = re.sub(r"^(?:現|旧|旧芸名|本名)\s*[・:：]\s*", "", alternate).strip()
+        if alternate and alternate not in {"声", "各話ゲスト", "各話ゲスト多数"}:
+            add(alternate)
+    return values
+
+
+def _person_search_cache_key(query: str) -> str:
+    return f"tmdb:person-search:v1:{normalize_person_name(query)}"
+
+
+def _cached_person_search(
+    connection: sqlite3.Connection,
+    client: Any,
+    query: str,
+) -> dict[str, Any]:
+    key = _person_search_cache_key(query)
+    cached = get_cached_json(connection, key)
+    if isinstance(cached, dict):
+        return cached
+    search = getattr(client, "search_person", None)
+    if not callable(search):
+        return {}
+    value = search(query, language="ja-JP")
+    if not isinstance(value, dict):
+        value = {}
+    fetched = now_iso()
+    expiry = (datetime.fromisoformat(fetched) + timedelta(days=_CREDITS_TTL_DAYS)).isoformat(timespec="seconds")
+    put_cached_json(connection, key, value, fetched_at=fetched, expires_at=expiry)
+    connection.commit()
+    return value
 
 
 def _cached_credits(
@@ -139,6 +194,71 @@ def _unique_candidate(index: dict[str, list[dict[str, Any]]], local_name: str) -
     return next(iter(by_id.values()))
 
 
+def _cast_by_id(payload: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    cast = payload.get("cast")
+    if not isinstance(cast, list):
+        return {}
+    result: dict[int, dict[str, Any]] = {}
+    for item in cast:
+        if not isinstance(item, dict):
+            continue
+        try:
+            person_id = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        if person_id > 0:
+            result[person_id] = item
+    return result
+
+
+def _resolve_candidate(
+    connection: sqlite3.Connection,
+    client: Any,
+    payload: dict[str, Any],
+    index: dict[str, list[dict[str, Any]]],
+    local_name: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    queries = person_name_queries(local_name)
+    for query in queries:
+        direct = _unique_candidate(index, query)
+        if direct is not None:
+            return direct, "EXACT"
+
+    cast_items = _cast_by_id(payload)
+    if not cast_items:
+        return None, None
+
+    matched: dict[int, tuple[dict[str, Any], dict[str, Any]]] = {}
+    for query in queries:
+        search_payload = _cached_person_search(connection, client, query)
+        results = search_payload.get("results")
+        if not isinstance(results, list):
+            continue
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            try:
+                person_id = int(result.get("id"))
+            except (TypeError, ValueError):
+                continue
+            cast_item = cast_items.get(person_id)
+            if cast_item is not None:
+                matched[person_id] = (cast_item, result)
+
+    if len(matched) != 1:
+        return None, None
+
+    cast_item, search_item = next(iter(matched.values()))
+    resolved = dict(cast_item)
+    if not resolved.get("profile_path") and search_item.get("profile_path"):
+        resolved["profile_path"] = search_item.get("profile_path")
+    if not resolved.get("name") and search_item.get("name"):
+        resolved["name"] = search_item.get("name")
+    if not resolved.get("original_name") and search_item.get("original_name"):
+        resolved["original_name"] = search_item.get("original_name")
+    return resolved, "CREDIT_CONSTRAINED_SEARCH"
+
+
 def _upsert_person(connection: sqlite3.Connection, item: dict[str, Any]) -> tuple[int, str | None, bool]:
     person_id = int(item["id"])
     display_name = str(item.get("name") or item.get("original_name") or person_id).strip()
@@ -200,12 +320,20 @@ def sync_cast_people_for_work(
     )
     matched_ids: list[int] = []
     cached_ids: list[int] = []
+    matched_exact = 0
+    matched_search = 0
+    unmatched = 0
     stamp = now_iso()
 
     for local_order, local_name in enumerate(names):
-        item = _unique_candidate(index, local_name)
+        item, match_method = _resolve_candidate(connection, client, payload, index, local_name)
         if item is None:
+            unmatched += 1
             continue
+        if match_method == "EXACT":
+            matched_exact += 1
+        elif match_method == "CREDIT_CONSTRAINED_SEARCH":
+            matched_search += 1
         person_id, profile_path, profile_changed = _upsert_person(connection, item)
         character = _character_text(item) or None
         billing_order = _billing_order(item, local_order)
@@ -239,6 +367,9 @@ def sync_cast_people_for_work(
     connection.commit()
     return {
         "matched": len(matched_ids),
+        "matchedExact": matched_exact,
+        "matchedBySearch": matched_search,
+        "unmatched": unmatched,
         "profileCached": len(set(cached_ids)),
         "personIds": sorted(set(matched_ids)),
     }
