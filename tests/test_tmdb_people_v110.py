@@ -1656,6 +1656,54 @@ class TmdbDirectorPhase2Tests(unittest.TestCase):
             ["佐藤卓哉", "浜崎博嗣", "マイク・ニューウェル"],
         )
 
+    def test_director_audit_resolves_known_unmatched_structures(self):
+        class NoCallClient:
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = root / "library.db"
+            with connect(db) as connection:
+                initialize_database(connection)
+                stamp = now_iso()
+                rows = [
+                    (1, "男はつらいよ", "1969-2019", "山田洋次（シリーズ中心）", "REVIEW", "movie", 125271),
+                    (2, "半分の月がのぼる空", "2006", "遠藤光貴", "UNMATCHED", None, None),
+                ]
+                for external_no, title, year, director, status, media_type, tmdb_id in rows:
+                    connection.execute(
+                        """
+                        INSERT INTO works(
+                            external_work_no,category,year_or_period,official_title,director_or_direction,created_at,updated_at
+                        ) VALUES(?,'日本映画・ドラマ',?,?,?,?,?)
+                        """,
+                        (external_no, year, title, director, stamp, stamp),
+                    )
+                    work_id = int(connection.execute("SELECT last_insert_rowid()").fetchone()[0])
+                    connection.execute(
+                        """
+                        INSERT INTO tmdb_work_links(
+                            work_id,media_type,tmdb_id,match_status,created_at,updated_at
+                        ) VALUES(?,?,?,?,?,?)
+                        """,
+                        (work_id, media_type, tmdb_id, status, stamp, stamp),
+                    )
+                connection.commit()
+
+            audit = audit_tmdb_director_profiles(
+                db,
+                root / "diagnostics",
+                "token",
+                client=NoCallClient(),
+            )
+            self.assertEqual(audit["summary"]["noMatchedWork"], 2)
+            self.assertEqual(audit["summary"]["needsReview"], 0)
+            import csv as csv_module
+            with Path(audit["csvReport"]).open("r", encoding="utf-8-sig", newline="") as handle:
+                items = {row["name"]: row for row in csv_module.DictReader(handle)}
+            self.assertEqual(items["山田洋次（シリーズ中心）"]["resolution"], "INTENTIONAL_AGGREGATE_REVIEW")
+            self.assertEqual(items["遠藤光貴"]["resolution"], "INTENTIONAL_STRUCTURE_UNMATCHED")
+
     def test_tv_aggregate_director_jobs_are_supported(self):
         class TvDirectorClient:
             def tv_aggregate_credits(self, tv_id, *, language="ja-JP"):
