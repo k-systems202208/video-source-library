@@ -155,6 +155,13 @@ class TmdbClient:
         )
         return value if isinstance(value, dict) else {}
 
+    def person_details(self, person_id: int, *, language: str = "ja-JP") -> dict[str, Any]:
+        value = self.get_json(
+            f"/person/{int(person_id)}",
+            {"language": language},
+        )
+        return value if isinstance(value, dict) else {}
+
     def movie_details(self, movie_id: int, *, language: str = "ja-JP") -> dict[str, Any]:
         value = self.get_json(f"/movie/{int(movie_id)}", {"language": language})
         return value if isinstance(value, dict) else {}
