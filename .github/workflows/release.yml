@@ -40,6 +40,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = '${{ steps.version.outputs.tag }}'
+          $PSNativeCommandUseErrorActionPreference = $false
           gh release view $tag --repo '${{ github.repository }}' *> $null
           if ($LASTEXITCODE -eq 0) {
             "should_release=false" >> $env:GITHUB_OUTPUT
