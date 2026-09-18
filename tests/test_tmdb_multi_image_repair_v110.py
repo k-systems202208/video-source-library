@@ -111,7 +111,7 @@ class TmdbMultiImageRepairV110Tests(unittest.TestCase):
                 db, images, reports, "token", client=client, image_downloader=downloader
             )
             self.assertEqual(client.detail_calls, [(18819, "ja-JP")])
-            self.assertEqual(result["summary"]["matcherVersion"], 7)
+            self.assertEqual(result["summary"]["matcherVersion"], 8)
             self.assertNotEqual(poster.read_bytes(), b"wrong poster")
             self.assertNotEqual(backdrop.read_bytes(), b"wrong backdrop")
             self.assertIn(b"correct-smile-poster", poster.read_bytes())
