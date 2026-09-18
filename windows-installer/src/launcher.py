@@ -420,6 +420,7 @@ class VideoLibraryLauncher(tk.Tk):
         people = int(summary.get("peopleMatched") or 0)
         people_profiles = int(summary.get("peopleProfileCached") or 0)
         people_combined = int(summary.get("peopleMatchedByCombinedCredits") or 0)
+        people_unique = int(summary.get("peopleMatchedByUniqueExactSearch") or 0)
         people_failures = int(summary.get("peopleSyncFailures") or 0)
         self.scan_progress.configure(mode="determinate", maximum=max(1, total))
         self.scan_progress["value"] = total
@@ -432,7 +433,8 @@ class VideoLibraryLauncher(tk.Tk):
         )
         self._append_log(
             f"ポスター {posters:,} / 背景 {backdrops:,} / 出演者 {people:,} / 顔写真 {people_profiles:,} / "
-            f"第3照合回収 {people_combined:,} / 人物同期失敗 {people_failures:,} / JSON: {report.get('jsonReport', '')}"
+            f"第3照合回収 {people_combined:,} / 第4照合回収 {people_unique:,} / "
+            f"人物同期失敗 {people_failures:,} / JSON: {report.get('jsonReport', '')}"
         )
         self._append_log(f"CSV : {report.get('csvReport', '')}")
         people_audit = report.get("peopleAudit") or {}
@@ -457,7 +459,8 @@ class VideoLibraryLauncher(tk.Tk):
             f"登録作品: {total:,}\nMATCHED: {matched:,}\nREVIEW: {review:,}\nUNMATCHED: {unmatched:,}\n"
             f"ポスター保存: {posters:,}\n背景保存: {backdrops:,}\n"
             f"出演者照合: {people:,}\n顔写真保存: {people_profiles:,}\n"
-            f"第3照合回収: {people_combined:,}\n人物同期失敗: {people_failures:,}\n\n"
+            f"第3照合回収: {people_combined:,}\n第4照合回収: {people_unique:,}\n"
+            f"人物同期失敗: {people_failures:,}\n\n"
             "REVIEWおよび一意に照合できない人物は自動確定していません。",
         )
 
@@ -948,6 +951,7 @@ class VideoLibraryLauncher(tk.Tk):
                     "matchedPeople": 0,
                     "matchedBySearch": 0,
                     "matchedByCombinedCredits": 0,
+                    "matchedByUniqueExactSearch": 0,
                     "profileCached": 0,
                     "failures": 0,
                     "completed": True,
@@ -967,11 +971,13 @@ class VideoLibraryLauncher(tk.Tk):
         matched = int(report.get("matchedPeople") or 0)
         recovered = int(report.get("matchedBySearch") or 0)
         recovered_combined = int(report.get("matchedByCombinedCredits") or 0)
+        recovered_unique = int(report.get("matchedByUniqueExactSearch") or 0)
         cached = int(report.get("profileCached") or 0)
         failures = int(report.get("failures") or 0)
         self._append_log(
             f"出演者写真同期: 人物 {matched:,} / 第2照合回収 {recovered:,} / "
-            f"第3照合回収 {recovered_combined:,} / 顔写真 {cached:,} / 失敗 {failures:,}"
+            f"第3照合回収 {recovered_combined:,} / 第4照合回収 {recovered_unique:,} / "
+            f"顔写真 {cached:,} / 失敗 {failures:,}"
         )
         audit = report.get("peopleAudit") or {}
         audit_summary = audit.get("summary") or {}

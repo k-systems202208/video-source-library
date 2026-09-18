@@ -16,9 +16,9 @@ from tmdb_images import cached_person_image_path, download_tmdb_image
 
 _PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 _CREDITS_TTL_DAYS = 30
-_PEOPLE_SYNC_VERSION = 3
+_PEOPLE_SYNC_VERSION = 4
 _PEOPLE_SYNC_CACHE_KEY = "tmdb:people-sync-version"
-_PEOPLE_AUDIT_VERSION = 2
+_PEOPLE_AUDIT_VERSION = 3
 _PEOPLE_AUDIT_CACHE_KEY = "tmdb:people-audit-version"
 
 
@@ -278,9 +278,6 @@ def _resolve_candidate(
             return direct, "EXACT"
 
     cast_items = _cast_by_id(payload)
-    if not cast_items:
-        return None, None
-
     matched: dict[int, tuple[dict[str, Any], dict[str, Any]]] = {}
     for query in queries:
         search_payload = _cached_person_search(connection, client, query)
@@ -335,12 +332,49 @@ def _resolve_candidate(
             if _combined_credits_has_work(combined, media_type, tmdb_id):
                 work_verified[person_id] = result
 
-    if len(work_verified) != 1:
+    if len(work_verified) == 1:
+        result = dict(next(iter(work_verified.values())))
+        result["id"] = int(next(iter(work_verified.keys())))
+        return result, "PERSON_COMBINED_CREDITS"
+    if len(work_verified) > 1:
         return None, None
 
-    result = dict(next(iter(work_verified.values())))
-    result["id"] = int(next(iter(work_verified.keys())))
-    return result, "PERSON_COMBINED_CREDITS"
+    # Fourth pass: some Japanese TV records have incomplete TMDb credits, so
+    # neither the work credits nor combined credits can prove the relation.
+    # In that case, accept only a globally unique /search/person result whose
+    # name or original_name exactly matches one of our normalized local-name
+    # queries.  No fuzzy matching is used here.
+    query_keys = {normalize_person_name(query) for query in queries}
+    exact_search: dict[int, dict[str, Any]] = {}
+    for query in queries:
+        search_payload = _cached_person_search(connection, client, query)
+        results = search_payload.get("results")
+        if not isinstance(results, list):
+            continue
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            keys = {
+                normalize_person_name(result.get("name")),
+                normalize_person_name(result.get("original_name")),
+            }
+            keys.discard("")
+            if not (keys & query_keys):
+                continue
+            try:
+                person_id = int(result.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if person_id > 0:
+                exact_search[person_id] = result
+
+    if len(exact_search) != 1:
+        return None, None
+
+    person_id, result = next(iter(exact_search.items()))
+    resolved = dict(result)
+    resolved["id"] = person_id
+    return resolved, "UNIQUE_EXACT_PERSON_SEARCH"
 
 
 def _upsert_person(connection: sqlite3.Connection, item: dict[str, Any]) -> tuple[int, str | None, bool]:
@@ -397,6 +431,7 @@ def sync_cast_people_for_work(
             "matchedExact": 0,
             "matchedBySearch": 0,
             "matchedByCombinedCredits": 0,
+            "matchedByUniqueExactSearch": 0,
             "unmatched": 0,
             "profileCached": 0,
             "personIds": [],
@@ -411,6 +446,7 @@ def sync_cast_people_for_work(
     matched_exact = 0
     matched_search = 0
     matched_combined = 0
+    matched_unique_exact = 0
     unmatched = 0
 
     for local_order, local_name in enumerate(names):
@@ -432,6 +468,8 @@ def sync_cast_people_for_work(
             matched_search += 1
         elif match_method == "PERSON_COMBINED_CREDITS":
             matched_combined += 1
+        elif match_method == "UNIQUE_EXACT_PERSON_SEARCH":
+            matched_unique_exact += 1
         resolved_people.append((local_order, local_name, item, match_method))
 
     connection.execute(
@@ -479,6 +517,7 @@ def sync_cast_people_for_work(
         "matchedExact": matched_exact,
         "matchedBySearch": matched_search,
         "matchedByCombinedCredits": matched_combined,
+        "matchedByUniqueExactSearch": matched_unique_exact,
         "unmatched": unmatched,
         "profileCached": len(set(cached_ids)),
         "personIds": sorted(set(matched_ids)),
@@ -545,6 +584,7 @@ def sync_tmdb_people_library(
     failures = 0
     matched_by_search = 0
     matched_by_combined = 0
+    matched_by_unique_exact = 0
 
     with connect(database_path) as connection:
         initialize_database(connection)
@@ -576,6 +616,7 @@ def sync_tmdb_people_library(
                 matched_ids.update(int(value) for value in result.get("personIds") or [])
                 matched_by_search += int(result.get("matchedBySearch") or 0)
                 matched_by_combined += int(result.get("matchedByCombinedCredits") or 0)
+                matched_by_unique_exact += int(result.get("matchedByUniqueExactSearch") or 0)
                 for person_id in result.get("personIds") or []:
                     row = connection.execute(
                         "SELECT profile_path FROM tmdb_people WHERE tmdb_person_id=?",
@@ -601,6 +642,7 @@ def sync_tmdb_people_library(
                         "profileCached": len(cached_ids),
                         "matchedBySearch": matched_by_search,
                         "matchedByCombinedCredits": matched_by_combined,
+                        "matchedByUniqueExactSearch": matched_by_unique_exact,
                         "failures": failures,
                         "currentItem": str(work["official_title"]),
                     }
@@ -616,6 +658,7 @@ def sync_tmdb_people_library(
         "profileCached": len(cached_ids),
         "matchedBySearch": matched_by_search,
         "matchedByCombinedCredits": matched_by_combined,
+        "matchedByUniqueExactSearch": matched_by_unique_exact,
         "failures": failures,
         "completed": failures == 0,
     }
