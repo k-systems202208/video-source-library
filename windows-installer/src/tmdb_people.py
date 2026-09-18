@@ -917,6 +917,7 @@ def sync_tmdb_people_library(
         raise ValueError("TMDb API Read Access Token is not configured")
     tmdb = client or TmdbClient(token)
     matched_ids: set[int] = set()
+    cast_person_ids: set[int] = set()
     director_ids: set[int] = set()
     cached_ids: set[int] = set()
     failures = 0
@@ -962,6 +963,7 @@ def sync_tmdb_people_library(
                         image_downloader=image_downloader,
                     )
                     cast_ids = {int(value) for value in cast_result.get("personIds") or []}
+                    cast_person_ids.update(cast_ids)
                     matched_ids.update(cast_ids)
                     work_person_ids.update(cast_ids)
                     matched_by_search += int(cast_result.get("matchedBySearch") or 0)
@@ -1030,6 +1032,7 @@ def sync_tmdb_people_library(
     result = {
         "totalWorks": len(works),
         "matchedPeople": len(matched_ids),
+        "matchedCast": len(cast_person_ids),
         "matchedDirectors": len(director_ids),
         "profileCached": len(cached_ids),
         "matchedBySearch": matched_by_search,
