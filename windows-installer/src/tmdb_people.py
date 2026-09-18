@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import csv
+import json
 import re
 import sqlite3
 import unicodedata
+from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
@@ -496,4 +499,234 @@ def sync_tmdb_people_library(
         "matchedBySearch": matched_by_search,
         "failures": failures,
         "completed": failures == 0,
+    }
+
+
+def _person_audit_reason(
+    *,
+    linked_ids: set[int],
+    linked_profile_paths: dict[int, str | None],
+    matched_work_count: int,
+    direct_credit_ids: set[int],
+    constrained_search_ids: set[int],
+    search_result_ids: set[int],
+) -> str:
+    if len(linked_ids) > 1:
+        return "AMBIGUOUS"
+    if len(linked_ids) == 1:
+        person_id = next(iter(linked_ids))
+        return "PROFILE_READY" if linked_profile_paths.get(person_id) else "PERSON_NO_PROFILE"
+    if matched_work_count == 0:
+        return "NO_MATCHED_WORK"
+    combined_credit_ids = direct_credit_ids | constrained_search_ids
+    if len(combined_credit_ids) > 1:
+        return "AMBIGUOUS"
+    if len(combined_credit_ids) == 1:
+        return "CREDIT_NAME_MISMATCH"
+    if search_result_ids:
+        return "PERSON_SEARCH_NOT_IN_CREDITS"
+    return "CREDIT_PERSON_NOT_FOUND"
+
+
+def _write_people_audit_report(
+    report_dir: Path | str,
+    rows: list[dict[str, Any]],
+    summary: dict[str, Any],
+) -> tuple[Path, Path]:
+    destination = Path(report_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    json_path = destination / f"tmdb-people-audit-{stamp}.json"
+    csv_path = destination / f"tmdb-people-audit-{stamp}.csv"
+    json_path.write_text(
+        json.dumps({"summary": summary, "items": rows}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    fields = [
+        "name",
+        "workCount",
+        "reason",
+        "tmdbPersonIds",
+        "profilePaths",
+        "matchedWorkCount",
+        "matchedWorks",
+        "searchQueries",
+        "directCreditIds",
+        "constrainedSearchIds",
+        "searchResultIds",
+        "creditNameSample",
+    ]
+    with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    "name": row.get("name", ""),
+                    "workCount": row.get("workCount", 0),
+                    "reason": row.get("reason", ""),
+                    "tmdbPersonIds": "|".join(str(v) for v in row.get("tmdbPersonIds", [])),
+                    "profilePaths": "|".join(str(v) for v in row.get("profilePaths", [])),
+                    "matchedWorkCount": row.get("matchedWorkCount", 0),
+                    "matchedWorks": " | ".join(row.get("matchedWorks", [])),
+                    "searchQueries": " | ".join(row.get("searchQueries", [])),
+                    "directCreditIds": "|".join(str(v) for v in row.get("directCreditIds", [])),
+                    "constrainedSearchIds": "|".join(str(v) for v in row.get("constrainedSearchIds", [])),
+                    "searchResultIds": "|".join(str(v) for v in row.get("searchResultIds", [])),
+                    "creditNameSample": " | ".join(row.get("creditNameSample", [])),
+                }
+            )
+    return json_path, csv_path
+
+
+def audit_tmdb_people_profiles(
+    database_path: Path | str,
+    report_dir: Path | str,
+    access_token: str,
+    *,
+    client: Any | None = None,
+) -> dict[str, Any]:
+    from tmdb_client import TmdbClient
+
+    token = str(access_token or "").strip()
+    if not token:
+        raise ValueError("TMDb API Read Access Token is not configured")
+    tmdb = client or TmdbClient(token)
+    rows: list[dict[str, Any]] = []
+
+    with connect(database_path) as connection:
+        initialize_database(connection)
+        work_rows = connection.execute(
+            """
+            SELECT
+                w.id,w.official_title,w.main_cast_or_voice_actors,
+                t.match_status,t.media_type,t.tmdb_id
+            FROM works w
+            LEFT JOIN tmdb_work_links t ON t.work_id=w.id
+            WHERE TRIM(COALESCE(w.main_cast_or_voice_actors,''))<>''
+            ORDER BY w.external_work_no
+            """
+        ).fetchall()
+
+        occurrences: dict[str, list[sqlite3.Row]] = {}
+        for work in work_rows:
+            for local_name in split_local_people(work["main_cast_or_voice_actors"]):
+                occurrences.setdefault(local_name, []).append(work)
+
+        all_links = connection.execute(
+            """
+            SELECT wp.local_name,wp.tmdb_person_id,p.profile_path
+            FROM tmdb_work_people wp
+            JOIN tmdb_people p ON p.tmdb_person_id=wp.tmdb_person_id
+            WHERE wp.role='CAST'
+            """
+        ).fetchall()
+        links_by_name: dict[str, dict[int, str | None]] = {}
+        for link in all_links:
+            links_by_name.setdefault(str(link["local_name"]), {})[
+                int(link["tmdb_person_id"])
+            ] = str(link["profile_path"]) if link["profile_path"] else None
+
+        for local_name, person_works in occurrences.items():
+            linked_profiles = links_by_name.get(local_name, {})
+            linked_ids = set(linked_profiles)
+            matched_works = [
+                work
+                for work in person_works
+                if str(work["match_status"] or "") == "MATCHED" and work["tmdb_id"] is not None
+            ]
+            queries = person_name_queries(local_name)
+            direct_ids: set[int] = set()
+            constrained_ids: set[int] = set()
+            search_ids: set[int] = set()
+            credit_names: list[str] = []
+            matched_work_labels: list[str] = []
+
+            if not linked_ids:
+                for work in matched_works:
+                    media_type = str(work["media_type"] or "")
+                    tmdb_id = int(work["tmdb_id"])
+                    matched_work_labels.append(
+                        f"{work['official_title']} [{media_type}:{tmdb_id}]"
+                    )
+                    payload = _cached_credits(connection, tmdb, media_type, tmdb_id)
+                    index = _cast_index(payload)
+                    cast_by_id = _cast_by_id(payload)
+                    for cast_item in cast_by_id.values():
+                        for field in ("name", "original_name"):
+                            value = str(cast_item.get(field) or "").strip()
+                            if value and value not in credit_names:
+                                credit_names.append(value)
+                    for query in queries:
+                        for item in index.get(normalize_person_name(query), []):
+                            try:
+                                direct_ids.add(int(item.get("id")))
+                            except (TypeError, ValueError):
+                                continue
+                        search_payload = _cached_person_search(connection, tmdb, query)
+                        results = search_payload.get("results")
+                        if not isinstance(results, list):
+                            continue
+                        for result in results:
+                            if not isinstance(result, dict):
+                                continue
+                            try:
+                                person_id = int(result.get("id"))
+                            except (TypeError, ValueError):
+                                continue
+                            if person_id <= 0:
+                                continue
+                            search_ids.add(person_id)
+                            if person_id in cast_by_id:
+                                constrained_ids.add(person_id)
+            else:
+                matched_work_labels = [
+                    f"{work['official_title']} [{work['media_type']}:{work['tmdb_id']}]"
+                    for work in matched_works
+                ]
+
+            reason = _person_audit_reason(
+                linked_ids=linked_ids,
+                linked_profile_paths=linked_profiles,
+                matched_work_count=len(matched_works),
+                direct_credit_ids=direct_ids,
+                constrained_search_ids=constrained_ids,
+                search_result_ids=search_ids,
+            )
+            rows.append(
+                {
+                    "name": local_name,
+                    "workCount": len(person_works),
+                    "reason": reason,
+                    "tmdbPersonIds": sorted(linked_ids),
+                    "profilePaths": sorted(
+                        {path for path in linked_profiles.values() if path}
+                    ),
+                    "matchedWorkCount": len(matched_works),
+                    "matchedWorks": matched_work_labels,
+                    "searchQueries": queries,
+                    "directCreditIds": sorted(direct_ids),
+                    "constrainedSearchIds": sorted(constrained_ids),
+                    "searchResultIds": sorted(search_ids),
+                    "creditNameSample": credit_names[:40],
+                }
+            )
+
+    reason_counts = Counter(str(row["reason"]) for row in rows)
+    summary = {
+        "totalPeople": len(rows),
+        "profileReady": reason_counts.get("PROFILE_READY", 0),
+        "personNoProfile": reason_counts.get("PERSON_NO_PROFILE", 0),
+        "noMatchedWork": reason_counts.get("NO_MATCHED_WORK", 0),
+        "creditNameMismatch": reason_counts.get("CREDIT_NAME_MISMATCH", 0),
+        "personSearchNotInCredits": reason_counts.get("PERSON_SEARCH_NOT_IN_CREDITS", 0),
+        "creditPersonNotFound": reason_counts.get("CREDIT_PERSON_NOT_FOUND", 0),
+        "ambiguous": reason_counts.get("AMBIGUOUS", 0),
+        "reasons": dict(sorted(reason_counts.items())),
+    }
+    json_path, csv_path = _write_people_audit_report(report_dir, rows, summary)
+    return {
+        "summary": summary,
+        "jsonReport": str(json_path),
+        "csvReport": str(csv_path),
     }
