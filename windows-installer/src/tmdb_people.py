@@ -16,9 +16,9 @@ from tmdb_images import cached_person_image_path, download_tmdb_image
 
 _PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 _CREDITS_TTL_DAYS = 30
-_PEOPLE_SYNC_VERSION = 2
+_PEOPLE_SYNC_VERSION = 3
 _PEOPLE_SYNC_CACHE_KEY = "tmdb:people-sync-version"
-_PEOPLE_AUDIT_VERSION = 1
+_PEOPLE_AUDIT_VERSION = 2
 _PEOPLE_AUDIT_CACHE_KEY = "tmdb:people-audit-version"
 
 
@@ -99,6 +99,51 @@ def _cached_person_search(
     put_cached_json(connection, key, value, fetched_at=fetched, expires_at=expiry)
     connection.commit()
     return value
+
+
+def _person_combined_credits_cache_key(person_id: int) -> str:
+    return f"tmdb:person-combined-credits:v1:{int(person_id)}:ja-JP"
+
+
+def _cached_person_combined_credits(
+    connection: sqlite3.Connection,
+    client: Any,
+    person_id: int,
+) -> dict[str, Any]:
+    key = _person_combined_credits_cache_key(person_id)
+    cached = get_cached_json(connection, key)
+    if isinstance(cached, dict):
+        return cached
+    getter = getattr(client, "person_combined_credits", None)
+    if not callable(getter):
+        return {}
+    value = getter(int(person_id), language="ja-JP")
+    if not isinstance(value, dict):
+        value = {}
+    fetched = now_iso()
+    expiry = (datetime.fromisoformat(fetched) + timedelta(days=_CREDITS_TTL_DAYS)).isoformat(timespec="seconds")
+    put_cached_json(connection, key, value, fetched_at=fetched, expires_at=expiry)
+    connection.commit()
+    return value
+
+
+def _combined_credits_has_work(payload: dict[str, Any], media_type: str, tmdb_id: int) -> bool:
+    cast = payload.get("cast")
+    if not isinstance(cast, list):
+        return False
+    expected_type = str(media_type or "").strip()
+    expected_id = int(tmdb_id)
+    for item in cast:
+        if not isinstance(item, dict):
+            continue
+        try:
+            item_id = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        item_type = str(item.get("media_type") or "").strip()
+        if item_id == expected_id and item_type == expected_type:
+            return True
+    return False
 
 
 def _cached_credits(
@@ -222,6 +267,9 @@ def _resolve_candidate(
     payload: dict[str, Any],
     index: dict[str, list[dict[str, Any]]],
     local_name: str,
+    *,
+    media_type: str,
+    tmdb_id: int,
 ) -> tuple[dict[str, Any] | None, str | None]:
     queries = person_name_queries(local_name)
     for query in queries:
@@ -250,18 +298,49 @@ def _resolve_candidate(
             if cast_item is not None:
                 matched[person_id] = (cast_item, result)
 
-    if len(matched) != 1:
+    if len(matched) == 1:
+        cast_item, search_item = next(iter(matched.values()))
+        resolved = dict(cast_item)
+        if not resolved.get("profile_path") and search_item.get("profile_path"):
+            resolved["profile_path"] = search_item.get("profile_path")
+        if not resolved.get("name") and search_item.get("name"):
+            resolved["name"] = search_item.get("name")
+        if not resolved.get("original_name") and search_item.get("original_name"):
+            resolved["original_name"] = search_item.get("original_name")
+        return resolved, "CREDIT_CONSTRAINED_SEARCH"
+    if len(matched) > 1:
         return None, None
 
-    cast_item, search_item = next(iter(matched.values()))
-    resolved = dict(cast_item)
-    if not resolved.get("profile_path") and search_item.get("profile_path"):
-        resolved["profile_path"] = search_item.get("profile_path")
-    if not resolved.get("name") and search_item.get("name"):
-        resolved["name"] = search_item.get("name")
-    if not resolved.get("original_name") and search_item.get("original_name"):
-        resolved["original_name"] = search_item.get("original_name")
-    return resolved, "CREDIT_CONSTRAINED_SEARCH"
+    # Third pass: TMDb occasionally has duplicate person records or work credits
+    # whose person id differs from /search/person.  Verify the search result
+    # from the person's own combined credits instead of loosening name matching.
+    work_verified: dict[int, dict[str, Any]] = {}
+    checked_ids: set[int] = set()
+    for query in queries:
+        search_payload = _cached_person_search(connection, client, query)
+        results = search_payload.get("results")
+        if not isinstance(results, list):
+            continue
+        for result in results[:5]:
+            if not isinstance(result, dict):
+                continue
+            try:
+                person_id = int(result.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if person_id <= 0 or person_id in checked_ids:
+                continue
+            checked_ids.add(person_id)
+            combined = _cached_person_combined_credits(connection, client, person_id)
+            if _combined_credits_has_work(combined, media_type, tmdb_id):
+                work_verified[person_id] = result
+
+    if len(work_verified) != 1:
+        return None, None
+
+    result = dict(next(iter(work_verified.values())))
+    result["id"] = int(next(iter(work_verified.keys())))
+    return result, "PERSON_COMBINED_CREDITS"
 
 
 def _upsert_person(connection: sqlite3.Connection, item: dict[str, Any]) -> tuple[int, str | None, bool]:
@@ -330,10 +409,19 @@ def sync_cast_people_for_work(
     resolved_people: list[tuple[int, str, dict[str, Any], str | None]] = []
     matched_exact = 0
     matched_search = 0
+    matched_combined = 0
     unmatched = 0
 
     for local_order, local_name in enumerate(names):
-        item, match_method = _resolve_candidate(connection, client, payload, index, local_name)
+        item, match_method = _resolve_candidate(
+            connection,
+            client,
+            payload,
+            index,
+            local_name,
+            media_type=media_type,
+            tmdb_id=tmdb_id,
+        )
         if item is None:
             unmatched += 1
             continue
@@ -341,6 +429,8 @@ def sync_cast_people_for_work(
             matched_exact += 1
         elif match_method == "CREDIT_CONSTRAINED_SEARCH":
             matched_search += 1
+        elif match_method == "PERSON_COMBINED_CREDITS":
+            matched_combined += 1
         resolved_people.append((local_order, local_name, item, match_method))
 
     connection.execute(
@@ -387,6 +477,7 @@ def sync_cast_people_for_work(
         "matched": len(matched_ids),
         "matchedExact": matched_exact,
         "matchedBySearch": matched_search,
+        "matchedByCombinedCredits": matched_combined,
         "unmatched": unmatched,
         "profileCached": len(set(cached_ids)),
         "personIds": sorted(set(matched_ids)),
@@ -452,6 +543,7 @@ def sync_tmdb_people_library(
     cached_ids: set[int] = set()
     failures = 0
     matched_by_search = 0
+    matched_by_combined = 0
 
     with connect(database_path) as connection:
         initialize_database(connection)
@@ -482,6 +574,7 @@ def sync_tmdb_people_library(
                 )
                 matched_ids.update(int(value) for value in result.get("personIds") or [])
                 matched_by_search += int(result.get("matchedBySearch") or 0)
+                matched_by_combined += int(result.get("matchedByCombinedCredits") or 0)
                 for person_id in result.get("personIds") or []:
                     row = connection.execute(
                         "SELECT profile_path FROM tmdb_people WHERE tmdb_person_id=?",
@@ -506,6 +599,7 @@ def sync_tmdb_people_library(
                         "matchedPeople": len(matched_ids),
                         "profileCached": len(cached_ids),
                         "matchedBySearch": matched_by_search,
+                        "matchedByCombinedCredits": matched_by_combined,
                         "failures": failures,
                         "currentItem": str(work["official_title"]),
                     }
@@ -520,6 +614,7 @@ def sync_tmdb_people_library(
         "matchedPeople": len(matched_ids),
         "profileCached": len(cached_ids),
         "matchedBySearch": matched_by_search,
+        "matchedByCombinedCredits": matched_by_combined,
         "failures": failures,
         "completed": failures == 0,
     }
