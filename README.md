@@ -42,7 +42,7 @@
 - SQLiteバックアップ / 復元予約 / ロールバック
 
 ### Phase 6: ffprobe / 字幕 / Windowsインストーラー
-- Phase 6でSQLite schema 4を導入（現在は1.1.0 / schema 7）
+- Phase 6でSQLite schema 4を導入（現在は1.2.0 / schema 8）
 - ffprobeによるコンテナ・Codec・解像度・再生時間取得
 - 埋込字幕stream数取得
 - 外部字幕 `.srt` / `.vtt` / `.ass` / `.ssa` を検出
@@ -148,7 +148,7 @@
 - Tailscale Serve / PWA / 外部字幕 / 日本語音声優先 / FFmpeg互換変換 / PlaybackCache / Backup / 全件監査を正式版の基準として固定
 - 元動画・字幕・SQLite利用者状態を自動変更しない方針を維持
 
-### 1.1.0: TMDb・映画館UI・人物名鑑（現行）
+### 1.1.0: TMDb・映画館UI・人物名鑑
 - 表示バージョンは `1.1.0`
 - SQLiteは現行schema 7
 - 既存メタデータの `監督／演出`、`主な出演者／声優` を作品詳細に表示し、人物から登録作品を検索可能
@@ -160,6 +160,19 @@
 - 「監督／演出」は名前・作品数のテキスト名鑑のみ。顔写真用TMDb人物同期は行わない
 - TMDb作品画像キャッシュは `work_id + remote_path hash` で識別し、同じwork_idに残った旧別作品画像を再利用しない
 - TMDb作品監査と人物監査は `%LOCALAPPDATA%\VideoLibrary\diagnostics` へJSON/CSVで保存
+
+### 1.2.0: 作品表示設定（現行）
+- 表示バージョンは `1.2.0`
+- SQLiteは現行schema 8
+- 作品単位で `表示する / 非表示` を設定可能
+- 既存作品・新規取込作品の初期値は「表示する」
+- 非表示は削除ではなく、動画・TMDb情報・お気に入り・視聴履歴を保持
+- 通常の作品目録、検索、上映中、次回上映、人物名鑑、お気に入り、履歴等から非表示作品を除外
+- `#/work/{id}` の直接URLは非表示作品でも開ける
+- Ownerだけが作品詳細または作品目録の表示設定モードから変更可能
+- 表示設定モードでは `表示中 / 非表示 / すべて` を切替え、複数作品を一括表示／非表示可能
+- metadata再取込では `is_visible` を上書きせず、設定を保持
+- PWA shellは `video-library-shell-v5`
 
 対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
@@ -308,7 +321,7 @@ PWAがキャッシュするのはHTML/manifest/icon/offline shell等のアプリ
 - `video_library.json`
 - 視聴履歴などの個人状態
 
-PWA shellは `video-library-shell-v4`。更新時は旧shell cacheを削除し、manifest / offline shell / iconを現行版へ切り替えます。
+PWA shellは `video-library-shell-v5`。更新時は旧shell cacheを削除し、manifest / offline shell / iconを現行版へ切り替えます。
 
 ## バックアップ・復元
 
@@ -370,6 +383,8 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 - [TMDb作品画像キャッシュ識別修正](docs/78-1.1.0-tmdb-image-cache-identity.md)
 - [1.1.0 ソース・ドキュメント最終整合性監査](docs/79-1.1.0-final-consistency-audit.md)
 - [1.1.0 正式リリースノート](docs/80-1.1.0-release.md)
+- [1.2.0 作品表示設定](docs/81-1.2.0-work-visibility.md)
+- [1.2.0 正式リリースノート](docs/82-1.2.0-release.md)
 
 ### 実装履歴
 Phase別・バージョン別の詳細記録は `docs/` 配下に保持します。過去時点の設計判断を残すため、履歴文書は現在仕様へ機械的に書き換えません。
