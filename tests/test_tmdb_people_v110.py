@@ -18,7 +18,7 @@ from library_service import list_people
 from server import create_server
 from tmdb_client import TmdbClient
 from tmdb_images import cached_person_image_path
-from tmdb_people import audit_tmdb_director_profiles, mark_people_sync_complete, people_sync_required, person_name_queries, repair_reviewed_bad_work_links, split_local_people, sync_cast_people_for_work, sync_director_people_for_work
+from tmdb_people import audit_tmdb_director_profiles, mark_people_sync_complete, people_sync_required, person_name_queries, repair_reviewed_bad_work_links, split_local_directors, split_local_people, sync_cast_people_for_work, sync_director_people_for_work
 from tmdb_people_reviewed_aliases import REVIEWED_PERSON_CREDIT_ALIASES
 from tmdb_people_reviewed_overrides import REVIEWED_WORK_PERSON_OVERRIDES
 
@@ -1352,6 +1352,23 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
                 connection.commit()
                 self.assertTrue(people_sync_required(connection))
 
+    def test_people_sync_v9_marker_requires_v10_resync(self):
+        from tmdb_cache import put_cached_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "library.db"
+            with connect(db) as connection:
+                initialize_database(connection)
+                put_cached_json(
+                    connection,
+                    "tmdb:people-sync-version",
+                    {"version": 9},
+                    fetched_at=now_iso(),
+                    expires_at=None,
+                )
+                connection.commit()
+                self.assertTrue(people_sync_required(connection))
+
     def test_people_sync_marker_is_one_time(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "library.db"
@@ -1487,10 +1504,11 @@ class TmdbDirectorPhase2Tests(unittest.TestCase):
                 target.write_bytes(b"profile")
                 return target
 
+            client = DirectorClient()
             with connect(db) as connection:
                 result = sync_director_people_for_work(
                     connection,
-                    DirectorClient(),
+                    client,
                     work_id=work_id,
                     media_type="movie",
                     tmdb_id=500,
@@ -1514,11 +1532,123 @@ class TmdbDirectorPhase2Tests(unittest.TestCase):
             self.assertNotIn("profileUrl", by_name["助監督太郎"])
             self.assertTrue(cached_person_image_path(root / "TMDbImages", 201, "/director.jpg").is_file())
 
-            audit = audit_tmdb_director_profiles(db, root / "diagnostics")
+            audit = audit_tmdb_director_profiles(db, root / "diagnostics", "token", client=client)
             self.assertEqual(audit["summary"]["totalDirectors"], 3)
             self.assertEqual(audit["summary"]["profileReady"], 1)
             self.assertEqual(audit["summary"]["directorCreditNotFound"], 2)
             self.assertTrue(Path(audit["csvReport"]).is_file())
+
+    def test_director_second_pass_requires_search_person_to_be_in_director_crew(self):
+        class SearchDirectorClient:
+            def movie_credits(self, movie_id, *, language="ja-JP"):
+                return {
+                    "cast": [],
+                    "crew": [
+                        {
+                            "id": 401,
+                            "name": "Richard Curtis",
+                            "original_name": "Richard Curtis",
+                            "department": "Directing",
+                            "job": "Director",
+                            "profile_path": None,
+                        }
+                    ],
+                }
+
+            def search_person(self, query, *, language="ja-JP"):
+                if query == "リチャード・カーティス":
+                    return {
+                        "results": [
+                            {
+                                "id": 401,
+                                "name": "Richard Curtis",
+                                "original_name": "Richard Curtis",
+                                "profile_path": "/curtis.jpg",
+                            }
+                        ]
+                    }
+                return {"results": []}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db, work_id = self._database_with_directors(root, "リチャード・カーティス")
+
+            def downloader(remote_path, destination, *, size):
+                target = Path(destination)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(b"profile")
+                return target
+
+            with connect(db) as connection:
+                result = sync_director_people_for_work(
+                    connection,
+                    SearchDirectorClient(),
+                    work_id=work_id,
+                    media_type="movie",
+                    tmdb_id=500,
+                    local_directors="リチャード・カーティス",
+                    image_root=root / "TMDbImages",
+                    image_downloader=downloader,
+                )
+                link = connection.execute(
+                    "SELECT local_name,tmdb_person_id FROM tmdb_work_people WHERE role='DIRECTOR'"
+                ).fetchone()
+
+            self.assertEqual(result["matched"], 1)
+            self.assertEqual(result["matchedExact"], 0)
+            self.assertEqual(result["matchedBySearch"], 1)
+            self.assertEqual((link["local_name"], int(link["tmdb_person_id"])), ("リチャード・カーティス", 401))
+            self.assertTrue(cached_person_image_path(root / "TMDbImages", 401, "/curtis.jpg").is_file())
+
+    def test_director_second_pass_rejects_search_person_outside_director_crew(self):
+        class RejectDirectorClient:
+            def movie_credits(self, movie_id, *, language="ja-JP"):
+                return {
+                    "cast": [],
+                    "crew": [
+                        {
+                            "id": 402,
+                            "name": "Other Director",
+                            "original_name": "Other Director",
+                            "department": "Directing",
+                            "job": "Director",
+                        }
+                    ],
+                }
+
+            def search_person(self, query, *, language="ja-JP"):
+                return {
+                    "results": [
+                        {"id": 999, "name": "別人", "original_name": "別人", "profile_path": "/wrong.jpg"}
+                    ]
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db, work_id = self._database_with_directors(root, "照合対象監督")
+            with connect(db) as connection:
+                result = sync_director_people_for_work(
+                    connection,
+                    RejectDirectorClient(),
+                    work_id=work_id,
+                    media_type="movie",
+                    tmdb_id=500,
+                    local_directors="照合対象監督",
+                    image_root=root / "TMDbImages",
+                    image_downloader=lambda *args, **kwargs: None,
+                )
+                count = int(connection.execute(
+                    "SELECT COUNT(*) FROM tmdb_work_people WHERE role='DIRECTOR'"
+                ).fetchone()[0])
+            self.assertEqual(result["matched"], 0)
+            self.assertEqual(result["matchedBySearch"], 0)
+            self.assertEqual(count, 0)
+
+    def test_japanese_middle_dot_multi_directors_split_but_katakana_name_does_not(self):
+        self.assertEqual(
+            split_local_directors("佐藤卓哉・浜崎博嗣、マイク・ニューウェル"),
+            ["佐藤卓哉", "浜崎博嗣", "マイク・ニューウェル"],
+        )
 
     def test_tv_aggregate_director_jobs_are_supported(self):
         class TvDirectorClient:
