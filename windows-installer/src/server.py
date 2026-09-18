@@ -16,7 +16,7 @@ from app_version import APP_VERSION
 from backup_restore import cancel_restore, create_manual_backup, list_backups, pending_restore, restore_status, schedule_restore
 from database import SCHEMA_VERSION, connect, initialize_database, quick_check
 from identity_service import local_owner_user, resolve_tailscale_user
-from library_service import get_video, get_work, library_stats, list_people, list_work_videos, list_works
+from library_service import get_video, get_work, library_stats, list_people, list_work_videos, list_works, set_work_visibility
 from local_auth import LocalOwnerAuth, cookie_value, session_cookie_header
 from matroska_audio import apply_patch_to_chunk, preferred_japanese_audio_patch
 from playback_compat import prepare_browser_playback
@@ -477,8 +477,23 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                             self._error(400, "INVALID_PEOPLE_ROLE", str(exc))
                         return
                     if path == "/api/works":
-                        self._json(200, list_works(connection, user_id=user_id, q=_first(query, "q"), category=_first(query, "category"),
-                                                   sort=_first(query, "sort") or "title", limit=_first(query, "limit"), offset=_first(query, "offset"))); return
+                        visibility = str(_first(query, "visibility") or "visible").strip().casefold()
+                        if visibility != "visible" and self._require_owner(connection) is None:
+                            return
+                        self._json(
+                            200,
+                            list_works(
+                                connection,
+                                user_id=user_id,
+                                q=_first(query, "q"),
+                                category=_first(query, "category"),
+                                sort=_first(query, "sort") or "title",
+                                visibility=visibility,
+                                limit=_first(query, "limit"),
+                                offset=_first(query, "offset"),
+                            ),
+                        )
+                        return
                     if path.startswith("/api/me/"):
                         user = self._require_user(connection)
                         if user is None: return
@@ -539,6 +554,36 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                     user = self._require_user(connection)
                     if user is None: return
                     uid = int(user["id"])
+                    if path == "/api/admin/works/visibility":
+                        if not bool(user.get("isOwner")):
+                            self._error(403, "OWNER_REQUIRED", "この操作にはOwner権限が必要です。")
+                            return
+                        work_ids = payload.get("workIds")
+                        visible = payload.get("visible")
+                        if not isinstance(work_ids, list) or not work_ids or len(work_ids) > 1000:
+                            raise ValueError("workIds must be a non-empty array with at most 1000 items")
+                        if not isinstance(visible, bool):
+                            raise ValueError("visible must be boolean")
+                        normalized_ids: list[int] = []
+                        for value in work_ids:
+                            if isinstance(value, bool):
+                                raise ValueError("workIds must contain integers")
+                            try:
+                                work_id = int(value)
+                            except (TypeError, ValueError):
+                                raise ValueError("workIds must contain integers")
+                            if work_id <= 0:
+                                raise ValueError("workIds must contain positive integers")
+                            normalized_ids.append(work_id)
+                        self._json(
+                            200,
+                            set_work_visibility(
+                                connection,
+                                normalized_ids,
+                                visible=visible,
+                            ),
+                        )
+                        return
                     match = re.fullmatch(r"/api/me/works/(\d+)/favorite", path)
                     if match:
                         if not isinstance(payload.get("favorite"), bool): raise ValueError("favorite must be boolean")
