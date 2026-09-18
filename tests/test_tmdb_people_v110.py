@@ -1466,12 +1466,20 @@ class TmdbDirectorPhase2Tests(unittest.TestCase):
                             "job": "Producer",
                             "profile_path": "/producer.jpg",
                         },
+                        {
+                            "id": 203,
+                            "name": "助監督太郎",
+                            "original_name": "助監督太郎",
+                            "department": "Directing",
+                            "job": "Assistant Director",
+                            "profile_path": "/assistant.jpg",
+                        },
                     ],
                 }
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            db, work_id = self._database_with_directors(root, "山田太郎、制作太郎")
+            db, work_id = self._database_with_directors(root, "山田太郎、制作太郎、助監督太郎")
 
             def downloader(remote_path, destination, *, size):
                 target = Path(destination)
@@ -1486,7 +1494,7 @@ class TmdbDirectorPhase2Tests(unittest.TestCase):
                     work_id=work_id,
                     media_type="movie",
                     tmdb_id=500,
-                    local_directors="山田太郎、制作太郎",
+                    local_directors="山田太郎、制作太郎、助監督太郎",
                     image_root=root / "TMDbImages",
                     image_downloader=downloader,
                 )
@@ -1496,19 +1504,20 @@ class TmdbDirectorPhase2Tests(unittest.TestCase):
                 people = list_people(connection, role="director")
 
             self.assertEqual(result["matched"], 1)
-            self.assertEqual(result["unmatched"], 1)
+            self.assertEqual(result["unmatched"], 2)
             self.assertEqual([(row["role"], row["local_name"], int(row["tmdb_person_id"])) for row in links], [
                 ("DIRECTOR", "山田太郎", 201),
             ])
             by_name = {item["name"]: item for item in people["items"]}
             self.assertEqual(by_name["山田太郎"]["profileUrl"], "/tmdb-person-image/201")
             self.assertNotIn("profileUrl", by_name["制作太郎"])
+            self.assertNotIn("profileUrl", by_name["助監督太郎"])
             self.assertTrue(cached_person_image_path(root / "TMDbImages", 201, "/director.jpg").is_file())
 
             audit = audit_tmdb_director_profiles(db, root / "diagnostics")
-            self.assertEqual(audit["summary"]["totalDirectors"], 2)
+            self.assertEqual(audit["summary"]["totalDirectors"], 3)
             self.assertEqual(audit["summary"]["profileReady"], 1)
-            self.assertEqual(audit["summary"]["directorCreditNotFound"], 1)
+            self.assertEqual(audit["summary"]["directorCreditNotFound"], 2)
             self.assertTrue(Path(audit["csvReport"]).is_file())
 
     def test_tv_aggregate_director_jobs_are_supported(self):
