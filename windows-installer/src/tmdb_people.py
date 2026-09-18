@@ -14,12 +14,13 @@ from database import connect, initialize_database, now_iso
 from tmdb_cache import get_cached_json, put_cached_json
 from tmdb_images import cached_person_image_path, download_tmdb_image
 from tmdb_people_reviewed_aliases import REVIEWED_PERSON_CREDIT_ALIASES
+from tmdb_people_reviewed_overrides import REVIEWED_BAD_WORK_MATCHES, REVIEWED_WORK_PERSON_OVERRIDES
 
 _PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 _CREDITS_TTL_DAYS = 30
-_PEOPLE_SYNC_VERSION = 6
+_PEOPLE_SYNC_VERSION = 7
 _PEOPLE_SYNC_CACHE_KEY = "tmdb:people-sync-version"
-_PEOPLE_AUDIT_VERSION = 5
+_PEOPLE_AUDIT_VERSION = 6
 _PEOPLE_AUDIT_CACHE_KEY = "tmdb:people-audit-version"
 
 
@@ -483,20 +484,38 @@ def _resolve_candidate(
     # They are compared only against this work's credits; no global search,
     # fuzzy match, or partial match is involved.
     reviewed = _reviewed_credit_alias_candidate(index, local_name)
-    if reviewed is None:
-        return None, None
+    if reviewed is not None:
+        resolved = dict(reviewed)
+        try:
+            reviewed_id = int(resolved.get("id"))
+        except (TypeError, ValueError):
+            return None, None
+        details = _cached_person_details(connection, client, reviewed_id)
+        for field in ("name", "original_name", "profile_path", "known_for_department"):
+            if details.get(field):
+                resolved[field] = details.get(field)
+        resolved["id"] = reviewed_id
+        return resolved, "REVIEWED_CREDIT_ALIAS"
 
-    resolved = dict(reviewed)
-    try:
-        reviewed_id = int(resolved.get("id"))
-    except (TypeError, ValueError):
+    # Seventh pass: a small set of work/person relationships has been verified
+    # against the real-library audit and external primary/official sources.
+    # The override applies only to this exact TMDb work + local person name, and
+    # the person details endpoint must confirm the same id before it is accepted.
+    reviewed_person_id = REVIEWED_WORK_PERSON_OVERRIDES.get(
+        (str(media_type), int(tmdb_id), str(local_name or "").strip())
+    )
+    if reviewed_person_id is None:
         return None, None
-    details = _cached_person_details(connection, client, reviewed_id)
-    for field in ("name", "original_name", "profile_path", "known_for_department"):
-        if details.get(field):
-            resolved[field] = details.get(field)
-    resolved["id"] = reviewed_id
-    return resolved, "REVIEWED_CREDIT_ALIAS"
+    details = _cached_person_details(connection, client, int(reviewed_person_id))
+    try:
+        detail_id = int(details.get("id"))
+    except (AttributeError, TypeError, ValueError):
+        return None, None
+    if detail_id != int(reviewed_person_id):
+        return None, None
+    resolved = dict(details)
+    resolved["id"] = detail_id
+    return resolved, "REVIEWED_WORK_PERSON"
 
 
 def _upsert_person(connection: sqlite3.Connection, item: dict[str, Any]) -> tuple[int, str | None, bool]:
@@ -556,6 +575,7 @@ def sync_cast_people_for_work(
             "matchedByUniqueExactSearch": 0,
             "matchedByCreditAlias": 0,
             "matchedByReviewedAlias": 0,
+            "matchedByReviewedWorkPerson": 0,
             "unmatched": 0,
             "profileCached": 0,
             "personIds": [],
@@ -573,6 +593,7 @@ def sync_cast_people_for_work(
     matched_unique_exact = 0
     matched_credit_alias = 0
     matched_reviewed_alias = 0
+    matched_reviewed_work_person = 0
     unmatched = 0
 
     for local_order, local_name in enumerate(names):
@@ -600,6 +621,8 @@ def sync_cast_people_for_work(
             matched_credit_alias += 1
         elif match_method == "REVIEWED_CREDIT_ALIAS":
             matched_reviewed_alias += 1
+        elif match_method == "REVIEWED_WORK_PERSON":
+            matched_reviewed_work_person += 1
         resolved_people.append((local_order, local_name, item, match_method))
 
     connection.execute(
@@ -650,10 +673,51 @@ def sync_cast_people_for_work(
         "matchedByUniqueExactSearch": matched_unique_exact,
         "matchedByCreditAlias": matched_credit_alias,
         "matchedByReviewedAlias": matched_reviewed_alias,
+        "matchedByReviewedWorkPerson": matched_reviewed_work_person,
         "unmatched": unmatched,
         "profileCached": len(set(cached_ids)),
         "personIds": sorted(set(matched_ids)),
     }
+
+def repair_reviewed_bad_work_links(connection: sqlite3.Connection) -> int:
+    repaired = 0
+    stamp = now_iso()
+    for title, year_or_period, media_type, tmdb_id in REVIEWED_BAD_WORK_MATCHES:
+        rows = connection.execute(
+            """
+            SELECT w.id
+            FROM works w
+            JOIN tmdb_work_links t ON t.work_id=w.id
+            WHERE w.official_title=?
+              AND COALESCE(w.year_or_period,'')=?
+              AND t.match_status='MATCHED'
+              AND t.media_type=?
+              AND t.tmdb_id=?
+            """,
+            (title, year_or_period, media_type, int(tmdb_id)),
+        ).fetchall()
+        for row in rows:
+            work_id = int(row["id"])
+            connection.execute(
+                """
+                UPDATE tmdb_work_links
+                SET media_type=NULL,tmdb_id=NULL,match_status='UNMATCHED',
+                    confidence=NULL,matched_title=NULL,matched_year=NULL,
+                    poster_path=NULL,backdrop_path=NULL,overview=NULL,
+                    synced_at=?,updated_at=?
+                WHERE work_id=?
+                """,
+                (stamp, stamp, work_id),
+            )
+            connection.execute(
+                "DELETE FROM tmdb_work_people WHERE work_id=? AND role='CAST'",
+                (work_id,),
+            )
+            repaired += 1
+    if repaired:
+        connection.commit()
+    return repaired
+
 
 def people_sync_required(connection: sqlite3.Connection) -> bool:
     payload = get_cached_json(connection, _PEOPLE_SYNC_CACHE_KEY)
@@ -719,9 +783,12 @@ def sync_tmdb_people_library(
     matched_by_unique_exact = 0
     matched_by_credit_alias = 0
     matched_by_reviewed_alias = 0
+    matched_by_reviewed_work_person = 0
+    repaired_work_links = 0
 
     with connect(database_path) as connection:
         initialize_database(connection)
+        repaired_work_links = repair_reviewed_bad_work_links(connection)
         works = connection.execute(
             """
             SELECT w.id,w.official_title,w.main_cast_or_voice_actors,
@@ -753,6 +820,7 @@ def sync_tmdb_people_library(
                 matched_by_unique_exact += int(result.get("matchedByUniqueExactSearch") or 0)
                 matched_by_credit_alias += int(result.get("matchedByCreditAlias") or 0)
                 matched_by_reviewed_alias += int(result.get("matchedByReviewedAlias") or 0)
+                matched_by_reviewed_work_person += int(result.get("matchedByReviewedWorkPerson") or 0)
                 for person_id in result.get("personIds") or []:
                     row = connection.execute(
                         "SELECT profile_path FROM tmdb_people WHERE tmdb_person_id=?",
@@ -781,6 +849,8 @@ def sync_tmdb_people_library(
                         "matchedByUniqueExactSearch": matched_by_unique_exact,
                         "matchedByCreditAlias": matched_by_credit_alias,
                         "matchedByReviewedAlias": matched_by_reviewed_alias,
+                        "matchedByReviewedWorkPerson": matched_by_reviewed_work_person,
+                        "repairedWorkLinks": repaired_work_links,
                         "failures": failures,
                         "currentItem": str(work["official_title"]),
                     }
@@ -799,6 +869,8 @@ def sync_tmdb_people_library(
         "matchedByUniqueExactSearch": matched_by_unique_exact,
         "matchedByCreditAlias": matched_by_credit_alias,
         "matchedByReviewedAlias": matched_by_reviewed_alias,
+        "matchedByReviewedWorkPerson": matched_by_reviewed_work_person,
+        "repairedWorkLinks": repaired_work_links,
         "failures": failures,
         "completed": failures == 0,
     }
