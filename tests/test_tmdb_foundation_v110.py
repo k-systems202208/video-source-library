@@ -104,6 +104,8 @@ class TmdbDatabaseTests(unittest.TestCase):
                     "INSERT INTO user_work_state(user_id,work_id,favorite,created_at,updated_at) VALUES(?,?,1,?,?)",
                     (user_id, work_id, stamp, stamp),
                 )
+                connection.execute("DROP TABLE tmdb_work_people")
+                connection.execute("DROP TABLE tmdb_people")
                 connection.execute("DROP TABLE tmdb_api_cache")
                 connection.execute("DROP TABLE tmdb_work_links")
                 connection.execute("UPDATE schema_info SET schema_version=5")
