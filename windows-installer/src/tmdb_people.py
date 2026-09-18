@@ -1350,3 +1350,150 @@ def audit_tmdb_people_profiles(
         "jsonReport": str(json_path),
         "csvReport": str(csv_path),
     }
+
+
+
+def _write_director_audit_report(
+    report_dir: Path | str,
+    rows: list[dict[str, Any]],
+    summary: dict[str, Any],
+) -> tuple[Path, Path]:
+    destination = Path(report_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    json_path = destination / f"tmdb-director-audit-{stamp}.json"
+    csv_path = destination / f"tmdb-director-audit-{stamp}.csv"
+    json_path.write_text(
+        json.dumps({"summary": summary, "items": rows}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    fields = [
+        "name",
+        "workCount",
+        "reason",
+        "tmdbPersonIds",
+        "profilePaths",
+        "matchedWorkCount",
+        "matchedWorks",
+        "localWorks",
+    ]
+    with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    "name": row.get("name", ""),
+                    "workCount": row.get("workCount", 0),
+                    "reason": row.get("reason", ""),
+                    "tmdbPersonIds": "|".join(str(v) for v in row.get("tmdbPersonIds", [])),
+                    "profilePaths": "|".join(str(v) for v in row.get("profilePaths", [])),
+                    "matchedWorkCount": row.get("matchedWorkCount", 0),
+                    "matchedWorks": " | ".join(row.get("matchedWorks", [])),
+                    "localWorks": " | ".join(row.get("localWorks", [])),
+                }
+            )
+    return json_path, csv_path
+
+
+def audit_tmdb_director_profiles(
+    database_path: Path | str,
+    report_dir: Path | str,
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    with connect(database_path) as connection:
+        initialize_database(connection)
+        work_rows = connection.execute(
+            """
+            SELECT
+                w.id,w.official_title,w.year_or_period,w.director_or_direction,
+                t.match_status,t.media_type,t.tmdb_id
+            FROM works w
+            LEFT JOIN tmdb_work_links t ON t.work_id=w.id
+            WHERE TRIM(COALESCE(w.director_or_direction,''))<>''
+            ORDER BY w.external_work_no
+            """
+        ).fetchall()
+        occurrences: dict[str, list[sqlite3.Row]] = {}
+        for work in work_rows:
+            for local_name in split_local_people(work["director_or_direction"]):
+                occurrences.setdefault(local_name, []).append(work)
+
+        all_links = connection.execute(
+            """
+            SELECT wp.local_name,wp.tmdb_person_id,p.profile_path
+            FROM tmdb_work_people wp
+            JOIN tmdb_people p ON p.tmdb_person_id=wp.tmdb_person_id
+            WHERE wp.role='DIRECTOR'
+            """
+        ).fetchall()
+        links_by_name: dict[str, dict[int, str | None]] = {}
+        for link in all_links:
+            links_by_name.setdefault(str(link["local_name"]), {})[
+                int(link["tmdb_person_id"])
+            ] = str(link["profile_path"]) if link["profile_path"] else None
+
+        for local_name, person_works in occurrences.items():
+            linked_profiles = links_by_name.get(local_name, {})
+            linked_ids = set(linked_profiles)
+            matched_works = [
+                work
+                for work in person_works
+                if str(work["match_status"] or "") == "MATCHED" and work["tmdb_id"] is not None
+            ]
+            if len(linked_ids) > 1:
+                reason = "AMBIGUOUS"
+            elif len(linked_ids) == 1:
+                person_id = next(iter(linked_ids))
+                reason = "PROFILE_READY" if linked_profiles.get(person_id) else "PERSON_NO_PROFILE"
+            elif not matched_works:
+                reason = "NO_MATCHED_WORK"
+            else:
+                reason = "DIRECTOR_CREDIT_NOT_FOUND"
+
+            local_work_labels: list[str] = []
+            for work in person_works:
+                year = str(work["year_or_period"] or "").strip()
+                status = str(work["match_status"] or "NO_LINK").strip() or "NO_LINK"
+                media_type = str(work["media_type"] or "").strip()
+                tmdb_id = work["tmdb_id"]
+                suffix = status
+                if media_type and tmdb_id is not None:
+                    suffix = f"{status} {media_type}:{int(tmdb_id)}"
+                title = str(work["official_title"] or "").strip()
+                local_work_labels.append(
+                    f"{title} ({year}) [{suffix}]" if year else f"{title} [{suffix}]"
+                )
+            rows.append(
+                {
+                    "name": local_name,
+                    "workCount": len(person_works),
+                    "reason": reason,
+                    "tmdbPersonIds": sorted(linked_ids),
+                    "profilePaths": sorted({path for path in linked_profiles.values() if path}),
+                    "matchedWorkCount": len(matched_works),
+                    "matchedWorks": [
+                        f"{work['official_title']} [{work['media_type']}:{work['tmdb_id']}]"
+                        for work in matched_works
+                    ],
+                    "localWorks": local_work_labels,
+                }
+            )
+
+    reason_counts = Counter(str(row["reason"]) for row in rows)
+    summary = {
+        "totalDirectors": len(rows),
+        "profileReady": reason_counts.get("PROFILE_READY", 0),
+        "personNoProfile": reason_counts.get("PERSON_NO_PROFILE", 0),
+        "noMatchedWork": reason_counts.get("NO_MATCHED_WORK", 0),
+        "directorCreditNotFound": reason_counts.get("DIRECTOR_CREDIT_NOT_FOUND", 0),
+        "ambiguous": reason_counts.get("AMBIGUOUS", 0),
+        "needsReview": sum(1 for row in rows if str(row.get("reason") or "") != "PROFILE_READY"),
+        "reasons": dict(sorted(reason_counts.items())),
+    }
+    json_path, csv_path = _write_director_audit_report(report_dir, rows, summary)
+    return {
+        "summary": summary,
+        "jsonReport": str(json_path),
+        "csvReport": str(csv_path),
+    }
