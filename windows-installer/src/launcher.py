@@ -353,8 +353,8 @@ class VideoLibraryLauncher(tk.Tk):
             return
         if not messagebox.askyesno(
             APP_NAME,
-            "登録作品をTMDbと照合し、高信頼で一致した作品のポスター／背景画像を保存します。\n"
-            "低信頼候補は自動確定しません。開始しますか？",
+            "登録作品をTMDbと照合し、高信頼で一致した作品のポスター／背景画像と出演者写真を保存します。\n"
+            "低信頼候補や人物名が一意に一致しない場合は自動確定しません。開始しますか？",
         ):
             return
         self._set_busy(True)
@@ -417,6 +417,9 @@ class VideoLibraryLauncher(tk.Tk):
         unmatched = int(summary.get("unmatched") or 0)
         posters = int(summary.get("posterCached") or 0)
         backdrops = int(summary.get("backdropCached") or 0)
+        people = int(summary.get("peopleMatched") or 0)
+        people_profiles = int(summary.get("peopleProfileCached") or 0)
+        people_failures = int(summary.get("peopleSyncFailures") or 0)
         self.scan_progress.configure(mode="determinate", maximum=max(1, total))
         self.scan_progress["value"] = total
         self.scan_status.set("完了 — TMDb作品情報を同期しました")
@@ -426,15 +429,20 @@ class VideoLibraryLauncher(tk.Tk):
         self._append_log(
             f"TMDb同期完了: {total:,}作品 / MATCHED {matched:,} / REVIEW {review:,} / UNMATCHED {unmatched:,}"
         )
-        self._append_log(f"ポスター {posters:,} / 背景 {backdrops:,} / JSON: {report.get('jsonReport', '')}")
+        self._append_log(
+            f"ポスター {posters:,} / 背景 {backdrops:,} / 出演者 {people:,} / 顔写真 {people_profiles:,} / "
+            f"人物同期失敗 {people_failures:,} / JSON: {report.get('jsonReport', '')}"
+        )
         self._append_log(f"CSV : {report.get('csvReport', '')}")
         self._set_busy(False)
         messagebox.showinfo(
             APP_NAME,
             "TMDb同期が完了しました。\n\n"
             f"登録作品: {total:,}\nMATCHED: {matched:,}\nREVIEW: {review:,}\nUNMATCHED: {unmatched:,}\n"
-            f"ポスター保存: {posters:,}\n背景保存: {backdrops:,}\n\n"
-            "REVIEWは自動確定していません。診断CSVで確認できます。",
+            f"ポスター保存: {posters:,}\n背景保存: {backdrops:,}\n"
+            f"出演者照合: {people:,}\n顔写真保存: {people_profiles:,}\n"
+            f"人物同期失敗: {people_failures:,}\n\n"
+            "REVIEWおよび一意に照合できない人物は自動確定していません。",
         )
 
     def _tmdb_sync_failed(self, exc: Exception) -> None:
