@@ -170,7 +170,7 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("NOT removed", iss)
         self.assertIn("PyInstaller", build)
         self.assertIn("ISCC.exe", build)
-        self.assertIn("video-library-shell-v3", sw)
+        self.assertIn("video-library-shell-v4", sw)
         self.assertIn("/api/", sw)
         self.assertIn("/video/", sw)
         self.assertIn("/subtitle/", sw)
