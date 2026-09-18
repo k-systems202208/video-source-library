@@ -334,6 +334,141 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
             self.assertEqual(result["matchedByCombinedCredits"], 0)
             self.assertEqual(count, 0)
 
+    def test_third_match_runs_even_when_work_credits_are_empty(self):
+        class EmptyCreditsCombinedClient:
+            def tv_aggregate_credits(self, tv_id, *, language="ja-JP"):
+                return {"cast": []}
+
+            def search_person(self, query, *, language="ja-JP"):
+                return {
+                    "results": [
+                        {
+                            "id": 1964804,
+                            "name": "山田邦子",
+                            "original_name": "山田邦子",
+                            "profile_path": "/yamada.jpg",
+                        }
+                    ]
+                }
+
+            def person_combined_credits(self, person_id, *, language="ja-JP"):
+                return {"cast": [{"id": 155375, "media_type": "tv", "name": "トップスチュワーデス物語"}]}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db, work_id = self._database_with_work(root, "山田邦子")
+
+            def downloader(remote_path, destination, *, size):
+                target = Path(destination)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(b"profile")
+                return target
+
+            with connect(db) as connection:
+                result = sync_cast_people_for_work(
+                    connection,
+                    EmptyCreditsCombinedClient(),
+                    work_id=work_id,
+                    media_type="tv",
+                    tmdb_id=155375,
+                    local_cast="山田邦子",
+                    image_root=root / "TMDbImages",
+                    image_downloader=downloader,
+                )
+
+            self.assertEqual(result["matched"], 1)
+            self.assertEqual(result["matchedByCombinedCredits"], 1)
+            self.assertEqual(result["matchedByUniqueExactSearch"], 0)
+
+    def test_fourth_match_accepts_only_one_exact_person_search_result(self):
+        class UniqueExactClient:
+            def tv_aggregate_credits(self, tv_id, *, language="ja-JP"):
+                return {"cast": [{"id": 999, "name": "別の出演者", "original_name": "別の出演者"}]}
+
+            def search_person(self, query, *, language="ja-JP"):
+                return {
+                    "results": [
+                        {
+                            "id": 1698670,
+                            "name": "井森美幸",
+                            "original_name": "井森美幸",
+                            "profile_path": "/imori.jpg",
+                        }
+                    ]
+                }
+
+            def person_combined_credits(self, person_id, *, language="ja-JP"):
+                return {"cast": []}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db, work_id = self._database_with_work(root, "井森美幸")
+
+            def downloader(remote_path, destination, *, size):
+                target = Path(destination)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(b"profile")
+                return target
+
+            with connect(db) as connection:
+                result = sync_cast_people_for_work(
+                    connection,
+                    UniqueExactClient(),
+                    work_id=work_id,
+                    media_type="tv",
+                    tmdb_id=155375,
+                    local_cast="井森美幸",
+                    image_root=root / "TMDbImages",
+                    image_downloader=downloader,
+                )
+                link = connection.execute(
+                    "SELECT local_name,tmdb_person_id FROM tmdb_work_people"
+                ).fetchone()
+
+            self.assertEqual(result["matched"], 1)
+            self.assertEqual(result["matchedByUniqueExactSearch"], 1)
+            self.assertEqual((link["local_name"], link["tmdb_person_id"]), ("井森美幸", 1698670))
+
+    def test_fourth_match_rejects_non_exact_or_multiple_exact_search_results(self):
+        class SearchClient:
+            def __init__(self, results):
+                self.results = results
+
+            def tv_aggregate_credits(self, tv_id, *, language="ja-JP"):
+                return {"cast": [{"id": 999, "name": "別の出演者", "original_name": "別の出演者"}]}
+
+            def search_person(self, query, *, language="ja-JP"):
+                return {"results": list(self.results)}
+
+            def person_combined_credits(self, person_id, *, language="ja-JP"):
+                return {"cast": []}
+
+        cases = [
+            [{"id": 1, "name": "井森 美幸子", "original_name": "井森 美幸子", "profile_path": "/x.jpg"}],
+            [
+                {"id": 1, "name": "井森美幸", "original_name": "井森美幸", "profile_path": "/a.jpg"},
+                {"id": 2, "name": "井森美幸", "original_name": "井森美幸", "profile_path": "/b.jpg"},
+            ],
+        ]
+        for results in cases:
+            with self.subTest(results=results), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                db, work_id = self._database_with_work(root, "井森美幸")
+                with connect(db) as connection:
+                    result = sync_cast_people_for_work(
+                        connection,
+                        SearchClient(results),
+                        work_id=work_id,
+                        media_type="tv",
+                        tmdb_id=155375,
+                        local_cast="井森美幸",
+                        image_root=root / "TMDbImages",
+                        image_downloader=lambda *args, **kwargs: None,
+                    )
+                    count = int(connection.execute("SELECT COUNT(*) FROM tmdb_work_people").fetchone()[0])
+                self.assertEqual(result["matchedByUniqueExactSearch"], 0)
+                self.assertEqual(count, 0)
+
     def test_person_search_result_outside_work_credits_is_rejected(self):
         class WrongSearchClient:
             def movie_credits(self, movie_id, *, language="ja-JP"):
@@ -562,6 +697,23 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
                     connection,
                     "tmdb:people-sync-version",
                     {"version": 2},
+                    fetched_at=now_iso(),
+                    expires_at=None,
+                )
+                connection.commit()
+                self.assertTrue(people_sync_required(connection))
+
+    def test_people_sync_v3_marker_requires_v4_resync(self):
+        from tmdb_cache import put_cached_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "library.db"
+            with connect(db) as connection:
+                initialize_database(connection)
+                put_cached_json(
+                    connection,
+                    "tmdb:people-sync-version",
+                    {"version": 3},
                     fetched_at=now_iso(),
                     expires_at=None,
                 )
