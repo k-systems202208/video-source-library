@@ -831,7 +831,7 @@ def sync_director_people_for_work(
     image_root: Path | str,
     image_downloader: Callable[..., Path] = download_tmdb_image,
 ) -> dict[str, Any]:
-    names = split_local_people(local_directors)
+    names = split_local_directors(local_directors)
     if not names:
         connection.execute(
             "DELETE FROM tmdb_work_people WHERE work_id=? AND role='DIRECTOR'",
@@ -840,6 +840,8 @@ def sync_director_people_for_work(
         connection.commit()
         return {
             "matched": 0,
+            "matchedExact": 0,
+            "matchedBySearch": 0,
             "unmatched": 0,
             "profileCached": 0,
             "personIds": [],
@@ -847,22 +849,26 @@ def sync_director_people_for_work(
 
     payload = _cached_credits(connection, client, media_type, tmdb_id)
     index = _director_index(payload)
-    resolved_people: list[tuple[int, str, dict[str, Any]]] = []
+    resolved_people: list[tuple[int, str, dict[str, Any], str | None]] = []
+    matched_exact = 0
+    matched_search = 0
     unmatched = 0
     for local_order, local_name in enumerate(names):
-        candidates: dict[int, dict[str, Any]] = {}
-        for query in person_name_queries(local_name):
-            for item in index.get(normalize_person_name(query), []):
-                try:
-                    person_id = int(item.get("id"))
-                except (TypeError, ValueError):
-                    continue
-                if person_id > 0:
-                    candidates[person_id] = item
-        if len(candidates) != 1:
+        item, match_method = _resolve_director_candidate(
+            connection,
+            client,
+            payload,
+            index,
+            local_name,
+        )
+        if item is None:
             unmatched += 1
             continue
-        resolved_people.append((local_order, local_name, next(iter(candidates.values()))))
+        if match_method == "EXACT":
+            matched_exact += 1
+        elif match_method == "CREDIT_CONSTRAINED_SEARCH":
+            matched_search += 1
+        resolved_people.append((local_order, local_name, item, match_method))
 
     connection.execute(
         "DELETE FROM tmdb_work_people WHERE work_id=? AND role='DIRECTOR'",
@@ -871,7 +877,7 @@ def sync_director_people_for_work(
     matched_ids: list[int] = []
     cached_ids: list[int] = []
     stamp = now_iso()
-    for local_order, local_name, item in resolved_people:
+    for local_order, local_name, item, _match_method in resolved_people:
         person_id, profile_path, profile_changed = _upsert_person(connection, item)
         connection.execute(
             """
@@ -902,6 +908,8 @@ def sync_director_people_for_work(
     connection.commit()
     return {
         "matched": len(matched_ids),
+        "matchedExact": matched_exact,
+        "matchedBySearch": matched_search,
         "unmatched": unmatched,
         "profileCached": len(set(cached_ids)),
         "personIds": sorted(set(matched_ids)),
