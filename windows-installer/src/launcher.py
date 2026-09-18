@@ -419,6 +419,7 @@ class VideoLibraryLauncher(tk.Tk):
         backdrops = int(summary.get("backdropCached") or 0)
         people = int(summary.get("peopleMatched") or 0)
         people_profiles = int(summary.get("peopleProfileCached") or 0)
+        people_combined = int(summary.get("peopleMatchedByCombinedCredits") or 0)
         people_failures = int(summary.get("peopleSyncFailures") or 0)
         self.scan_progress.configure(mode="determinate", maximum=max(1, total))
         self.scan_progress["value"] = total
@@ -431,7 +432,7 @@ class VideoLibraryLauncher(tk.Tk):
         )
         self._append_log(
             f"ポスター {posters:,} / 背景 {backdrops:,} / 出演者 {people:,} / 顔写真 {people_profiles:,} / "
-            f"人物同期失敗 {people_failures:,} / JSON: {report.get('jsonReport', '')}"
+            f"第3照合回収 {people_combined:,} / 人物同期失敗 {people_failures:,} / JSON: {report.get('jsonReport', '')}"
         )
         self._append_log(f"CSV : {report.get('csvReport', '')}")
         people_audit = report.get("peopleAudit") or {}
@@ -456,7 +457,7 @@ class VideoLibraryLauncher(tk.Tk):
             f"登録作品: {total:,}\nMATCHED: {matched:,}\nREVIEW: {review:,}\nUNMATCHED: {unmatched:,}\n"
             f"ポスター保存: {posters:,}\n背景保存: {backdrops:,}\n"
             f"出演者照合: {people:,}\n顔写真保存: {people_profiles:,}\n"
-            f"人物同期失敗: {people_failures:,}\n\n"
+            f"第3照合回収: {people_combined:,}\n人物同期失敗: {people_failures:,}\n\n"
             "REVIEWおよび一意に照合できない人物は自動確定していません。",
         )
 
