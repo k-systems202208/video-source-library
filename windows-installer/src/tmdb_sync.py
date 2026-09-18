@@ -22,7 +22,7 @@ from tmdb_people import audit_tmdb_people_profiles, mark_people_sync_complete, s
 _MATCHED = "MATCHED"
 _REVIEW = "REVIEW"
 _UNMATCHED = "UNMATCHED"
-_MATCHER_VERSION = 7
+_MATCHER_VERSION = 8
 _MATCHER_VERSION_CACHE_KEY = "tmdb:matcher-version"
 _SEARCH_CACHE_VERSION = 3
 _IMAGE_CACHE_REPAIR_VERSION = 3
@@ -60,7 +60,6 @@ _AUDIT_APPROVED_MATCHES: dict[tuple[str, str], tuple[str, int, str]] = {
     ("誰にも言えない", "1993"): ("tv", 36167, "1993"),
     ("こんな恋のはなし", "1997"): ("tv", 9327, "1997"),
     ("牙狼〈GARO〉", "2005-2006"): ("tv", 1941, "2005"),
-    ("半分の月がのぼる空", "2006"): ("tv", 34746, "2006"),
     ("SUMMER NUDE", "2013"): ("tv", 64293, "2013"),
     ("夜行観覧車", "2013"): ("tv", 81864, "2013"),
     ("信長協奏曲", "2014"): ("tv", 62911, "2014"),
@@ -78,6 +77,14 @@ _AUDIT_AGGREGATE_WORKS: set[tuple[str, str]] = {
 # TMDbのシリーズ構造とローカル管理単位が一致しないため自動紐付けしない項目。
 _AUDIT_SPECIAL_UNMATCHED: set[tuple[str, str]] = {
     ("3年B組金八先生 第6シリーズ", "2001"),
+    ("半分の月がのぼる空", "2006"),
+}
+
+# Existing MATCHED links normally stay fixed after matcher v4.  These audited
+# signatures are exceptions because the stored TMDb work was confirmed to be a
+# different production and must be re-evaluated once.
+_AUDIT_FORCE_REASSESS_WORKS: set[tuple[str, str]] = {
+    ("半分の月がのぼる空", "2006"),
 }
 
 
@@ -788,6 +795,7 @@ def sync_tmdb_library(
     people_unique_exact_match_count = 0
     people_credit_alias_match_count = 0
     people_reviewed_alias_match_count = 0
+    people_reviewed_work_person_match_count = 0
     people_sync_failures = 0
 
     with connect(database_path) as connection:
@@ -829,6 +837,7 @@ def sync_tmdb_library(
                 and existing is not None
                 and existing["match_status"] == _MATCHED
                 and existing["tmdb_id"]
+                and _work_audit_key(work) not in _AUDIT_FORCE_REASSESS_WORKS
             ):
                 candidate = Candidate(
                     media_type=str(existing["media_type"]),
@@ -911,6 +920,9 @@ def sync_tmdb_library(
                     people_unique_exact_match_count += int(people_result.get("matchedByUniqueExactSearch") or 0)
                     people_credit_alias_match_count += int(people_result.get("matchedByCreditAlias") or 0)
                     people_reviewed_alias_match_count += int(people_result.get("matchedByReviewedAlias") or 0)
+                    people_reviewed_work_person_match_count += int(
+                        people_result.get("matchedByReviewedWorkPerson") or 0
+                    )
                     people_matched_ids.update(int(value) for value in people_result.get("personIds") or [])
                     for person_id in people_result.get("personIds") or []:
                         person_row = connection.execute(
@@ -990,6 +1002,7 @@ def sync_tmdb_library(
         "peopleMatchedByUniqueExactSearch": people_unique_exact_match_count,
         "peopleMatchedByCreditAlias": people_credit_alias_match_count,
         "peopleMatchedByReviewedAlias": people_reviewed_alias_match_count,
+        "peopleMatchedByReviewedWorkPerson": people_reviewed_work_person_match_count,
         "peopleSyncFailures": people_sync_failures,
     }
     json_path, csv_path = _write_report(Path(report_dir), rows, summary)
