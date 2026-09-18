@@ -324,7 +324,6 @@ def initialize_database(connection: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_works_category ON works(category);
         CREATE INDEX IF NOT EXISTS idx_works_title ON works(official_title);
-        CREATE INDEX IF NOT EXISTS idx_works_visible ON works(is_visible);
         CREATE INDEX IF NOT EXISTS idx_series_work ON series_groups(work_id);
         CREATE INDEX IF NOT EXISTS idx_videos_work ON videos(work_id);
         CREATE INDEX IF NOT EXISTS idx_videos_series ON videos(series_group_id);
@@ -351,6 +350,9 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         "works",
         "is_visible",
         "INTEGER NOT NULL DEFAULT 1 CHECK(is_visible IN (0, 1))",
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_works_visible ON works(is_visible)"
     )
     _add_column_if_missing(
         connection,
