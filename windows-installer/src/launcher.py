@@ -27,6 +27,7 @@ from paths import CONFIG_PATH, DATABASE_PATH, DATA_ROOT, RUNTIME_PATH
 from remote_access import disable_remote_access, enable_remote_access, get_remote_status
 from scan_runner import scan_library
 from server import create_server
+from tmdb_people import people_sync_required, sync_tmdb_people_library
 from tmdb_sync import sync_tmdb_library
 
 APP_NAME = "自宅動画ライブラリ"
@@ -136,6 +137,7 @@ class VideoLibraryLauncher(tk.Tk):
         self.scan_thread: threading.Thread | None = None
         self.audit_thread: threading.Thread | None = None
         self.tmdb_thread: threading.Thread | None = None
+        self.people_thread: threading.Thread | None = None
         self.audit_started_monotonic: float | None = None
         self.scan_started_monotonic: float | None = None
         self.control_secret = ""
@@ -339,7 +341,7 @@ class VideoLibraryLauncher(tk.Tk):
 
 
     def start_tmdb_sync(self) -> None:
-        if self.server is not None or self.scan_thread is not None or self.audit_thread is not None or self.tmdb_thread is not None:
+        if self.server is not None or self.scan_thread is not None or self.audit_thread is not None or self.tmdb_thread is not None or self.people_thread is not None:
             messagebox.showinfo(APP_NAME, "TMDb同期の前にライブラリを停止してください。")
             return
         if not DATABASE_PATH.is_file():
@@ -877,6 +879,59 @@ class VideoLibraryLauncher(tk.Tk):
             return
         self._set_busy(False)
         self.open_browser()
+        self._start_people_sync_if_needed()
+
+    def _start_people_sync_if_needed(self) -> None:
+        if self.people_thread is not None or not DATABASE_PATH.is_file():
+            return
+        token = configured_tmdb_token(config_path=CONFIG_PATH)
+        if not token:
+            return
+        try:
+            with connect(DATABASE_PATH) as connection:
+                initialize_database(connection)
+                if not people_sync_required(connection):
+                    return
+        except Exception as exc:
+            self._append_log(f"出演者写真同期の確認に失敗: {exc}")
+            return
+
+        self._append_log("出演者／声優の顔写真をバックグラウンド同期します。")
+        self.people_thread = threading.Thread(
+            target=self._people_sync_worker,
+            args=(token,),
+            daemon=True,
+            name="VideoLibraryPeopleSync",
+        )
+        self.people_thread.start()
+
+    def _people_sync_worker(self, token: str) -> None:
+        try:
+            report = sync_tmdb_people_library(
+                DATABASE_PATH,
+                TMDB_IMAGE_PATH,
+                token,
+            )
+        except Exception as exc:
+            self.after(0, lambda e=exc: self._people_sync_failed(e))
+            return
+        self.after(0, lambda r=report: self._people_sync_succeeded(r))
+
+    def _people_sync_succeeded(self, report: dict[str, Any]) -> None:
+        self.people_thread = None
+        matched = int(report.get("matchedPeople") or 0)
+        cached = int(report.get("profileCached") or 0)
+        failures = int(report.get("failures") or 0)
+        self._append_log(
+            f"出演者写真同期: 人物 {matched:,} / 顔写真 {cached:,} / 失敗 {failures:,}"
+        )
+        if failures:
+            self._append_log("未完了分は次回起動時に自動再試行します。")
+
+    def _people_sync_failed(self, exc: Exception) -> None:
+        self.people_thread = None
+        self._append_log(f"出演者写真同期 ERROR: {type(exc).__name__}: {exc}")
+        self._append_log("次回起動時に自動再試行します。")
 
     def _startup_scan_failed(self, exc: Exception) -> None:
         self.scan_thread = None
