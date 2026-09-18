@@ -917,6 +917,7 @@ def sync_tmdb_people_library(
         raise ValueError("TMDb API Read Access Token is not configured")
     tmdb = client or TmdbClient(token)
     matched_ids: set[int] = set()
+    director_ids: set[int] = set()
     cached_ids: set[int] = set()
     failures = 0
     matched_by_search = 0
@@ -932,37 +933,61 @@ def sync_tmdb_people_library(
         repaired_work_links = repair_reviewed_bad_work_links(connection)
         works = connection.execute(
             """
-            SELECT w.id,w.official_title,w.main_cast_or_voice_actors,
+            SELECT w.id,w.official_title,w.main_cast_or_voice_actors,w.director_or_direction,
                    t.media_type,t.tmdb_id
             FROM works w
             JOIN tmdb_work_links t ON t.work_id=w.id
             WHERE t.match_status='MATCHED'
               AND t.tmdb_id IS NOT NULL
-              AND TRIM(COALESCE(w.main_cast_or_voice_actors,''))<>''
+              AND (
+                    TRIM(COALESCE(w.main_cast_or_voice_actors,''))<>''
+                 OR TRIM(COALESCE(w.director_or_direction,''))<>''
+              )
             ORDER BY w.external_work_no
             """
         ).fetchall()
         total = len(works)
         for index, work in enumerate(works, start=1):
+            work_person_ids: set[int] = set()
             try:
-                result = sync_cast_people_for_work(
-                    connection,
-                    tmdb,
-                    work_id=int(work["id"]),
-                    media_type=str(work["media_type"]),
-                    tmdb_id=int(work["tmdb_id"]),
-                    local_cast=str(work["main_cast_or_voice_actors"] or ""),
-                    image_root=image_root,
-                    image_downloader=image_downloader,
-                )
-                matched_ids.update(int(value) for value in result.get("personIds") or [])
-                matched_by_search += int(result.get("matchedBySearch") or 0)
-                matched_by_combined += int(result.get("matchedByCombinedCredits") or 0)
-                matched_by_unique_exact += int(result.get("matchedByUniqueExactSearch") or 0)
-                matched_by_credit_alias += int(result.get("matchedByCreditAlias") or 0)
-                matched_by_reviewed_alias += int(result.get("matchedByReviewedAlias") or 0)
-                matched_by_reviewed_work_person += int(result.get("matchedByReviewedWorkPerson") or 0)
-                for person_id in result.get("personIds") or []:
+                if str(work["main_cast_or_voice_actors"] or "").strip():
+                    cast_result = sync_cast_people_for_work(
+                        connection,
+                        tmdb,
+                        work_id=int(work["id"]),
+                        media_type=str(work["media_type"]),
+                        tmdb_id=int(work["tmdb_id"]),
+                        local_cast=str(work["main_cast_or_voice_actors"] or ""),
+                        image_root=image_root,
+                        image_downloader=image_downloader,
+                    )
+                    cast_ids = {int(value) for value in cast_result.get("personIds") or []}
+                    matched_ids.update(cast_ids)
+                    work_person_ids.update(cast_ids)
+                    matched_by_search += int(cast_result.get("matchedBySearch") or 0)
+                    matched_by_combined += int(cast_result.get("matchedByCombinedCredits") or 0)
+                    matched_by_unique_exact += int(cast_result.get("matchedByUniqueExactSearch") or 0)
+                    matched_by_credit_alias += int(cast_result.get("matchedByCreditAlias") or 0)
+                    matched_by_reviewed_alias += int(cast_result.get("matchedByReviewedAlias") or 0)
+                    matched_by_reviewed_work_person += int(cast_result.get("matchedByReviewedWorkPerson") or 0)
+
+                if str(work["director_or_direction"] or "").strip():
+                    director_result = sync_director_people_for_work(
+                        connection,
+                        tmdb,
+                        work_id=int(work["id"]),
+                        media_type=str(work["media_type"]),
+                        tmdb_id=int(work["tmdb_id"]),
+                        local_directors=str(work["director_or_direction"] or ""),
+                        image_root=image_root,
+                        image_downloader=image_downloader,
+                    )
+                    current_directors = {int(value) for value in director_result.get("personIds") or []}
+                    director_ids.update(current_directors)
+                    matched_ids.update(current_directors)
+                    work_person_ids.update(current_directors)
+
+                for person_id in work_person_ids:
                     row = connection.execute(
                         "SELECT profile_path FROM tmdb_people WHERE tmdb_person_id=?",
                         (int(person_id),),
@@ -984,6 +1009,7 @@ def sync_tmdb_people_library(
                         "current": index,
                         "total": total,
                         "matchedPeople": len(matched_ids),
+                        "matchedDirectors": len(director_ids),
                         "profileCached": len(cached_ids),
                         "matchedBySearch": matched_by_search,
                         "matchedByCombinedCredits": matched_by_combined,
@@ -1004,6 +1030,7 @@ def sync_tmdb_people_library(
     result = {
         "totalWorks": len(works),
         "matchedPeople": len(matched_ids),
+        "matchedDirectors": len(director_ids),
         "profileCached": len(cached_ids),
         "matchedBySearch": matched_by_search,
         "matchedByCombinedCredits": matched_by_combined,
@@ -1022,8 +1049,11 @@ def sync_tmdb_people_library(
             token,
             client=tmdb,
         )
+        result["directorAudit"] = audit_tmdb_director_profiles(
+            database_path,
+            report_dir,
+        )
     return result
-
 
 def _person_audit_reason(
     *,
