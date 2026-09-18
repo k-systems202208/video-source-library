@@ -24,7 +24,7 @@ from tmdb_people_reviewed_overrides import (
 
 _PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 _CREDITS_TTL_DAYS = 30
-_PEOPLE_SYNC_VERSION = 8
+_PEOPLE_SYNC_VERSION = 9
 _PEOPLE_SYNC_CACHE_KEY = "tmdb:people-sync-version"
 _PEOPLE_AUDIT_VERSION = 8
 _PEOPLE_AUDIT_CACHE_KEY = "tmdb:people-audit-version"
@@ -280,6 +280,53 @@ def _cast_index(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     index: dict[str, list[dict[str, Any]]] = {}
     for item in cast:
         if not isinstance(item, dict):
+            continue
+        try:
+            person_id = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        if person_id <= 0:
+            continue
+        for field in ("name", "original_name"):
+            key = normalize_person_name(item.get(field))
+            if key:
+                index.setdefault(key, []).append(item)
+    return index
+
+
+def _is_directing_credit(item: dict[str, Any]) -> bool:
+    department = str(item.get("department") or item.get("known_for_department") or "").strip().casefold()
+    if department == "directing":
+        return True
+    jobs: list[str] = []
+    direct_job = str(item.get("job") or "").strip()
+    if direct_job:
+        jobs.append(direct_job)
+    aggregate_jobs = item.get("jobs")
+    if isinstance(aggregate_jobs, list):
+        for job in aggregate_jobs:
+            if isinstance(job, dict):
+                value = str(job.get("job") or "").strip()
+                if value:
+                    jobs.append(value)
+    accepted = {
+        "director",
+        "series director",
+        "episode director",
+        "co-director",
+        "chief director",
+        "supervising director",
+    }
+    return any(value.casefold() in accepted for value in jobs)
+
+
+def _director_index(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    crew = payload.get("crew")
+    if not isinstance(crew, list):
+        return {}
+    index: dict[str, list[dict[str, Any]]] = {}
+    for item in crew:
+        if not isinstance(item, dict) or not _is_directing_credit(item):
             continue
         try:
             person_id = int(item.get("id"))
