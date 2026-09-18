@@ -47,6 +47,92 @@ test('initial view starts at the header and renders the catalog', async ({ page 
   await expect.poll(async () => page.evaluate(() => window.scrollY)).toBe(0);
 });
 
+test('owner can hide and restore works from visibility management', async ({ page }) => {
+  const manage = page.locator('#visibilityModeButton');
+  await expect(manage).toBeVisible();
+  await manage.click();
+  await expect(page.locator('#visibilityControls')).toBeVisible();
+  await expect(manage).toHaveText('表示設定を終了');
+
+  const firstCard = page.locator('.visibility-card').first();
+  await expect(firstCard).toBeVisible();
+  const title = await firstCard.locator('h2').innerText();
+  const checkbox = firstCard.locator('.visibility-check input');
+  const workId = Number(await checkbox.getAttribute('data-work-id'));
+  expect(workId).toBeGreaterThan(0);
+
+  await checkbox.check();
+  await expect(page.locator('#visibilitySelectionCount')).toHaveText('1件選択');
+  await page.locator('#visibilityHideSelected').click();
+  await expect(page.locator('#catalogCount')).toHaveText(/11\s*作品/);
+
+  await page.locator('#visibilityFilter').selectOption('hidden');
+  await expect(page.locator('#catalogCount')).toHaveText(/1\s*作品/);
+  const hiddenCard = page.locator('.visibility-card').filter({ hasText: title }).first();
+  await expect(hiddenCard).toBeVisible();
+  await expect(hiddenCard.locator('.visibility-status')).toHaveText('非表示');
+
+  await hiddenCard.locator('h2').click();
+  await expect(page).toHaveURL(new RegExp(`#/work/${workId}const { test, expect } = require('@playwright/test');
+
+async function openCinemaMenu(page) {
+  const toggle = page.locator('#mobileMenuToggle');
+  if (await toggle.isVisible()) {
+    await toggle.click();
+    await expect(page.locator('#cinemaNav')).toHaveClass(/open/);
+  }
+}
+
+function escapeForRegex(value) {
+  return value.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
+}
+
+async function clickCinemaMenu(page, label, expectedHash) {
+  await openCinemaMenu(page);
+  const button = page.locator('.cinema-nav-item').filter({ hasText: label }).first();
+  await expect(button).toBeVisible();
+  await button.click();
+  await expect(page).toHaveURL(new RegExp(escapeForRegex(expectedHash) + '$'));
+}
+
+test.beforeEach(async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page._videoLibraryPageErrors = errors;
+
+  await page.goto('/');
+  await expect(page.locator('#headerBrandReset')).toBeVisible();
+  await expect(page.locator('#catalogCount')).toHaveText(/12\s*作品/);
+  await expect(page.locator('.card').first()).toBeVisible();
+});
+
+test.afterEach(async ({ page }) => {
+  expect(
+    page._videoLibraryPageErrors,
+    'browser pageerror must stay empty'
+  ).toEqual([]);
+});
+
+test('initial view starts at the header and renders the catalog', async ({ page }) => {
+  await expect(page.locator('#headerBrandReset')).toContainText('関町北映画館');
+  await expect(page.locator('#catalog')).toBeVisible();
+  await expect(page.locator('.card')).toHaveCount(12);
+  await expect(page.locator('#categories')).toContainText('テスト');
+
+  await expect.poll(async () => page.evaluate(() => window.scrollY)).toBe(0);
+});
+
+));
+  const detailToggle = page.locator('.visibility-detail');
+  await expect(detailToggle).toHaveText('⊘ 非表示');
+  await detailToggle.click();
+  await expect(detailToggle).toHaveText('◉ 表示中');
+
+  await page.locator('#back').click();
+  await expect(page.locator('#catalogCount')).toHaveText(/12\s*作品/);
+  await expect(page.locator('.card').filter({ hasText: title }).first()).toBeVisible();
+});
+
 test('all five cinema navigation items work', async ({ page }) => {
   await clickCinemaMenu(page, '上映中', '#/home/continue');
   await expect(page.locator('#catalog')).toBeVisible();
