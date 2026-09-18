@@ -17,7 +17,7 @@ from database import connect, initialize_database, now_iso
 from tmdb_cache import get_cached_json, put_cached_json
 from tmdb_client import TmdbClient
 from tmdb_images import cached_image_path, cached_person_image_path, download_tmdb_image
-from tmdb_people import mark_people_sync_complete, sync_cast_people_for_work
+from tmdb_people import audit_tmdb_people_profiles, mark_people_sync_complete, sync_cast_people_for_work
 
 _MATCHED = "MATCHED"
 _REVIEW = "REVIEW"
@@ -981,8 +981,15 @@ def sync_tmdb_library(
         "peopleSyncFailures": people_sync_failures,
     }
     json_path, csv_path = _write_report(Path(report_dir), rows, summary)
+    people_audit = audit_tmdb_people_profiles(
+        database_path,
+        report_dir,
+        token,
+        client=tmdb,
+    )
     return {
         "summary": summary,
         "jsonReport": str(json_path),
         "csvReport": str(csv_path),
+        "peopleAudit": people_audit,
     }
