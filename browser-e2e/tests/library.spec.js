@@ -68,6 +68,26 @@ test('all five cinema navigation items work', async ({ page }) => {
   await expect(page.locator('.people-card').first()).toContainText('テスト出演者');
 });
 
+test('cast directory shows profile photos, fallback, and opens person works', async ({ page }) => {
+  await clickCinemaMenu(page, '主な出演者／声優', '#/people/cast');
+
+  const pictured = page.locator('.people-card-profile').filter({ hasText: 'テスト出演者' }).first();
+  await expect(pictured).toBeVisible();
+  const profile = pictured.locator('.people-profile-media img');
+  await expect(profile).toBeVisible();
+  await expect.poll(async () => profile.evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
+  await expect(profile).toHaveAttribute('src', /\/tmdb-person-image\/9001/);
+
+  const fallback = page.locator('.people-card-profile').filter({ hasText: '写真なし出演者' }).first();
+  await expect(fallback).toBeVisible();
+  await expect(fallback.locator('.people-profile-fallback')).toBeVisible();
+
+  await pictured.click();
+  await expect(page).toHaveURL(/#\/person\//);
+  await expect(page.locator('#message')).toContainText('テスト出演者');
+  await expect(page.locator('.card').first()).toBeVisible();
+});
+
 test('work cards open the work detail screen', async ({ page }) => {
   const firstCard = page.locator('.card').first();
   await expect(firstCard).toContainText('テスト作品001');
