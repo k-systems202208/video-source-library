@@ -295,9 +295,9 @@ def _cast_index(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
 
 
 def _is_directing_credit(item: dict[str, Any]) -> bool:
-    department = str(item.get("department") or item.get("known_for_department") or "").strip().casefold()
-    if department == "directing":
-        return True
+    # TMDb's Directing department also contains assistant/supervision roles.
+    # For the first automatic director pass, require an explicit director job
+    # rather than accepting every crew member in the department.
     jobs: list[str] = []
     direct_job = str(item.get("job") or "").strip()
     if direct_job:
