@@ -11,6 +11,7 @@ sys.path.insert(0, str(SRC))
 
 from database import connect, initialize_database, now_iso
 from tmdb_cache import put_cached_json
+from tmdb_images import cached_image_path
 from tmdb_sync import _IMAGE_CACHE_REPAIR_VERSION, _requires_image_cache_repair, sync_tmdb_library
 
 
@@ -112,10 +113,16 @@ class TmdbMultiImageRepairV110Tests(unittest.TestCase):
             )
             self.assertEqual(client.detail_calls, [(18819, "ja-JP")])
             self.assertEqual(result["summary"]["matcherVersion"], 8)
-            self.assertNotEqual(poster.read_bytes(), b"wrong poster")
-            self.assertNotEqual(backdrop.read_bytes(), b"wrong backdrop")
-            self.assertIn(b"correct-smile-poster", poster.read_bytes())
-            self.assertIn(b"correct-smile-backdrop", backdrop.read_bytes())
+            self.assertEqual(poster.read_bytes(), b"wrong poster")
+            self.assertEqual(backdrop.read_bytes(), b"wrong backdrop")
+            current_poster = cached_image_path(
+                images, work_id, "poster", "/correct-smile-poster.jpg"
+            )
+            current_backdrop = cached_image_path(
+                images, work_id, "backdrop", "/correct-smile-backdrop.jpg"
+            )
+            self.assertIn(b"correct-smile-poster", current_poster.read_bytes())
+            self.assertIn(b"correct-smile-backdrop", current_backdrop.read_bytes())
 
             with connect(db) as connection:
                 row = connection.execute(
