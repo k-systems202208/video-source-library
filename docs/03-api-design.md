@@ -1,45 +1,106 @@
-# 自宅動画ライブラリ v1.0 API設計
+# 自宅動画ライブラリ v1.1.0 API設計
 
-ベースURL例: `http://127.0.0.1:8765`
+通常のローカルURL例: `http://127.0.0.1:8876`
 
-APIはUTF-8 JSON、原則 `Cache-Control: no-store`。
+APIはUTF-8 JSON。状態・個人情報系は原則 `Cache-Control: no-store`。TMDb画像は短時間のprivate browser cacheを許可する。
 
-## 権限
-- 公開: 匿名閲覧・再生
-- 利用者: local owner または有効なTailscale利用者
-- オーナー: `is_owner = 1`
-- ローカルオーナー: Windows管理画面から認証した自宅PC
-- ランチャー: control secretを持つローカルプロセス
+## アクセスモデル
 
-利用者IDはクライアント入力を信用せず、Cookie/Tailscale identityからサーバー側で決定する。
+HTTPサーバーはlocalhostへだけbindする。
 
-## 主なAPI
+### 読み取り
+
+作品一覧・作品詳細・人物名鑑・動画/字幕/TMDb画像の配信は、到達可能な同一origin内で利用できる。
+
+利用者認証がない読み取りでは、個人のお気に入り・視聴状態は付与しない。
+
+### 利用者
+
+次のいずれかで利用者をサーバー側で確定する。
+
+- localhost owner Cookie
+- Tailscale Serve identity
+
+`/api/me/*` の個人状態APIは認証必須。
+
+### Owner
+
+スキャン実行、診断、バックアップ等の管理操作はOwner必須。
+
+### ランチャー
+
+localhostのWindowsランチャーだけがcontrol secretを使用して短寿命owner one-time tokenを登録する。control secret自体はブラウザへ渡さない。
+
+## 主なGET API
+
 - `GET /api/health`
 - `GET /api/current-user`
-- `GET /api/home`
+- `GET /api/stats`
+- `GET /api/scan/status`
 - `GET /api/works`
 - `GET /api/works/{id}`
 - `GET /api/works/{id}/videos`
 - `GET /api/videos/{id}`
-- `GET /api/search`
-- `GET /video/{id}`
+- `GET /api/people?role=director|cast`
 - `GET /api/me/favorite-works`
-- `PUT /api/me/works/{id}/favorite`
 - `GET /api/me/favorite-videos`
-- `PUT /api/me/videos/{id}/favorite`
-- `PUT /api/me/videos/{id}/watched`
-- `POST /api/me/videos/{id}/playback/start`
-- `POST /api/me/videos/{id}/playback/progress`
 - `GET /api/me/continue-watching`
 - `GET /api/me/next-up`
 - `GET /api/me/recent-works`
 - `GET /api/me/history`
-- `GET /api/diagnostics`
-- `POST /api/scan`
-- `POST /api/metadata/import`
+- `GET /api/backups`
+- `GET /api/admin/scan-diagnostics`
+- `GET /api/admin/scan-diagnostics.json`
+- `GET /api/admin/scan-diagnostics.csv`
 
-## 動画配信
-`GET /video/{videoId}` だけを正式経路とし、任意ローカルパス指定は禁止。Rangeへ `206 Partial Content` を返す。絶対パスはAPIへ返さない。
+## メディア配信
+
+- `GET /video/{videoId}`
+- `GET /subtitle/{subtitleId}.vtt`
+- `GET /tmdb-image/poster/{workId}`
+- `GET /tmdb-image/backdrop/{workId}`
+- `GET /tmdb-person-image/{personId}`
+
+任意ローカルパス指定は禁止し、DB IDからサーバー側で実体を解決する。動画・字幕・画像の絶対ローカルパスはAPIへ返さない。
+
+動画はHTTP Rangeへ対応する。ブラウザ非互換形式はサーバー側でPlaybackCacheへ互換MP4を準備してから配信する。
+
+## 状態変更API
+
+- `PUT /api/me/works/{id}/favorite`
+- `PUT /api/me/videos/{id}/favorite`
+- `PUT /api/me/videos/{id}/watched`
+- `POST /api/me/videos/{id}/playback/start`
+- `POST /api/me/videos/{id}/playback/progress`
+
+状態変更は認証必須で、Origin / Hostを検証する。
+
+## Owner管理API
+
+- `POST /api/scan`
+- `POST /api/backups/create`
+- `POST /api/backups/restore`
+- `POST /api/backups/restore/cancel`
+
+診断GETもOwner専用。
+
+メタデータ初回取込は現在Windowsランチャーから行い、Web APIとして任意ファイル取込を公開しない。
+
+## localhost owner bootstrap
+
+内部経路:
+
+- `POST /api/local-auth/token`: ランチャーがcontrol secret付きでone-time tokenを登録
+- `GET /api/local-auth/exchange?token=...`: loopbackブラウザがtokenをowner session Cookieへ交換
+
+Cookieは `HttpOnly; SameSite=Strict`。
 
 ## セキュリティ
-Cookieは `HttpOnly; SameSite=Strict`。状態変更APIはOrigin/Hostを検証し、ワイルドカードCORSは使用しない。
+
+- server bindはlocalhostのみ
+- 外部接続はTailscale Serve前提
+- ワイルドカードCORSは使用しない
+- 状態変更時はOrigin / Hostを検証
+- 任意ローカルパスをAPI引数として受けない
+- 動画、字幕、TMDb画像はDB ID経由で解決
+- API Read Access TokenをURLへ付与しない
