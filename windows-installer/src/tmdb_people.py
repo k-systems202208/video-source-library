@@ -308,22 +308,24 @@ def sync_cast_people_for_work(
             (int(work_id),),
         )
         connection.commit()
-        return {"matched": 0, "profileCached": 0, "personIds": []}
+        return {
+            "matched": 0,
+            "matchedExact": 0,
+            "matchedBySearch": 0,
+            "unmatched": 0,
+            "profileCached": 0,
+            "personIds": [],
+        }
 
-    # Fetch first so a temporary TMDb/network failure never erases a previously
-    # valid person mapping.
+    # Resolve every candidate before replacing existing links.  This keeps the
+    # previous mapping intact if TMDb credits/person-search has a temporary
+    # network failure halfway through a work.
     payload = _cached_credits(connection, client, media_type, tmdb_id)
     index = _cast_index(payload)
-    connection.execute(
-        "DELETE FROM tmdb_work_people WHERE work_id=? AND role='CAST'",
-        (int(work_id),),
-    )
-    matched_ids: list[int] = []
-    cached_ids: list[int] = []
+    resolved_people: list[tuple[int, str, dict[str, Any], str | None]] = []
     matched_exact = 0
     matched_search = 0
     unmatched = 0
-    stamp = now_iso()
 
     for local_order, local_name in enumerate(names):
         item, match_method = _resolve_candidate(connection, client, payload, index, local_name)
@@ -334,6 +336,17 @@ def sync_cast_people_for_work(
             matched_exact += 1
         elif match_method == "CREDIT_CONSTRAINED_SEARCH":
             matched_search += 1
+        resolved_people.append((local_order, local_name, item, match_method))
+
+    connection.execute(
+        "DELETE FROM tmdb_work_people WHERE work_id=? AND role='CAST'",
+        (int(work_id),),
+    )
+    matched_ids: list[int] = []
+    cached_ids: list[int] = []
+    stamp = now_iso()
+
+    for local_order, local_name, item, _match_method in resolved_people:
         person_id, profile_path, profile_changed = _upsert_person(connection, item)
         character = _character_text(item) or None
         billing_order = _billing_order(item, local_order)
@@ -373,7 +386,6 @@ def sync_cast_people_for_work(
         "profileCached": len(set(cached_ids)),
         "personIds": sorted(set(matched_ids)),
     }
-
 
 def people_sync_required(connection: sqlite3.Connection) -> bool:
     payload = get_cached_json(connection, _PEOPLE_SYNC_CACHE_KEY)
