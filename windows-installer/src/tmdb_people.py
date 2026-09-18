@@ -24,7 +24,7 @@ from tmdb_people_reviewed_overrides import (
 
 _PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 _CREDITS_TTL_DAYS = 30
-_PEOPLE_SYNC_VERSION = 8
+_PEOPLE_SYNC_VERSION = 9
 _PEOPLE_SYNC_CACHE_KEY = "tmdb:people-sync-version"
 _PEOPLE_AUDIT_VERSION = 8
 _PEOPLE_AUDIT_CACHE_KEY = "tmdb:people-audit-version"
