@@ -19,6 +19,7 @@ from server import create_server
 from tmdb_client import TmdbClient
 from tmdb_images import cached_person_image_path
 from tmdb_people import mark_people_sync_complete, people_sync_required, person_name_queries, split_local_people, sync_cast_people_for_work
+from tmdb_people_reviewed_aliases import REVIEWED_PERSON_CREDIT_ALIASES
 
 
 class FakeResponse:
@@ -829,6 +830,186 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
                     )
             self.assertEqual(client.movie_calls, 1)
 
+    def test_sixth_match_uses_reviewed_alias_only_inside_current_work_credits(self):
+        class ReviewedAliasClient:
+            def movie_credits(self, movie_id, *, language="ja-JP"):
+                return {
+                    "cast": [
+                        {
+                            "id": 1201,
+                            "name": "Simon Callow",
+                            "original_name": "Simon Callow",
+                            "profile_path": "/callow.jpg",
+                            "order": 3,
+                        },
+                        {
+                            "id": 1202,
+                            "name": "Other Actor",
+                            "original_name": "Other Actor",
+                            "profile_path": "/other.jpg",
+                            "order": 1,
+                        },
+                    ]
+                }
+
+            def search_person(self, query, *, language="ja-JP"):
+                return {"results": []}
+
+            def person_combined_credits(self, person_id, *, language="ja-JP"):
+                return {"cast": []}
+
+            def person_details(self, person_id, *, language="ja-JP"):
+                if int(person_id) == 1201:
+                    return {
+                        "id": 1201,
+                        "name": "Simon Callow",
+                        "also_known_as": [],
+                        "profile_path": "/callow.jpg",
+                        "known_for_department": "Acting",
+                    }
+                return {
+                    "id": int(person_id),
+                    "name": "Other Actor",
+                    "also_known_as": [],
+                    "profile_path": "/other.jpg",
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db, work_id = self._database_with_work(root, "サイモン・キャロウ")
+
+            def downloader(remote_path, destination, *, size):
+                target = Path(destination)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(b"profile")
+                return target
+
+            with connect(db) as connection:
+                result = sync_cast_people_for_work(
+                    connection,
+                    ReviewedAliasClient(),
+                    work_id=work_id,
+                    media_type="movie",
+                    tmdb_id=712,
+                    local_cast="サイモン・キャロウ",
+                    image_root=root / "TMDbImages",
+                    image_downloader=downloader,
+                )
+                link = connection.execute(
+                    "SELECT local_name,tmdb_person_id FROM tmdb_work_people"
+                ).fetchone()
+
+            self.assertEqual(result["matched"], 1)
+            self.assertEqual(result["matchedByReviewedAlias"], 1)
+            self.assertEqual((link["local_name"], link["tmdb_person_id"]), ("サイモン・キャロウ", 1201))
+            self.assertTrue(cached_person_image_path(root / "TMDbImages", 1201, "/callow.jpg").is_file())
+
+    def test_sixth_match_supports_reviewed_korean_and_romanized_credit_aliases(self):
+        class Client:
+            def movie_credits(self, movie_id, *, language="ja-JP"):
+                if int(movie_id) == 670:
+                    return {
+                        "cast": [
+                            {"id": 201, "name": "유지태", "original_name": "유지태", "profile_path": "/yoo.jpg", "order": 1}
+                        ]
+                    }
+                return {
+                    "cast": [
+                        {"id": 202, "name": "Yuki Kohara", "original_name": "Yuki Kohara", "profile_path": "/kohara.jpg", "order": 4}
+                    ]
+                }
+
+            def search_person(self, query, *, language="ja-JP"):
+                return {"results": []}
+
+            def person_combined_credits(self, person_id, *, language="ja-JP"):
+                return {"cast": []}
+
+            def person_details(self, person_id, *, language="ja-JP"):
+                return {}
+
+        cases = [
+            ("ユ・ジテ", 670, 201),
+            ("小原裕貴", 83890, 202),
+        ]
+        for local_name, tmdb_id, expected_id in cases:
+            with self.subTest(local_name=local_name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                db, work_id = self._database_with_work(root, local_name)
+
+                def downloader(remote_path, destination, *, size):
+                    target = Path(destination)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(b"profile")
+                    return target
+
+                with connect(db) as connection:
+                    result = sync_cast_people_for_work(
+                        connection,
+                        Client(),
+                        work_id=work_id,
+                        media_type="movie",
+                        tmdb_id=tmdb_id,
+                        local_cast=local_name,
+                        image_root=root / "TMDbImages",
+                        image_downloader=downloader,
+                    )
+                    link = connection.execute(
+                        "SELECT tmdb_person_id FROM tmdb_work_people"
+                    ).fetchone()
+
+                self.assertEqual(result["matchedByReviewedAlias"], 1)
+                self.assertEqual(int(link["tmdb_person_id"]), expected_id)
+
+    def test_sixth_match_rejects_multiple_reviewed_alias_person_ids(self):
+        class Client:
+            def movie_credits(self, movie_id, *, language="ja-JP"):
+                return {
+                    "cast": [
+                        {"id": 1, "name": "ジョン・トラヴォルタ", "original_name": "ジョン・トラヴォルタ", "order": 0},
+                        {"id": 2, "name": "John Travolta", "original_name": "John Travolta", "order": 1},
+                    ]
+                }
+
+            def search_person(self, query, *, language="ja-JP"):
+                return {"results": []}
+
+            def person_combined_credits(self, person_id, *, language="ja-JP"):
+                return {"cast": []}
+
+            def person_details(self, person_id, *, language="ja-JP"):
+                return {}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db, work_id = self._database_with_work(root, "ジョン・トラボルタ")
+            with connect(db) as connection:
+                result = sync_cast_people_for_work(
+                    connection,
+                    Client(),
+                    work_id=work_id,
+                    media_type="movie",
+                    tmdb_id=680,
+                    local_cast="ジョン・トラボルタ",
+                    image_root=root / "TMDbImages",
+                    image_downloader=lambda *args, **kwargs: None,
+                )
+                count = int(connection.execute("SELECT COUNT(*) FROM tmdb_work_people").fetchone()[0])
+            self.assertEqual(result["matchedByReviewedAlias"], 0)
+            self.assertEqual(count, 0)
+
+    def test_reviewed_alias_map_covers_current_real_audit_credit_not_found_names(self):
+        expected = {
+            "サイモン・キャロウ", "ジョン・トラボルタ", "ウィリアム・サドラー", "ジェマ・ジョーンズ",
+            "ジョー・ヴィテレリ", "ユ・ジテ", "カン・ヘジョン", "キム・ビョンオク",
+            "ニッキー・ブロンスキー", "カム・ジガンデイ", "クロティルド・モレ",
+            "F・マーレイ・エイブラハム", "アンダーズ・ホーム", "ブレット・カレン",
+            "リンダ・メイ", "スワンキー", "ボブ・ウェルズ", "トルーマン・ハンクス",
+            "キリアン・マーフィー", "ジェイデン・マーテル", "セイディ・ソヴラル",
+            "ニコラス・ガリツィン", "増田康好", "渡辺千秋", "小原裕貴", "藤井萩花",
+        }
+        self.assertEqual(set(REVIEWED_PERSON_CREDIT_ALIASES), expected)
+
     def test_ambiguous_same_name_is_not_auto_matched(self):
         class AmbiguousClient:
             def movie_credits(self, movie_id, *, language="ja-JP"):
@@ -919,6 +1100,23 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
                     connection,
                     "tmdb:people-sync-version",
                     {"version": 4},
+                    fetched_at=now_iso(),
+                    expires_at=None,
+                )
+                connection.commit()
+                self.assertTrue(people_sync_required(connection))
+
+    def test_people_sync_v5_marker_requires_v6_resync(self):
+        from tmdb_cache import put_cached_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "library.db"
+            with connect(db) as connection:
+                initialize_database(connection)
+                put_cached_json(
+                    connection,
+                    "tmdb:people-sync-version",
+                    {"version": 5},
                     fetched_at=now_iso(),
                     expires_at=None,
                 )

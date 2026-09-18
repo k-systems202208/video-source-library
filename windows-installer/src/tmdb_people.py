@@ -13,12 +13,13 @@ from typing import Any, Callable
 from database import connect, initialize_database, now_iso
 from tmdb_cache import get_cached_json, put_cached_json
 from tmdb_images import cached_person_image_path, download_tmdb_image
+from tmdb_people_reviewed_aliases import REVIEWED_PERSON_CREDIT_ALIASES
 
 _PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 _CREDITS_TTL_DAYS = 30
-_PEOPLE_SYNC_VERSION = 5
+_PEOPLE_SYNC_VERSION = 6
 _PEOPLE_SYNC_CACHE_KEY = "tmdb:people-sync-version"
-_PEOPLE_AUDIT_VERSION = 4
+_PEOPLE_AUDIT_VERSION = 5
 _PEOPLE_AUDIT_CACHE_KEY = "tmdb:people-audit-version"
 
 
@@ -299,6 +300,27 @@ def _unique_candidate(index: dict[str, list[dict[str, Any]]], local_name: str) -
     return next(iter(by_id.values()))
 
 
+def _reviewed_credit_alias_candidate(
+    index: dict[str, list[dict[str, Any]]],
+    local_name: str,
+) -> dict[str, Any] | None:
+    aliases = REVIEWED_PERSON_CREDIT_ALIASES.get(str(local_name or "").strip(), ())
+    if not aliases:
+        return None
+    by_id: dict[int, dict[str, Any]] = {}
+    for alias in aliases:
+        for item in index.get(normalize_person_name(alias), []):
+            try:
+                person_id = int(item.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if person_id > 0:
+                by_id[person_id] = item
+    if len(by_id) != 1:
+        return None
+    return next(iter(by_id.values()))
+
+
 def _cast_by_id(payload: dict[str, Any]) -> dict[int, dict[str, Any]]:
     cast = payload.get("cast")
     if not isinstance(cast, list):
@@ -446,16 +468,35 @@ def _resolve_candidate(
             continue
         alias_matches[person_id] = (cast_item, details)
 
-    if len(alias_matches) != 1:
+    if len(alias_matches) == 1:
+        person_id, (cast_item, details) = next(iter(alias_matches.items()))
+        resolved = dict(cast_item)
+        for field in ("name", "original_name", "profile_path", "known_for_department"):
+            if details.get(field):
+                resolved[field] = details.get(field)
+        resolved["id"] = person_id
+        return resolved, "CREDIT_PERSON_ALIAS"
+    if len(alias_matches) > 1:
         return None, None
 
-    person_id, (cast_item, details) = next(iter(alias_matches.items()))
-    resolved = dict(cast_item)
+    # Sixth pass: aliases explicitly reviewed from the real-library audit.
+    # They are compared only against this work's credits; no global search,
+    # fuzzy match, or partial match is involved.
+    reviewed = _reviewed_credit_alias_candidate(index, local_name)
+    if reviewed is None:
+        return None, None
+
+    resolved = dict(reviewed)
+    try:
+        reviewed_id = int(resolved.get("id"))
+    except (TypeError, ValueError):
+        return None, None
+    details = _cached_person_details(connection, client, reviewed_id)
     for field in ("name", "original_name", "profile_path", "known_for_department"):
         if details.get(field):
             resolved[field] = details.get(field)
-    resolved["id"] = person_id
-    return resolved, "CREDIT_PERSON_ALIAS"
+    resolved["id"] = reviewed_id
+    return resolved, "REVIEWED_CREDIT_ALIAS"
 
 
 def _upsert_person(connection: sqlite3.Connection, item: dict[str, Any]) -> tuple[int, str | None, bool]:
@@ -514,6 +555,7 @@ def sync_cast_people_for_work(
             "matchedByCombinedCredits": 0,
             "matchedByUniqueExactSearch": 0,
             "matchedByCreditAlias": 0,
+            "matchedByReviewedAlias": 0,
             "unmatched": 0,
             "profileCached": 0,
             "personIds": [],
@@ -530,6 +572,7 @@ def sync_cast_people_for_work(
     matched_combined = 0
     matched_unique_exact = 0
     matched_credit_alias = 0
+    matched_reviewed_alias = 0
     unmatched = 0
 
     for local_order, local_name in enumerate(names):
@@ -555,6 +598,8 @@ def sync_cast_people_for_work(
             matched_unique_exact += 1
         elif match_method == "CREDIT_PERSON_ALIAS":
             matched_credit_alias += 1
+        elif match_method == "REVIEWED_CREDIT_ALIAS":
+            matched_reviewed_alias += 1
         resolved_people.append((local_order, local_name, item, match_method))
 
     connection.execute(
@@ -604,6 +649,7 @@ def sync_cast_people_for_work(
         "matchedByCombinedCredits": matched_combined,
         "matchedByUniqueExactSearch": matched_unique_exact,
         "matchedByCreditAlias": matched_credit_alias,
+        "matchedByReviewedAlias": matched_reviewed_alias,
         "unmatched": unmatched,
         "profileCached": len(set(cached_ids)),
         "personIds": sorted(set(matched_ids)),
@@ -672,6 +718,7 @@ def sync_tmdb_people_library(
     matched_by_combined = 0
     matched_by_unique_exact = 0
     matched_by_credit_alias = 0
+    matched_by_reviewed_alias = 0
 
     with connect(database_path) as connection:
         initialize_database(connection)
@@ -705,6 +752,7 @@ def sync_tmdb_people_library(
                 matched_by_combined += int(result.get("matchedByCombinedCredits") or 0)
                 matched_by_unique_exact += int(result.get("matchedByUniqueExactSearch") or 0)
                 matched_by_credit_alias += int(result.get("matchedByCreditAlias") or 0)
+                matched_by_reviewed_alias += int(result.get("matchedByReviewedAlias") or 0)
                 for person_id in result.get("personIds") or []:
                     row = connection.execute(
                         "SELECT profile_path FROM tmdb_people WHERE tmdb_person_id=?",
@@ -732,6 +780,7 @@ def sync_tmdb_people_library(
                         "matchedByCombinedCredits": matched_by_combined,
                         "matchedByUniqueExactSearch": matched_by_unique_exact,
                         "matchedByCreditAlias": matched_by_credit_alias,
+                        "matchedByReviewedAlias": matched_by_reviewed_alias,
                         "failures": failures,
                         "currentItem": str(work["official_title"]),
                     }
@@ -749,6 +798,7 @@ def sync_tmdb_people_library(
         "matchedByCombinedCredits": matched_by_combined,
         "matchedByUniqueExactSearch": matched_by_unique_exact,
         "matchedByCreditAlias": matched_by_credit_alias,
+        "matchedByReviewedAlias": matched_by_reviewed_alias,
         "failures": failures,
         "completed": failures == 0,
     }
