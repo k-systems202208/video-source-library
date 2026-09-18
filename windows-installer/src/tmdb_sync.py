@@ -16,7 +16,7 @@ from app_version import APP_VERSION
 from database import connect, initialize_database, now_iso
 from tmdb_cache import get_cached_json, put_cached_json
 from tmdb_client import TmdbClient
-from tmdb_images import cached_image_path, download_tmdb_image
+from tmdb_images import cached_image_path, cached_person_image_path, download_tmdb_image
 from tmdb_people import sync_cast_people_for_work
 
 _MATCHED = "MATCHED"
@@ -909,7 +909,6 @@ def sync_tmdb_library(
                             (int(person_id),),
                         ).fetchone()
                         if person_row is not None and person_row["profile_path"]:
-                            from tmdb_images import cached_person_image_path
                             try:
                                 if cached_person_image_path(
                                     image_root_path, int(person_id), str(person_row["profile_path"])
