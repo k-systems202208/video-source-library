@@ -39,7 +39,7 @@ def main() -> int:
                 connection.execute("SELECT id FROM works ORDER BY external_work_no LIMIT 1").fetchone()[0]
             )
             connection.execute(
-                "UPDATE works SET main_cast_or_voice_actors='テスト出演者、写真なし出演者', director_or_direction='テスト監督、写真なし監督' WHERE id=?",
+                "UPDATE works SET main_cast_or_voice_actors='テスト出演者、写真なし出演者' WHERE id=?",
                 (first_work_id,),
             )
             stamp = now_iso()
@@ -60,35 +60,11 @@ def main() -> int:
                 """,
                 (first_work_id, stamp, stamp),
             )
-            connection.execute(
-                """
-                INSERT INTO tmdb_people(
-                    tmdb_person_id,display_name,original_name,profile_path,known_for_department,
-                    synced_at,created_at,updated_at
-                ) VALUES(9002,'テスト監督','テスト監督','/e2e-director.png','Directing',?,?,?)
-                """,
-                (stamp, stamp, stamp),
-            )
-            connection.execute(
-                """
-                INSERT INTO tmdb_work_people(
-                    work_id,role,local_name,tmdb_person_id,billing_order,created_at,updated_at
-                ) VALUES(?,'DIRECTOR','テスト監督',9002,0,?,?)
-                """,
-                (first_work_id, stamp, stamp),
-            )
             connection.commit()
 
         person_image = cached_person_image_path(root / "TMDbImages", 9001, "/e2e-profile.png")
         person_image.parent.mkdir(parents=True, exist_ok=True)
         person_image.write_bytes(
-            base64.b64decode(
-                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-            )
-        )
-        director_image = cached_person_image_path(root / "TMDbImages", 9002, "/e2e-director.png")
-        director_image.parent.mkdir(parents=True, exist_ok=True)
-        director_image.write_bytes(
             base64.b64decode(
                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
             )
