@@ -16,9 +16,9 @@ from tmdb_images import cached_person_image_path, download_tmdb_image
 
 _PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 _CREDITS_TTL_DAYS = 30
-_PEOPLE_SYNC_VERSION = 4
+_PEOPLE_SYNC_VERSION = 5
 _PEOPLE_SYNC_CACHE_KEY = "tmdb:people-sync-version"
-_PEOPLE_AUDIT_VERSION = 3
+_PEOPLE_AUDIT_VERSION = 4
 _PEOPLE_AUDIT_CACHE_KEY = "tmdb:people-audit-version"
 
 
@@ -125,6 +125,61 @@ def _cached_person_combined_credits(
     put_cached_json(connection, key, value, fetched_at=fetched, expires_at=expiry)
     connection.commit()
     return value
+
+
+def _person_details_cache_key(person_id: int) -> str:
+    return f"tmdb:person-details:v1:{int(person_id)}:ja-JP"
+
+
+def _cached_person_details(
+    connection: sqlite3.Connection,
+    client: Any,
+    person_id: int,
+) -> dict[str, Any]:
+    key = _person_details_cache_key(person_id)
+    cached = get_cached_json(connection, key)
+    if isinstance(cached, dict):
+        return cached
+    getter = getattr(client, "person_details", None)
+    if not callable(getter):
+        return {}
+    value = getter(int(person_id), language="ja-JP")
+    if not isinstance(value, dict):
+        value = {}
+    fetched = now_iso()
+    expiry = (datetime.fromisoformat(fetched) + timedelta(days=_CREDITS_TTL_DAYS)).isoformat(timespec="seconds")
+    put_cached_json(connection, key, value, fetched_at=fetched, expires_at=expiry)
+    connection.commit()
+    return value
+
+
+def _person_detail_alias_keys(payload: dict[str, Any]) -> set[str]:
+    values: list[Any] = [payload.get("name"), payload.get("original_name")]
+    aliases = payload.get("also_known_as")
+    if isinstance(aliases, list):
+        values.extend(aliases)
+    keys = {normalize_person_name(value) for value in values}
+    keys.discard("")
+    return keys
+
+
+def _top_cast_items(payload: dict[str, Any], *, limit: int = 20) -> list[dict[str, Any]]:
+    cast = payload.get("cast")
+    if not isinstance(cast, list):
+        return []
+    items: list[tuple[int, int, dict[str, Any]]] = []
+    for fallback, item in enumerate(cast):
+        if not isinstance(item, dict):
+            continue
+        try:
+            person_id = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        if person_id <= 0:
+            continue
+        items.append((_billing_order(item, fallback), fallback, item))
+    items.sort(key=lambda value: (value[0], value[1]))
+    return [item for _, _, item in items[: max(0, int(limit))]]
 
 
 def _combined_credits_has_work(payload: dict[str, Any], media_type: str, tmdb_id: int) -> bool:
@@ -368,13 +423,39 @@ def _resolve_candidate(
             if person_id > 0:
                 exact_search[person_id] = result
 
-    if len(exact_search) != 1:
+    if len(exact_search) == 1:
+        person_id, result = next(iter(exact_search.items()))
+        resolved = dict(result)
+        resolved["id"] = person_id
+        return resolved, "UNIQUE_EXACT_PERSON_SEARCH"
+
+    # Fifth pass: when TMDb person search cannot find the local spelling,
+    # inspect aliases only for people who are actually credited in this work.
+    # This keeps the candidate space tied to the matched work while allowing
+    # exact aliases such as Japanese names stored under romanized credit names.
+    alias_matches: dict[int, tuple[dict[str, Any], dict[str, Any]]] = {}
+    for cast_item in _top_cast_items(payload, limit=20):
+        try:
+            person_id = int(cast_item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        details = _cached_person_details(connection, client, person_id)
+        if not details:
+            continue
+        if not (_person_detail_alias_keys(details) & query_keys):
+            continue
+        alias_matches[person_id] = (cast_item, details)
+
+    if len(alias_matches) != 1:
         return None, None
 
-    person_id, result = next(iter(exact_search.items()))
-    resolved = dict(result)
+    person_id, (cast_item, details) = next(iter(alias_matches.items()))
+    resolved = dict(cast_item)
+    for field in ("name", "original_name", "profile_path", "known_for_department"):
+        if details.get(field):
+            resolved[field] = details.get(field)
     resolved["id"] = person_id
-    return resolved, "UNIQUE_EXACT_PERSON_SEARCH"
+    return resolved, "CREDIT_PERSON_ALIAS"
 
 
 def _upsert_person(connection: sqlite3.Connection, item: dict[str, Any]) -> tuple[int, str | None, bool]:
@@ -432,6 +513,7 @@ def sync_cast_people_for_work(
             "matchedBySearch": 0,
             "matchedByCombinedCredits": 0,
             "matchedByUniqueExactSearch": 0,
+            "matchedByCreditAlias": 0,
             "unmatched": 0,
             "profileCached": 0,
             "personIds": [],
@@ -447,6 +529,7 @@ def sync_cast_people_for_work(
     matched_search = 0
     matched_combined = 0
     matched_unique_exact = 0
+    matched_credit_alias = 0
     unmatched = 0
 
     for local_order, local_name in enumerate(names):
@@ -470,6 +553,8 @@ def sync_cast_people_for_work(
             matched_combined += 1
         elif match_method == "UNIQUE_EXACT_PERSON_SEARCH":
             matched_unique_exact += 1
+        elif match_method == "CREDIT_PERSON_ALIAS":
+            matched_credit_alias += 1
         resolved_people.append((local_order, local_name, item, match_method))
 
     connection.execute(
@@ -518,6 +603,7 @@ def sync_cast_people_for_work(
         "matchedBySearch": matched_search,
         "matchedByCombinedCredits": matched_combined,
         "matchedByUniqueExactSearch": matched_unique_exact,
+        "matchedByCreditAlias": matched_credit_alias,
         "unmatched": unmatched,
         "profileCached": len(set(cached_ids)),
         "personIds": sorted(set(matched_ids)),
@@ -585,6 +671,7 @@ def sync_tmdb_people_library(
     matched_by_search = 0
     matched_by_combined = 0
     matched_by_unique_exact = 0
+    matched_by_credit_alias = 0
 
     with connect(database_path) as connection:
         initialize_database(connection)
@@ -617,6 +704,7 @@ def sync_tmdb_people_library(
                 matched_by_search += int(result.get("matchedBySearch") or 0)
                 matched_by_combined += int(result.get("matchedByCombinedCredits") or 0)
                 matched_by_unique_exact += int(result.get("matchedByUniqueExactSearch") or 0)
+                matched_by_credit_alias += int(result.get("matchedByCreditAlias") or 0)
                 for person_id in result.get("personIds") or []:
                     row = connection.execute(
                         "SELECT profile_path FROM tmdb_people WHERE tmdb_person_id=?",
@@ -643,6 +731,7 @@ def sync_tmdb_people_library(
                         "matchedBySearch": matched_by_search,
                         "matchedByCombinedCredits": matched_by_combined,
                         "matchedByUniqueExactSearch": matched_by_unique_exact,
+                        "matchedByCreditAlias": matched_by_credit_alias,
                         "failures": failures,
                         "currentItem": str(work["official_title"]),
                     }
@@ -659,6 +748,7 @@ def sync_tmdb_people_library(
         "matchedBySearch": matched_by_search,
         "matchedByCombinedCredits": matched_by_combined,
         "matchedByUniqueExactSearch": matched_by_unique_exact,
+        "matchedByCreditAlias": matched_by_credit_alias,
         "failures": failures,
         "completed": failures == 0,
     }
