@@ -29,9 +29,20 @@ def _like_pattern(value: str) -> str:
     return f"%{escaped}%"
 
 
-def _work_filters(q: str | None, category: str | None) -> tuple[str, list[Any]]:
+def _work_filters(
+    q: str | None,
+    category: str | None,
+    visibility: str | None = "visible",
+) -> tuple[str, list[Any]]:
+    key = str(visibility or "visible").strip().casefold()
+    if key not in {"visible", "hidden", "all"}:
+        raise ValueError("visibility must be visible, hidden, or all")
     clauses: list[str] = []
     params: list[Any] = []
+    if key == "visible":
+        clauses.append("w.is_visible = 1")
+    elif key == "hidden":
+        clauses.append("w.is_visible = 0")
     if q and q.strip():
         pattern = _like_pattern(q.strip())
         clauses.append(
@@ -63,12 +74,13 @@ def list_works(
     q: str | None = None,
     category: str | None = None,
     sort: str | None = "title",
+    visibility: str | None = "visible",
     limit: int | str | None = DEFAULT_LIMIT,
     offset: int | str | None = 0,
 ) -> dict[str, Any]:
     limit_value = _bounded_limit(limit)
     offset_value = _bounded_offset(offset)
-    where_sql, params = _work_filters(q, category)
+    where_sql, params = _work_filters(q, category, visibility)
     order_sql = {
         "title": "w.official_title COLLATE NOCASE, w.external_work_no",
         "year": "COALESCE(w.year_or_period, ''), w.official_title COLLATE NOCASE",
@@ -77,7 +89,7 @@ def list_works(
     total = int(connection.execute(f"SELECT COUNT(*) FROM works w{where_sql}", params).fetchone()[0])
     rows = connection.execute(
         f"""
-        SELECT w.id,w.external_work_no,w.category,w.source_title,w.official_title,w.year_or_period,w.media_file_count,
+        SELECT w.id,w.external_work_no,w.category,w.source_title,w.official_title,w.year_or_period,w.media_file_count,w.is_visible,
           (SELECT COUNT(*) FROM videos v JOIN video_files vf ON vf.video_id=v.id WHERE v.work_id=w.id AND vf.is_available=1) available_count,
           COALESCE((SELECT favorite FROM user_work_state s WHERE s.user_id=? AND s.work_id=w.id),0) favorite,
           (SELECT COUNT(*) FROM videos v LEFT JOIN user_video_state s ON s.video_id=v.id AND s.user_id=? WHERE v.work_id=w.id AND v.content_type IN ('EPISODE','MOVIE') AND COALESCE(s.watched,0)=1) watched_count,
@@ -104,6 +116,7 @@ def list_works(
                 "videoCount": int(r["media_file_count"]),
                 "availableVideoCount": int(r["available_count"]),
                 "favorite": bool(r["favorite"]),
+                "visible": bool(r["is_visible"]),
                 "progress": _progress(int(r["watched_count"]), int(r["progress_total"]), int(r["in_progress_count"])),
                 "posterUrl": f'/tmdb-image/poster/{int(r["id"])}' if r["tmdb_match_status"] == "MATCHED" and r["tmdb_poster_path"] else None,
                 "backdropUrl": f'/tmdb-image/backdrop/{int(r["id"])}' if r["tmdb_match_status"] == "MATCHED" and r["tmdb_backdrop_path"] else None,
@@ -126,7 +139,7 @@ def list_people(connection: sqlite3.Connection, *, role: str) -> dict[str, Any]:
         raise ValueError('role must be director or cast')
     normalized_role, column = role_map[key]
     rows = connection.execute(
-        f"SELECT id,{column} credits FROM works WHERE TRIM(COALESCE({column},''))<>''"
+        f"SELECT id,{column} credits FROM works WHERE is_visible=1 AND TRIM(COALESCE({column},''))<>''"
     ).fetchall()
     counts: dict[str, int] = {}
     for row in rows:
@@ -178,7 +191,7 @@ def get_work(connection: sqlite3.Connection, work_id: int, *, user_id: int | Non
         """
         SELECT w.id,w.external_work_no,w.category,w.year_or_period,w.source_title,w.official_title,
                w.media_file_count,w.subtitle_file_count,w.media_format,w.director_or_direction,
-               w.main_cast_or_voice_actors,w.verification_status,w.credits_verification_status,
+               w.main_cast_or_voice_actors,w.verification_status,w.credits_verification_status,w.is_visible,
                COALESCE(s.favorite,0) favorite,t.media_type tmdb_media_type,t.tmdb_id,t.match_status tmdb_match_status,
                t.confidence tmdb_confidence,t.matched_title tmdb_matched_title,t.matched_year tmdb_matched_year,
                t.poster_path tmdb_poster_path,t.backdrop_path tmdb_backdrop_path,t.overview tmdb_overview
@@ -228,6 +241,7 @@ def get_work(connection: sqlite3.Connection, work_id: int, *, user_id: int | Non
         "mediaFormat": r["media_format"], "director": r["director_or_direction"], "cast": r["main_cast_or_voice_actors"],
         "verificationStatus": r["verification_status"], "creditsVerificationStatus": r["credits_verification_status"],
         "favorite": bool(r["favorite"]),
+        "visible": bool(r["is_visible"]),
         "posterUrl": f'/tmdb-image/poster/{int(r["id"])}' if r["tmdb_match_status"] == "MATCHED" and r["tmdb_poster_path"] else None,
         "backdropUrl": f'/tmdb-image/backdrop/{int(r["id"])}' if r["tmdb_match_status"] == "MATCHED" and r["tmdb_backdrop_path"] else None,
         "tmdb": {
@@ -355,25 +369,80 @@ def get_video(connection: sqlite3.Connection, video_id: int, *, user_id: int | N
     }
 
 
+def set_work_visibility(
+    connection: sqlite3.Connection,
+    work_ids: list[int],
+    *,
+    visible: bool,
+) -> dict[str, Any]:
+    normalized = sorted({int(work_id) for work_id in work_ids if int(work_id) > 0})
+    if not normalized:
+        raise ValueError("workIds must contain at least one positive integer")
+    placeholders = ",".join("?" for _ in normalized)
+    existing = {
+        int(row["id"])
+        for row in connection.execute(
+            f"SELECT id FROM works WHERE id IN ({placeholders})",
+            normalized,
+        ).fetchall()
+    }
+    missing = [work_id for work_id in normalized if work_id not in existing]
+    if missing:
+        raise LookupError("WORK_NOT_FOUND")
+    connection.execute(
+        f"UPDATE works SET is_visible=? WHERE id IN ({placeholders})",
+        [int(bool(visible)), *normalized],
+    )
+    connection.commit()
+    return {
+        "updated": len(normalized),
+        "visible": bool(visible),
+        "workIds": normalized,
+    }
+
+
 def library_stats(connection: sqlite3.Connection) -> dict[str, Any]:
     t = connection.execute(
         """
         SELECT
-          (SELECT COUNT(*) FROM works) works,
-          (SELECT COUNT(*) FROM videos) videos,
-          (SELECT COUNT(*) FROM video_files WHERE is_available=1) available_videos,
-          (SELECT COUNT(*) FROM subtitles WHERE is_available=1) subtitles,
-          (SELECT COUNT(*) FROM subtitles WHERE is_available=1 AND video_id IS NOT NULL) matched_subtitles,
-          (SELECT COUNT(*) FROM subtitles WHERE is_available=1 AND video_id IS NULL) unmatched_subtitles,
-          (SELECT COUNT(*) FROM video_files WHERE probe_status='OK') probed_videos,
-          (SELECT COUNT(*) FROM video_files WHERE probe_status='ERROR') probe_errors
+          (SELECT COUNT(*) FROM works WHERE is_visible=1) works,
+          (SELECT COUNT(*) FROM works) all_works,
+          (SELECT COUNT(*) FROM works WHERE is_visible=0) hidden_works,
+          (SELECT COUNT(*) FROM videos v JOIN works w ON w.id=v.work_id WHERE w.is_visible=1) videos,
+          (SELECT COUNT(*) FROM video_files vf JOIN videos v ON v.id=vf.video_id JOIN works w ON w.id=v.work_id WHERE vf.is_available=1 AND w.is_visible=1) available_videos,
+          (SELECT COUNT(*) FROM subtitles st JOIN videos v ON v.id=st.video_id JOIN works w ON w.id=v.work_id WHERE st.is_available=1 AND w.is_visible=1) subtitles,
+          (SELECT COUNT(*) FROM subtitles st JOIN videos v ON v.id=st.video_id JOIN works w ON w.id=v.work_id WHERE st.is_available=1 AND st.video_id IS NOT NULL AND w.is_visible=1) matched_subtitles,
+          (SELECT COUNT(*) FROM subtitles st WHERE st.is_available=1 AND st.video_id IS NULL) unmatched_subtitles,
+          (SELECT COUNT(*) FROM video_files vf JOIN videos v ON v.id=vf.video_id JOIN works w ON w.id=v.work_id WHERE vf.probe_status='OK' AND w.is_visible=1) probed_videos,
+          (SELECT COUNT(*) FROM video_files vf JOIN videos v ON v.id=vf.video_id JOIN works w ON w.id=v.work_id WHERE vf.probe_status='ERROR' AND w.is_visible=1) probe_errors
         """
     ).fetchone()
-    cats = connection.execute("SELECT category,COUNT(*) work_count,COALESCE(SUM(media_file_count),0) video_count FROM works GROUP BY category ORDER BY category").fetchall()
+    cats = connection.execute(
+        """
+        SELECT category,COUNT(*) work_count,COALESCE(SUM(media_file_count),0) video_count
+        FROM works
+        WHERE is_visible=1
+        GROUP BY category
+        ORDER BY category
+        """
+    ).fetchall()
     return {
-        "works": int(t["works"]), "videos": int(t["videos"]), "availableVideos": int(t["available_videos"]),
-        "subtitles": int(t["subtitles"]), "matchedSubtitles": int(t["matched_subtitles"]),
-        "unmatchedSubtitles": int(t["unmatched_subtitles"]), "probedVideos": int(t["probed_videos"]),
+        "works": int(t["works"]),
+        "allWorks": int(t["all_works"]),
+        "hiddenWorks": int(t["hidden_works"]),
+        "videos": int(t["videos"]),
+        "availableVideos": int(t["available_videos"]),
+        "subtitles": int(t["subtitles"]),
+        "matchedSubtitles": int(t["matched_subtitles"]),
+        "unmatchedSubtitles": int(t["unmatched_subtitles"]),
+        "probedVideos": int(t["probed_videos"]),
         "probeErrors": int(t["probe_errors"]),
-        "categories": [{"name": r["category"], "workCount": int(r["work_count"]), "videoCount": int(r["video_count"])} for r in cats],
+        "categories": [
+            {
+                "name": r["category"],
+                "workCount": int(r["work_count"]),
+                "videoCount": int(r["video_count"]),
+            }
+            for r in cats
+        ],
     }
