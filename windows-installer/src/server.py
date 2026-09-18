@@ -26,7 +26,7 @@ from scan_runner import scan_library
 from subtitle_stream import resolve_subtitle_file, subtitle_file_to_webvtt
 from scanner import latest_scan_status, mime_type_for_extension, resolve_video_file
 from tailscale_identity import parse_tailscale_identity
-from tmdb_images import resolve_or_repair_cached_tmdb_image
+from tmdb_images import resolve_or_repair_cached_tmdb_image, resolve_or_repair_cached_tmdb_person_image
 from user_state import (
     PlaybackSessionStore,
     continue_watching,
@@ -381,6 +381,31 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                 except (BrokenPipeError, ConnectionResetError):
                     pass
 
+        def _serve_tmdb_person_image(self, person_id: int, *, head: bool = False) -> None:
+            with connect(db_path) as connection:
+                resolved = resolve_or_repair_cached_tmdb_person_image(
+                    connection, app_data_root / "TMDbImages", person_id
+                )
+            if resolved is None:
+                self._error(404, "TMDB_PERSON_IMAGE_NOT_FOUND", "TMDb人物画像が見つかりません。")
+                return
+            image_path, content_type = resolved
+            try:
+                size = image_path.stat().st_size
+            except OSError:
+                self._error(404, "TMDB_PERSON_IMAGE_NOT_FOUND", "TMDb人物画像が見つかりません。")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(size))
+            self._common(cache="private, max-age=300")
+            self.end_headers()
+            if not head:
+                try:
+                    self.wfile.write(image_path.read_bytes())
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
         def do_GET(self) -> None:
             parsed = urlsplit(self.path); path = parsed.path; query = parse_qs(parsed.query, keep_blank_values=True)
             if path in ("/", "/index.html"):
@@ -401,6 +426,9 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             tmdb_image = re.fullmatch(r"/tmdb-image/(poster|backdrop)/(\d+)", path)
             if tmdb_image:
                 self._serve_tmdb_image(tmdb_image.group(1), int(tmdb_image.group(2))); return
+            tmdb_person_image = re.fullmatch(r"/tmdb-person-image/(\d+)", path)
+            if tmdb_person_image:
+                self._serve_tmdb_person_image(int(tmdb_person_image.group(1))); return
             stream = re.fullmatch(r"/video/(\d+)", path)
             if stream:
                 self._serve_video(int(stream.group(1))); return
@@ -493,6 +521,9 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             tmdb_image = re.fullmatch(r"/tmdb-image/(poster|backdrop)/(\d+)", urlsplit(self.path).path)
             if tmdb_image:
                 self._serve_tmdb_image(tmdb_image.group(1), int(tmdb_image.group(2)), head=True); return
+            tmdb_person_image = re.fullmatch(r"/tmdb-person-image/(\d+)", urlsplit(self.path).path)
+            if tmdb_person_image:
+                self._serve_tmdb_person_image(int(tmdb_person_image.group(1)), head=True); return
             stream = re.fullmatch(r"/video/(\d+)", urlsplit(self.path).path)
             if stream:
                 self._serve_video(int(stream.group(1)), head=True); return
