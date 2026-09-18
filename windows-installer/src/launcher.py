@@ -434,6 +434,21 @@ class VideoLibraryLauncher(tk.Tk):
             f"人物同期失敗 {people_failures:,} / JSON: {report.get('jsonReport', '')}"
         )
         self._append_log(f"CSV : {report.get('csvReport', '')}")
+        people_audit = report.get("peopleAudit") or {}
+        people_audit_summary = people_audit.get("summary") or {}
+        if people_audit:
+            self._append_log(
+                "人物写真監査: "
+                f"写真あり {int(people_audit_summary.get('profileReady') or 0):,} / "
+                f"TMDb人物あり写真なし {int(people_audit_summary.get('personNoProfile') or 0):,} / "
+                f"TMDb未照合作品のみ {int(people_audit_summary.get('noMatchedWork') or 0):,} / "
+                f"credits表記差 {int(people_audit_summary.get('creditNameMismatch') or 0):,} / "
+                f"検索候補がcredits外 {int(people_audit_summary.get('personSearchNotInCredits') or 0):,} / "
+                f"credits候補なし {int(people_audit_summary.get('creditPersonNotFound') or 0):,} / "
+                f"曖昧 {int(people_audit_summary.get('ambiguous') or 0):,}"
+            )
+            self._append_log(f"人物監査JSON: {people_audit.get('jsonReport', '')}")
+            self._append_log(f"人物監査CSV : {people_audit.get('csvReport', '')}")
         self._set_busy(False)
         messagebox.showinfo(
             APP_NAME,
