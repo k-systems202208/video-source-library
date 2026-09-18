@@ -232,7 +232,7 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
             def __init__(self):
                 self.combined_calls = 0
 
-            def movie_credits(self, movie_id, *, language="ja-JP"):
+            def tv_aggregate_credits(self, tv_id, *, language="ja-JP"):
                 return {
                     "cast": [
                         {
@@ -301,7 +301,7 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
 
     def test_third_match_rejects_search_person_without_target_work_in_combined_credits(self):
         class CombinedRejectClient:
-            def movie_credits(self, movie_id, *, language="ja-JP"):
+            def tv_aggregate_credits(self, tv_id, *, language="ja-JP"):
                 return {"cast": [{"id": 777, "name": "Other", "original_name": "Other"}]}
 
             def search_person(self, query, *, language="ja-JP"):
