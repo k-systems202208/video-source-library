@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 import threading
 from pathlib import Path
@@ -22,9 +23,11 @@ def _safe_suffix(remote_path: str) -> str:
 def cached_image_path(image_root: Path | str, work_id: int, kind: str, remote_path: str) -> Path:
     if kind not in {"poster", "backdrop"}:
         raise ValueError("kind must be poster or backdrop")
-    suffix = _safe_suffix(remote_path)
+    clean_path = str(remote_path or "").strip()
+    suffix = _safe_suffix(clean_path)
+    identity = hashlib.sha256(clean_path.encode("utf-8")).hexdigest()[:12]
     root = Path(image_root)
-    return root / kind / f"{int(work_id)}{suffix}"
+    return root / kind / f"{int(work_id)}-{identity}{suffix}"
 
 
 def cached_person_image_path(image_root: Path | str, person_id: int, remote_path: str) -> Path:
