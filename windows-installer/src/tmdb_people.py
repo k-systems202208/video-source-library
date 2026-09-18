@@ -180,16 +180,22 @@ def sync_cast_people_for_work(
     image_downloader: Callable[..., Path] = download_tmdb_image,
 ) -> dict[str, Any]:
     names = split_local_people(local_cast)
+    if not names:
+        connection.execute(
+            "DELETE FROM tmdb_work_people WHERE work_id=? AND role='CAST'",
+            (int(work_id),),
+        )
+        connection.commit()
+        return {"matched": 0, "profileCached": 0, "personIds": []}
+
+    # Fetch first so a temporary TMDb/network failure never erases a previously
+    # valid person mapping.
+    payload = _cached_credits(connection, client, media_type, tmdb_id)
+    index = _cast_index(payload)
     connection.execute(
         "DELETE FROM tmdb_work_people WHERE work_id=? AND role='CAST'",
         (int(work_id),),
     )
-    if not names:
-        connection.commit()
-        return {"matched": 0, "profileCached": 0, "personIds": []}
-
-    payload = _cached_credits(connection, client, media_type, tmdb_id)
-    index = _cast_index(payload)
     matched_ids: list[int] = []
     cached_ids: list[int] = []
     stamp = now_iso()
