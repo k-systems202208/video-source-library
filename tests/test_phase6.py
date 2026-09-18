@@ -103,13 +103,15 @@ class SchemaAndScannerTests(unittest.TestCase):
             playback_support="DIRECT",
         )
 
-    def test_schema5_and_tables(self):
+    def test_schema6_and_tables(self):
         with connect(self.db) as connection:
             initialize_database(connection)
             version = int(connection.execute("SELECT schema_version FROM schema_info").fetchone()[0])
-            self.assertEqual(version, 5)
-            self.assertEqual(SCHEMA_VERSION, 5)
+            self.assertEqual(version, 6)
+            self.assertEqual(SCHEMA_VERSION, 6)
             self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='subtitles'").fetchone())
+            self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tmdb_people'").fetchone())
+            self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tmdb_work_people'").fetchone())
             columns = {row[1] for row in connection.execute("PRAGMA table_info(video_files)").fetchall()}
             self.assertTrue({"probe_status", "probed_at", "embedded_subtitle_count"}.issubset(columns))
 

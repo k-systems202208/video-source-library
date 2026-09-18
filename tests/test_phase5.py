@@ -173,7 +173,7 @@ class SecureServerTests(unittest.TestCase):
         status, _, manifest = self.request("GET", "/manifest.webmanifest")
         self.assertEqual(status, 200); self.assertIn("関町北映画館", manifest)
         status, _, sw = self.request("GET", "/service-worker.js")
-        self.assertEqual(status, 200); self.assertIn("/api/", sw); self.assertIn("/video/", sw); self.assertIn("offline.html", sw)
+        self.assertEqual(status, 200); self.assertIn("/api/", sw); self.assertIn("/video/", sw); self.assertIn("/tmdb-person-image/", sw); self.assertIn("offline.html", sw)
 
     def test_server_rejects_non_loopback_bind(self):
         with self.assertRaises(ValueError):

@@ -148,3 +148,11 @@ class TmdbClient:
     def tv_details(self, tv_id: int, *, language: str = "ja-JP") -> dict[str, Any]:
         value = self.get_json(f"/tv/{int(tv_id)}", {"language": language})
         return value if isinstance(value, dict) else {}
+
+    def movie_credits(self, movie_id: int, *, language: str = "ja-JP") -> dict[str, Any]:
+        value = self.get_json(f"/movie/{int(movie_id)}/credits", {"language": language})
+        return value if isinstance(value, dict) else {}
+
+    def tv_aggregate_credits(self, tv_id: int, *, language: str = "ja-JP") -> dict[str, Any]:
+        value = self.get_json(f"/tv/{int(tv_id)}/aggregate_credits", {"language": language})
+        return value if isinstance(value, dict) else {}

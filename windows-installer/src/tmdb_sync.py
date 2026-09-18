@@ -13,10 +13,11 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from app_version import APP_VERSION
-from database import connect, now_iso
+from database import connect, initialize_database, now_iso
 from tmdb_cache import get_cached_json, put_cached_json
 from tmdb_client import TmdbClient
-from tmdb_images import cached_image_path, download_tmdb_image
+from tmdb_images import cached_image_path, cached_person_image_path, download_tmdb_image
+from tmdb_people import mark_people_sync_complete, sync_cast_people_for_work
 
 _MATCHED = "MATCHED"
 _REVIEW = "REVIEW"
@@ -781,12 +782,16 @@ def sync_tmdb_library(
     tmdb = client or TmdbClient(token)
     image_root_path = Path(image_root)
     rows: list[dict[str, Any]] = []
+    people_matched_ids: set[int] = set()
+    people_profile_cached_ids: set[int] = set()
+    people_sync_failures = 0
 
     with connect(database_path) as connection:
+        initialize_database(connection)
         works = connection.execute(
             """
             SELECT
-                w.id,w.category,w.year_or_period,w.source_title,w.official_title,
+                w.id,w.category,w.year_or_period,w.source_title,w.official_title,w.main_cast_or_voice_actors,
                 w.media_file_count,w.subfolder_count,
                 (SELECT COUNT(*) FROM videos v WHERE v.work_id=w.id AND v.content_type='EPISODE') AS episode_count,
                 (SELECT COUNT(*) FROM videos v WHERE v.work_id=w.id AND v.content_type='MOVIE') AS movie_content_count
@@ -882,6 +887,47 @@ def sync_tmdb_library(
                         ).is_file()
                     )
 
+            cast_people_matched = 0
+            cast_profiles_cached = 0
+            if status == _MATCHED and candidate is not None:
+                try:
+                    people_result = sync_cast_people_for_work(
+                        connection,
+                        tmdb,
+                        work_id=int(work["id"]),
+                        media_type=candidate.media_type,
+                        tmdb_id=candidate.tmdb_id,
+                        local_cast=str(work["main_cast_or_voice_actors"] or ""),
+                        image_root=image_root_path,
+                        image_downloader=image_downloader,
+                    )
+                    cast_people_matched = int(people_result.get("matched") or 0)
+                    cast_profiles_cached = int(people_result.get("profileCached") or 0)
+                    people_matched_ids.update(int(value) for value in people_result.get("personIds") or [])
+                    for person_id in people_result.get("personIds") or []:
+                        person_row = connection.execute(
+                            "SELECT profile_path FROM tmdb_people WHERE tmdb_person_id=?",
+                            (int(person_id),),
+                        ).fetchone()
+                        if person_row is not None and person_row["profile_path"]:
+                            try:
+                                if cached_person_image_path(
+                                    image_root_path, int(person_id), str(person_row["profile_path"])
+                                ).is_file():
+                                    people_profile_cached_ids.add(int(person_id))
+                            except ValueError:
+                                pass
+                except Exception:
+                    # Person photos are enrichment only.  Preserve a completed
+                    # work match even if credits/profile retrieval is temporarily unavailable.
+                    people_sync_failures += 1
+            else:
+                connection.execute(
+                    "DELETE FROM tmdb_work_people WHERE work_id=? AND role='CAST'",
+                    (int(work["id"]),),
+                )
+                connection.commit()
+
             row = {
                 "appVersion": APP_VERSION,
                 "matcherVersion": _MATCHER_VERSION,
@@ -898,6 +944,8 @@ def sync_tmdb_library(
                 "reason": reason,
                 "posterCached": poster_cached,
                 "backdropCached": backdrop_cached,
+                "castPeopleMatched": cast_people_matched,
+                "castProfilesCached": cast_profiles_cached,
             }
             rows.append(row)
 
@@ -915,6 +963,8 @@ def sync_tmdb_library(
 
         _store_matcher_version(connection)
         _store_image_cache_repair_version(connection)
+        if people_sync_failures == 0:
+            mark_people_sync_complete(connection)
         connection.commit()
 
     summary = {
@@ -926,6 +976,9 @@ def sync_tmdb_library(
         "unmatched": sum(1 for item in rows if item["status"] == _UNMATCHED),
         "posterCached": sum(1 for item in rows if item["posterCached"]),
         "backdropCached": sum(1 for item in rows if item["backdropCached"]),
+        "peopleMatched": len(people_matched_ids),
+        "peopleProfileCached": len(people_profile_cached_ids),
+        "peopleSyncFailures": people_sync_failures,
     }
     json_path, csv_path = _write_report(Path(report_dir), rows, summary)
     return {

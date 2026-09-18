@@ -84,7 +84,7 @@ class TmdbClientTests(unittest.TestCase):
 
 
 class TmdbDatabaseTests(unittest.TestCase):
-    def test_schema5_tables_and_schema4_upgrade_preserve_user_state(self):
+    def test_schema6_tables_and_schema5_upgrade_preserve_user_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "library.db"
             with connect(db) as connection:
@@ -104,16 +104,20 @@ class TmdbDatabaseTests(unittest.TestCase):
                     "INSERT INTO user_work_state(user_id,work_id,favorite,created_at,updated_at) VALUES(?,?,1,?,?)",
                     (user_id, work_id, stamp, stamp),
                 )
+                connection.execute("DROP TABLE tmdb_work_people")
+                connection.execute("DROP TABLE tmdb_people")
                 connection.execute("DROP TABLE tmdb_api_cache")
                 connection.execute("DROP TABLE tmdb_work_links")
-                connection.execute("UPDATE schema_info SET schema_version=4")
+                connection.execute("UPDATE schema_info SET schema_version=5")
                 connection.commit()
                 initialize_database(connection)
                 connection.commit()
-                self.assertEqual(SCHEMA_VERSION, 5)
-                self.assertEqual(int(connection.execute("SELECT schema_version FROM schema_info").fetchone()[0]), 5)
+                self.assertEqual(SCHEMA_VERSION, 6)
+                self.assertEqual(int(connection.execute("SELECT schema_version FROM schema_info").fetchone()[0]), 6)
                 self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tmdb_work_links'").fetchone())
                 self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tmdb_api_cache'").fetchone())
+                self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'tmdb_people\'").fetchone())
+                self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'tmdb_work_people\'").fetchone())
                 favorite = int(connection.execute("SELECT favorite FROM user_work_state WHERE user_id=? AND work_id=?", (user_id, work_id)).fetchone()[0])
                 self.assertEqual(favorite, 1)
 

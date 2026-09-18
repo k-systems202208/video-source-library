@@ -45,7 +45,11 @@ class NavigationPeopleMenuSourceTests(unittest.TestCase):
         self.assertIn("showPeopleDirectory(role)", HTML)
         self.assertIn("location.hash.match(/^#\\/people\\/(directors|cast)$/)", HTML)
         self.assertIn("/api/people?role=", HTML)
-        self.assertIn("NAVIGATION_PEOPLE_MENU_V1", HTML)
+        self.assertIn("people-profile-media", HTML)
+        self.assertIn("personProfileFallback", HTML)
+        self.assertIn("p.profileUrl", HTML)
+        self.assertIn("/tmdb-person-image/", SERVER)
+        self.assertIn("NAVIGATION_PEOPLE_MENU_V2", HTML)
 
     def test_server_no_longer_auto_injects_diagnostics_link(self) -> None:
         self.assertNotIn('if "diagnostics.html" not in text:', SERVER)
