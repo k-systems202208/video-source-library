@@ -946,6 +946,7 @@ class VideoLibraryLauncher(tk.Tk):
                 report = {
                     "matchedPeople": 0,
                     "matchedBySearch": 0,
+                    "matchedByCombinedCredits": 0,
                     "profileCached": 0,
                     "failures": 0,
                     "completed": True,
@@ -964,11 +965,12 @@ class VideoLibraryLauncher(tk.Tk):
         self.people_thread = None
         matched = int(report.get("matchedPeople") or 0)
         recovered = int(report.get("matchedBySearch") or 0)
+        recovered_combined = int(report.get("matchedByCombinedCredits") or 0)
         cached = int(report.get("profileCached") or 0)
         failures = int(report.get("failures") or 0)
         self._append_log(
             f"出演者写真同期: 人物 {matched:,} / 第2照合回収 {recovered:,} / "
-            f"顔写真 {cached:,} / 失敗 {failures:,}"
+            f"第3照合回収 {recovered_combined:,} / 顔写真 {cached:,} / 失敗 {failures:,}"
         )
         audit = report.get("peopleAudit") or {}
         audit_summary = audit.get("summary") or {}
