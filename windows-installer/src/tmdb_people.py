@@ -418,6 +418,7 @@ def sync_tmdb_people_library(
     client: Any | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
     image_downloader: Callable[..., Path] = download_tmdb_image,
+    report_dir: Path | str | None = None,
 ) -> dict[str, Any]:
     from tmdb_client import TmdbClient
 
@@ -492,7 +493,7 @@ def sync_tmdb_people_library(
             mark_people_sync_complete(connection)
         connection.commit()
 
-    return {
+    result = {
         "totalWorks": len(works),
         "matchedPeople": len(matched_ids),
         "profileCached": len(cached_ids),
@@ -500,6 +501,14 @@ def sync_tmdb_people_library(
         "failures": failures,
         "completed": failures == 0,
     }
+    if report_dir is not None:
+        result["peopleAudit"] = audit_tmdb_people_profiles(
+            database_path,
+            report_dir,
+            token,
+            client=tmdb,
+        )
+    return result
 
 
 def _person_audit_reason(
