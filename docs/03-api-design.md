@@ -1,4 +1,4 @@
-# 自宅動画ライブラリ v1.2.0 API設計
+# 自宅動画ライブラリ v1.2.1 API設計
 
 通常のローカルURL例: `http://127.0.0.1:8876`
 
@@ -37,7 +37,7 @@ localhostのWindowsランチャーだけがcontrol secretを使用して短寿�
 - `GET /api/current-user`
 - `GET /api/stats`
 - `GET /api/scan/status`
-- `GET /api/works`（通常は表示中のみ。Ownerは `visibility=visible|hidden|all` を指定可能）
+- `GET /api/works`（`is_visible=1` の作品のみ）
 - `GET /api/works/{id}`
 - `GET /api/works/{id}/videos`
 - `GET /api/videos/{id}`
@@ -81,9 +81,8 @@ localhostのWindowsランチャーだけがcontrol secretを使用して短寿�
 - `POST /api/backups/create`
 - `POST /api/backups/restore`
 - `POST /api/backups/restore/cancel`
-- `PUT /api/admin/works/visibility` body: `{ "workIds": [1,2], "visible": false }`
 
-診断GETもOwner専用。`GET /api/works?visibility=hidden|all` と作品visibility更新もOwner専用。通常の `GET /api/works` は表示中作品だけを返す。作品詳細・動画詳細のID直接取得はvisibilityに関係なく維持する。
+診断GETもOwner専用。作品visibilityを変更するWeb APIは提供しない。作品一覧・作品詳細・動画詳細・動画配信・字幕・作品画像は `is_visible=1` の作品だけを返す。表示対象の変更はWindowsランチャーがSQLiteへ直接反映する。
 
 メタデータ初回取込は現在Windowsランチャーから行い、Web APIとして任意ファイル取込を公開しない。
 

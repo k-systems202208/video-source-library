@@ -16,7 +16,7 @@ from app_version import APP_VERSION
 from backup_restore import cancel_restore, create_manual_backup, list_backups, pending_restore, restore_status, schedule_restore
 from database import SCHEMA_VERSION, connect, initialize_database, quick_check
 from identity_service import local_owner_user, resolve_tailscale_user
-from library_service import get_video, get_work, library_stats, list_people, list_work_videos, list_works, set_work_visibility
+from library_service import get_video, get_work, library_stats, list_people, list_work_videos, list_works
 from local_auth import LocalOwnerAuth, cookie_value, session_cookie_header
 from matroska_audio import apply_patch_to_chunk, preferred_japanese_audio_patch
 from playback_compat import prepare_browser_playback
@@ -267,13 +267,16 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                 self._error(409, "VIDEO_ROOT_NOT_CONFIGURED", "動画フォルダーが設定されていません。")
                 return
             with connect(db_path) as connection:
-                resolved = resolve_video_file(connection, root_path, video_id)
                 video = get_video(connection, video_id)
+                if video is None:
+                    self._error(404, "VIDEO_NOT_FOUND", "動画が見つかりません。")
+                    return
+                resolved = resolve_video_file(connection, root_path, video_id)
             if resolved is None:
                 self._error(404, "VIDEO_FILE_NOT_FOUND", "動画ファイルが見つかりません。")
                 return
             path, extension = resolved
-            file_info = (video or {}).get("file") or {}
+            file_info = video.get("file") or {}
             try:
                 prepared = prepare_browser_playback(
                     path,
@@ -334,6 +337,19 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                 self._error(409, "VIDEO_ROOT_NOT_CONFIGURED", "動画フォルダーが設定されていません。")
                 return
             with connect(db_path) as connection:
+                visible = connection.execute(
+                    """
+                    SELECT 1
+                    FROM subtitles st
+                    JOIN videos v ON v.id=st.video_id
+                    JOIN works w ON w.id=v.work_id
+                    WHERE st.id=? AND w.is_visible=1
+                    """,
+                    (subtitle_id,),
+                ).fetchone()
+                if visible is None:
+                    self._error(404, "SUBTITLE_FILE_NOT_FOUND", "字幕ファイルが見つかりません。")
+                    return
                 resolved = resolve_subtitle_file(connection, root_path, subtitle_id)
             if resolved is None:
                 self._error(404, "SUBTITLE_FILE_NOT_FOUND", "字幕ファイルが見つかりません。")
@@ -360,6 +376,13 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
 
         def _serve_tmdb_image(self, kind: str, work_id: int, *, head: bool = False) -> None:
             with connect(db_path) as connection:
+                visible = connection.execute(
+                    "SELECT 1 FROM works WHERE id=? AND is_visible=1",
+                    (work_id,),
+                ).fetchone()
+                if visible is None:
+                    self._error(404, "TMDB_IMAGE_NOT_FOUND", "TMDb画像が見つかりません。")
+                    return
                 resolved = resolve_or_repair_cached_tmdb_image(connection, app_data_root / "TMDbImages", work_id, kind)
             if resolved is None:
                 self._error(404, "TMDB_IMAGE_NOT_FOUND", "TMDb画像が見つかりません。")
@@ -477,9 +500,6 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                             self._error(400, "INVALID_PEOPLE_ROLE", str(exc))
                         return
                     if path == "/api/works":
-                        visibility = str(_first(query, "visibility") or "visible").strip().casefold()
-                        if visibility != "visible" and self._require_owner(connection) is None:
-                            return
                         self._json(
                             200,
                             list_works(
@@ -488,7 +508,6 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                                 q=_first(query, "q"),
                                 category=_first(query, "category"),
                                 sort=_first(query, "sort") or "title",
-                                visibility=visibility,
                                 limit=_first(query, "limit"),
                                 offset=_first(query, "offset"),
                             ),
@@ -554,36 +573,6 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                     user = self._require_user(connection)
                     if user is None: return
                     uid = int(user["id"])
-                    if path == "/api/admin/works/visibility":
-                        if not bool(user.get("isOwner")):
-                            self._error(403, "OWNER_REQUIRED", "この操作にはOwner権限が必要です。")
-                            return
-                        work_ids = payload.get("workIds")
-                        visible = payload.get("visible")
-                        if not isinstance(work_ids, list) or not work_ids or len(work_ids) > 1000:
-                            raise ValueError("workIds must be a non-empty array with at most 1000 items")
-                        if not isinstance(visible, bool):
-                            raise ValueError("visible must be boolean")
-                        normalized_ids: list[int] = []
-                        for value in work_ids:
-                            if isinstance(value, bool):
-                                raise ValueError("workIds must contain integers")
-                            try:
-                                work_id = int(value)
-                            except (TypeError, ValueError):
-                                raise ValueError("workIds must contain integers")
-                            if work_id <= 0:
-                                raise ValueError("workIds must contain positive integers")
-                            normalized_ids.append(work_id)
-                        self._json(
-                            200,
-                            set_work_visibility(
-                                connection,
-                                normalized_ids,
-                                visible=visible,
-                            ),
-                        )
-                        return
                     match = re.fullmatch(r"/api/me/works/(\d+)/favorite", path)
                     if match:
                         if not isinstance(payload.get("favorite"), bool): raise ValueError("favorite must be boolean")

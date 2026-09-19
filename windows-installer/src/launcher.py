@@ -29,6 +29,7 @@ from scan_runner import scan_library
 from server import create_server
 from tmdb_people import audit_tmdb_people_profiles, people_audit_required, people_sync_required, sync_tmdb_people_library
 from tmdb_sync import sync_tmdb_library
+from work_visibility import list_work_visibility, replace_visible_work_ids
 
 APP_NAME = "自宅動画ライブラリ"
 # Music Library uses 8765. Keep Video Library on a different localhost origin
@@ -215,6 +216,12 @@ class VideoLibraryLauncher(tk.Tk):
         self.browser_button.pack(side="left", padx=8)
         self.stop_button = ttk.Button(button_frame, text="停止", command=self.stop_server, state="disabled")
         self.stop_button.pack(side="left")
+        self.visibility_button = ttk.Button(
+            button_frame,
+            text="表示設定",
+            command=self.open_work_visibility_settings,
+        )
+        self.visibility_button.pack(side="left", padx=(8, 0))
         ttk.Button(button_frame, text="データ保存先を開く", command=self.open_data_folder).pack(side="right")
 
         remote_frame = ttk.LabelFrame(main, text="外部接続（Tailscale）", padding=10)
@@ -279,6 +286,144 @@ class VideoLibraryLauncher(tk.Tk):
         self.log_text = tk.Text(scan_box, height=4, wrap="none", font=MONO_FONT, state="disabled")
         self.log_text.pack(fill="both", expand=True)
 
+
+    def open_work_visibility_settings(self) -> None:
+        if not DATABASE_PATH.is_file():
+            messagebox.showerror(APP_NAME, "ライブラリDBが見つかりません。")
+            return
+        try:
+            with connect(DATABASE_PATH) as connection:
+                initialize_database(connection)
+                works = list_work_visibility(connection)
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"表示設定を読み込めませんでした。\n{exc}")
+            return
+        if not works:
+            messagebox.showinfo(APP_NAME, "表示設定できる作品がありません。")
+            return
+
+        dialog = tk.Toplevel(self)
+        dialog.title("作品の表示設定")
+        dialog.geometry("760x680")
+        dialog.minsize(620, 520)
+        dialog.transient(self)
+        dialog.grab_set()
+
+        outer = ttk.Frame(dialog, padding=16)
+        outer.pack(fill="both", expand=True)
+
+        ttk.Label(outer, text="ブラウザに表示する作品", font=STATUS_FONT).pack(anchor="w")
+        ttk.Label(
+            outer,
+            text="チェックした作品だけがブラウザに表示されます。設定変更後はブラウザを再読み込みしてください。",
+            font=SMALL_FONT,
+            wraplength=700,
+        ).pack(anchor="w", pady=(4, 10))
+
+        selected_count = tk.StringVar(value="")
+        all_selected = tk.BooleanVar(value=all(bool(item["visible"]) for item in works))
+        variables: dict[int, tk.BooleanVar] = {
+            int(item["id"]): tk.BooleanVar(value=bool(item["visible"]))
+            for item in works
+        }
+
+        toolbar = ttk.Frame(outer)
+        toolbar.pack(fill="x", pady=(0, 8))
+
+        def refresh_selection_summary() -> None:
+            selected = sum(1 for variable in variables.values() if variable.get())
+            selected_count.set(f"選択 {selected:,} / {len(works):,} 作品")
+            all_selected.set(selected == len(works))
+
+        def toggle_all() -> None:
+            value = bool(all_selected.get())
+            for variable in variables.values():
+                variable.set(value)
+            refresh_selection_summary()
+
+        ttk.Checkbutton(
+            toolbar,
+            text="すべて選択 / すべて解除",
+            variable=all_selected,
+            command=toggle_all,
+        ).pack(side="left")
+        ttk.Label(toolbar, textvariable=selected_count, font=SMALL_FONT).pack(side="right")
+
+        list_frame = ttk.Frame(outer)
+        list_frame.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(list_frame, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
+        rows_frame = ttk.Frame(canvas)
+        window_id = canvas.create_window((0, 0), window=rows_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def sync_scrollregion(_event=None) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def stretch_rows(event) -> None:
+            canvas.itemconfigure(window_id, width=event.width)
+
+        rows_frame.bind("<Configure>", sync_scrollregion)
+        canvas.bind("<Configure>", stretch_rows)
+        dialog.bind(
+            "<MouseWheel>",
+            lambda event: canvas.yview_scroll(int(-event.delta / 120), "units"),
+        )
+
+        for item in works:
+            work_id = int(item["id"])
+            title = str(item["title"] or "")
+            category = str(item["category"] or "")
+            year = str(item["yearOrPeriod"] or "")
+            external_no = int(item["externalWorkNo"])
+            suffix = f" ({year})" if year else ""
+            label = f"{external_no:04d}  [{category}]  {title}{suffix}"
+            ttk.Checkbutton(
+                rows_frame,
+                text=label,
+                variable=variables[work_id],
+                command=refresh_selection_summary,
+            ).pack(anchor="w", fill="x", padx=4, pady=2)
+
+        footer = ttk.Frame(outer)
+        footer.pack(fill="x", pady=(12, 0))
+
+        def save_visibility() -> None:
+            selected_ids = [
+                work_id
+                for work_id, variable in variables.items()
+                if variable.get()
+            ]
+            try:
+                with connect(DATABASE_PATH) as connection:
+                    initialize_database(connection)
+                    result = replace_visible_work_ids(connection, selected_ids)
+            except Exception as exc:
+                messagebox.showerror(
+                    APP_NAME,
+                    f"表示設定を保存できませんでした。\n{exc}",
+                    parent=dialog,
+                )
+                return
+            self.refresh_local_status()
+            message = (
+                f"表示設定を保存しました。\n\n"
+                f"表示: {result['visible']:,}作品\n"
+                f"非表示: {result['hidden']:,}作品"
+            )
+            if self.server is not None:
+                message += "\n\nブラウザを再読み込みすると反映されます。"
+            messagebox.showinfo(APP_NAME, message, parent=dialog)
+            dialog.destroy()
+
+        ttk.Button(footer, text="保存", command=save_visibility).pack(side="left")
+        ttk.Button(footer, text="キャンセル", command=dialog.destroy).pack(side="right")
+
+        refresh_selection_summary()
+        dialog.focus_set()
 
     def open_tmdb_settings(self) -> None:
         dialog = tk.Toplevel(self)
@@ -679,6 +824,7 @@ class VideoLibraryLauncher(tk.Tk):
         self.meta_browse_button.configure(state=state)
         self.import_button.configure(state=state)
         self.audit_button.configure(state=state)
+        self.visibility_button.configure(state=state)
         self.tmdb_sync_button.configure(state=state)
         if busy:
             self.browser_button.configure(state="disabled")

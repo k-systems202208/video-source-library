@@ -1,4 +1,4 @@
-# 自宅動画ライブラリ v1.2.0 DB設計
+# 自宅動画ライブラリ v1.2.1 DB設計
 
 SQLiteを使用し、WALとforeign keysを有効にする。現行schemaは **8**。
 
@@ -15,7 +15,7 @@ SQLiteを使用し、WALとforeign keysを有効にする。現行schemaは **8*
 
 schema 7の `DIRECTOR` は一度配布済みのDBとの後方互換のため残す。現在の通常同期では監督／演出の顔写真用人物リンクを新規作成しない。
 
-schema 8の `works.is_visible` は `1=表示 / 0=非表示`。既存作品と新規作品の初期値は1。metadata再取込ではこの列を更新対象に含めず、Ownerが設定した表示状態を保持する。
+schema 8の `works.is_visible` は `1=表示 / 0=非表示`。既存作品と新規作品の初期値は1。metadata再取込ではこの列を更新対象に含めず、Windowsランチャーで設定した表示状態を保持する。
 
 既存DBは削除・再作成せずmigrationし、お気に入り、視聴位置、再生回数等の既存利用者状態を保持する。
 
@@ -46,7 +46,7 @@ schema 8の `works.is_visible` は `1=表示 / 0=非表示`。既存作品と新
 
 - `is_visible`: `1=通常画面に表示` / `0=非表示`
 - 非表示は削除ではなく、動画・TMDb・お気に入り・視聴履歴を保持する
-- `#/work/{id}` の直接表示はvisibilityに関係なく可能
+- `is_visible=0` の作品はブラウザAPI・直接URL・動画配信からも取得不可
 
 ## `video_files`
 

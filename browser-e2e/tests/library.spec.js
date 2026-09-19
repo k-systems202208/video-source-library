@@ -47,43 +47,6 @@ test('initial view starts at the header and renders the catalog', async ({ page 
   await expect.poll(async () => page.evaluate(() => window.scrollY)).toBe(0);
 });
 
-test('owner can hide and restore works from visibility management', async ({ page }) => {
-  const manage = page.locator('#visibilityModeButton');
-  await expect(manage).toBeVisible();
-  await manage.click();
-  await expect(page.locator('#visibilityControls')).toBeVisible();
-  await expect(manage).toHaveText('表示設定を終了');
-
-  const firstCard = page.locator('.visibility-card').first();
-  await expect(firstCard).toBeVisible();
-  const title = await firstCard.locator('h2').innerText();
-  const checkbox = firstCard.locator('.visibility-check input');
-  const workId = Number(await checkbox.getAttribute('data-work-id'));
-  expect(workId).toBeGreaterThan(0);
-
-  await checkbox.check();
-  await expect(page.locator('#visibilitySelectionCount')).toHaveText('1件選択');
-  await page.locator('#visibilityHideSelected').click();
-  await expect(page.locator('#catalogCount')).toHaveText(/11\s*作品/);
-
-  await page.locator('#visibilityFilter').selectOption('hidden');
-  await expect(page.locator('#catalogCount')).toHaveText(/1\s*作品/);
-  const hiddenCard = page.locator('.visibility-card').filter({ hasText: title }).first();
-  await expect(hiddenCard).toBeVisible();
-  await expect(hiddenCard.locator('.visibility-status')).toHaveText('非表示');
-
-  await hiddenCard.locator('h2').click();
-  await expect(page).toHaveURL(new RegExp('#/work/' + workId + '$'));
-  const detailToggle = page.locator('.visibility-detail');
-  await expect(detailToggle).toHaveText('⊘ 非表示');
-  await detailToggle.click();
-  await expect(detailToggle).toHaveText('◉ 表示中');
-
-  await page.locator('#back').click();
-  await expect(page.locator('#catalogCount')).toHaveText(/12\s*作品/);
-  await expect(page.locator('.card').filter({ hasText: title }).first()).toBeVisible();
-});
-
 test('all five cinema navigation items work', async ({ page }) => {
   await clickCinemaMenu(page, '上映中', '#/home/continue');
   await expect(page.locator('#catalog')).toBeVisible();

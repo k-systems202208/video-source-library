@@ -32,17 +32,9 @@ def _like_pattern(value: str) -> str:
 def _work_filters(
     q: str | None,
     category: str | None,
-    visibility: str | None = "visible",
 ) -> tuple[str, list[Any]]:
-    key = str(visibility or "visible").strip().casefold()
-    if key not in {"visible", "hidden", "all"}:
-        raise ValueError("visibility must be visible, hidden, or all")
-    clauses: list[str] = []
+    clauses: list[str] = ["w.is_visible = 1"]
     params: list[Any] = []
-    if key == "visible":
-        clauses.append("w.is_visible = 1")
-    elif key == "hidden":
-        clauses.append("w.is_visible = 0")
     if q and q.strip():
         pattern = _like_pattern(q.strip())
         clauses.append(
@@ -74,13 +66,12 @@ def list_works(
     q: str | None = None,
     category: str | None = None,
     sort: str | None = "title",
-    visibility: str | None = "visible",
     limit: int | str | None = DEFAULT_LIMIT,
     offset: int | str | None = 0,
 ) -> dict[str, Any]:
     limit_value = _bounded_limit(limit)
     offset_value = _bounded_offset(offset)
-    where_sql, params = _work_filters(q, category, visibility)
+    where_sql, params = _work_filters(q, category)
     order_sql = {
         "title": "w.official_title COLLATE NOCASE, w.external_work_no",
         "year": "COALESCE(w.year_or_period, ''), w.official_title COLLATE NOCASE",
@@ -89,7 +80,7 @@ def list_works(
     total = int(connection.execute(f"SELECT COUNT(*) FROM works w{where_sql}", params).fetchone()[0])
     rows = connection.execute(
         f"""
-        SELECT w.id,w.external_work_no,w.category,w.source_title,w.official_title,w.year_or_period,w.media_file_count,w.is_visible,
+        SELECT w.id,w.external_work_no,w.category,w.source_title,w.official_title,w.year_or_period,w.media_file_count,
           (SELECT COUNT(*) FROM videos v JOIN video_files vf ON vf.video_id=v.id WHERE v.work_id=w.id AND vf.is_available=1) available_count,
           COALESCE((SELECT favorite FROM user_work_state s WHERE s.user_id=? AND s.work_id=w.id),0) favorite,
           (SELECT COUNT(*) FROM videos v LEFT JOIN user_video_state s ON s.video_id=v.id AND s.user_id=? WHERE v.work_id=w.id AND v.content_type IN ('EPISODE','MOVIE') AND COALESCE(s.watched,0)=1) watched_count,
@@ -116,7 +107,6 @@ def list_works(
                 "videoCount": int(r["media_file_count"]),
                 "availableVideoCount": int(r["available_count"]),
                 "favorite": bool(r["favorite"]),
-                "visible": bool(r["is_visible"]),
                 "progress": _progress(int(r["watched_count"]), int(r["progress_total"]), int(r["in_progress_count"])),
                 "posterUrl": f'/tmdb-image/poster/{int(r["id"])}' if r["tmdb_match_status"] == "MATCHED" and r["tmdb_poster_path"] else None,
                 "backdropUrl": f'/tmdb-image/backdrop/{int(r["id"])}' if r["tmdb_match_status"] == "MATCHED" and r["tmdb_backdrop_path"] else None,
@@ -191,12 +181,12 @@ def get_work(connection: sqlite3.Connection, work_id: int, *, user_id: int | Non
         """
         SELECT w.id,w.external_work_no,w.category,w.year_or_period,w.source_title,w.official_title,
                w.media_file_count,w.subtitle_file_count,w.media_format,w.director_or_direction,
-               w.main_cast_or_voice_actors,w.verification_status,w.credits_verification_status,w.is_visible,
+               w.main_cast_or_voice_actors,w.verification_status,w.credits_verification_status,
                COALESCE(s.favorite,0) favorite,t.media_type tmdb_media_type,t.tmdb_id,t.match_status tmdb_match_status,
                t.confidence tmdb_confidence,t.matched_title tmdb_matched_title,t.matched_year tmdb_matched_year,
                t.poster_path tmdb_poster_path,t.backdrop_path tmdb_backdrop_path,t.overview tmdb_overview
         FROM works w LEFT JOIN user_work_state s ON s.work_id=w.id AND s.user_id=?
-        LEFT JOIN tmdb_work_links t ON t.work_id=w.id WHERE w.id=?
+        LEFT JOIN tmdb_work_links t ON t.work_id=w.id WHERE w.id=? AND w.is_visible=1
         """,
         (user_id, work_id),
     ).fetchone()
@@ -241,7 +231,6 @@ def get_work(connection: sqlite3.Connection, work_id: int, *, user_id: int | Non
         "mediaFormat": r["media_format"], "director": r["director_or_direction"], "cast": r["main_cast_or_voice_actors"],
         "verificationStatus": r["verification_status"], "creditsVerificationStatus": r["credits_verification_status"],
         "favorite": bool(r["favorite"]),
-        "visible": bool(r["is_visible"]),
         "posterUrl": f'/tmdb-image/poster/{int(r["id"])}' if r["tmdb_match_status"] == "MATCHED" and r["tmdb_poster_path"] else None,
         "backdropUrl": f'/tmdb-image/backdrop/{int(r["id"])}' if r["tmdb_match_status"] == "MATCHED" and r["tmdb_backdrop_path"] else None,
         "tmdb": {
@@ -260,7 +249,10 @@ def get_work(connection: sqlite3.Connection, work_id: int, *, user_id: int | Non
 
 
 def list_work_videos(connection: sqlite3.Connection, work_id: int, *, user_id: int | None = None, group_id: int | None = None) -> dict[str, Any] | None:
-    work = connection.execute("SELECT id,official_title FROM works WHERE id=?", (work_id,)).fetchone()
+    work = connection.execute(
+        "SELECT id,official_title FROM works WHERE id=? AND is_visible=1",
+        (work_id,),
+    ).fetchone()
     if work is None:
         return None
     params: list[Any] = [user_id, work_id]
@@ -317,7 +309,7 @@ def get_video(connection: sqlite3.Connection, video_id: int, *, user_id: int | N
                COALESCE(s.favorite,0) favorite,COALESCE(s.watched,0) watched,COALESCE(s.position_ms,0) position_ms,
                s.duration_ms state_duration_ms,COALESCE(s.play_count,0) play_count,s.last_played_at
         FROM videos v JOIN works w ON w.id=v.work_id LEFT JOIN series_groups g ON g.id=v.series_group_id
-        JOIN video_files f ON f.video_id=v.id LEFT JOIN user_video_state s ON s.video_id=v.id AND s.user_id=? WHERE v.id=?
+        JOIN video_files f ON f.video_id=v.id LEFT JOIN user_video_state s ON s.video_id=v.id AND s.user_id=? WHERE v.id=? AND w.is_visible=1
         """,
         (user_id, video_id),
     ).fetchone()
@@ -366,38 +358,6 @@ def get_video(connection: sqlite3.Connection, video_id: int, *, user_id: int | N
         "state": {"favorite": bool(r["favorite"]), "watched": bool(r["watched"]), "positionMs": int(r["position_ms"] or 0),
                   "durationMs": r["state_duration_ms"], "playCount": int(r["play_count"] or 0), "lastPlayedAt": r["last_played_at"]},
         "navigation": {"previousVideoId": ids[i-1] if i > 0 else None, "nextVideoId": ids[i+1] if i + 1 < len(ids) else None},
-    }
-
-
-def set_work_visibility(
-    connection: sqlite3.Connection,
-    work_ids: list[int],
-    *,
-    visible: bool,
-) -> dict[str, Any]:
-    normalized = sorted({int(work_id) for work_id in work_ids if int(work_id) > 0})
-    if not normalized:
-        raise ValueError("workIds must contain at least one positive integer")
-    placeholders = ",".join("?" for _ in normalized)
-    existing = {
-        int(row["id"])
-        for row in connection.execute(
-            f"SELECT id FROM works WHERE id IN ({placeholders})",
-            normalized,
-        ).fetchall()
-    }
-    missing = [work_id for work_id in normalized if work_id not in existing]
-    if missing:
-        raise LookupError("WORK_NOT_FOUND")
-    connection.execute(
-        f"UPDATE works SET is_visible=? WHERE id IN ({placeholders})",
-        [int(bool(visible)), *normalized],
-    )
-    connection.commit()
-    return {
-        "updated": len(normalized),
-        "visible": bool(visible),
-        "workIds": normalized,
     }
 
 
