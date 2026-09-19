@@ -1,4 +1,4 @@
-# 自宅動画ライブラリ v1.2.1 DB設計
+# 自宅動画ライブラリ v1.2.2 DB設計
 
 SQLiteを使用し、WALとforeign keysを有効にする。現行schemaは **8**。
 
