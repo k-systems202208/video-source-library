@@ -15,9 +15,9 @@ from tmdb_people import _PEOPLE_AUDIT_VERSION, _PEOPLE_SYNC_VERSION
 from tmdb_sync import _MATCHER_VERSION
 
 
-class CurrentArchitectureV121Tests(unittest.TestCase):
+class CurrentArchitectureV122Tests(unittest.TestCase):
     def test_current_versions_are_kept_in_sync(self):
-        self.assertEqual(APP_VERSION, "1.2.1")
+        self.assertEqual(APP_VERSION, "1.2.2")
         self.assertEqual(SCHEMA_VERSION, 8)
         self.assertEqual(_MATCHER_VERSION, 8)
         self.assertEqual(_PEOPLE_SYNC_VERSION, 9)
@@ -38,24 +38,24 @@ class CurrentArchitectureV121Tests(unittest.TestCase):
         manifest = json.loads((SRC / "manifest.webmanifest").read_text(encoding="utf-8"))
         self.assertEqual(manifest["name"], "関町北映画館")
 
-    def test_current_design_docs_match_launcher_managed_visibility(self):
+    def test_current_design_docs_match_launcher_visibility_filter(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         basic = (ROOT / "docs" / "00-basic-design.md").read_text(encoding="utf-8")
         database = (ROOT / "docs" / "01-database-design.md").read_text(encoding="utf-8")
         screen = (ROOT / "docs" / "02-screen-design.md").read_text(encoding="utf-8")
         api = (ROOT / "docs" / "03-api-design.md").read_text(encoding="utf-8")
-        visibility = (ROOT / "docs" / "83-1.2.1-launcher-work-visibility.md").read_text(
+        visibility = (ROOT / "docs" / "85-1.2.2-launcher-visibility-filter.md").read_text(
             encoding="utf-8"
         )
-        release = (ROOT / "docs" / "84-1.2.1-release.md").read_text(encoding="utf-8")
+        release = (ROOT / "docs" / "86-1.2.2-release.md").read_text(encoding="utf-8")
 
-        self.assertIn("1.2.1: 表示設定をWindowsランチャーへ移動（現行）", readme)
-        self.assertIn("v1.2.1 基本設計", basic)
+        self.assertIn("1.2.2: 表示設定に作品名フィルターを追加（現行）", readme)
+        self.assertIn("v1.2.2 基本設計", basic)
         self.assertIn("現行schemaは **8**", database)
-        self.assertIn("Windowsランチャーの表示設定", screen)
+        self.assertIn("作品名フィルター", screen)
         self.assertNotIn("/api/admin/works/visibility", api)
-        self.assertIn("すべて選択 / すべて解除", visibility)
-        self.assertIn("# 自宅動画ライブラリ 1.2.1", release)
+        self.assertIn("部分一致", visibility)
+        self.assertIn("# 自宅動画ライブラリ 1.2.2", release)
 
 
 if __name__ == "__main__":

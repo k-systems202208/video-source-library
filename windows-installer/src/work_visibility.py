@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import unicodedata
 from typing import Any, Iterable
 
 
@@ -22,6 +23,25 @@ def list_work_visibility(connection: sqlite3.Connection) -> list[dict[str, Any]]
             "visible": bool(row["is_visible"]),
         }
         for row in rows
+    ]
+
+
+def _normalize_filter_text(value: Any) -> str:
+    return unicodedata.normalize("NFKC", str(value or "")).strip().casefold()
+
+
+def filter_work_visibility(
+    items: Iterable[dict[str, Any]],
+    query: str | None,
+) -> list[dict[str, Any]]:
+    key = _normalize_filter_text(query)
+    rows = list(items)
+    if not key:
+        return rows
+    return [
+        item
+        for item in rows
+        if key in _normalize_filter_text(item.get("title"))
     ]
 
 

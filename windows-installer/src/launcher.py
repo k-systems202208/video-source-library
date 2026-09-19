@@ -29,7 +29,7 @@ from scan_runner import scan_library
 from server import create_server
 from tmdb_people import audit_tmdb_people_profiles, people_audit_required, people_sync_required, sync_tmdb_people_library
 from tmdb_sync import sync_tmdb_library
-from work_visibility import list_work_visibility, replace_visible_work_ids
+from work_visibility import filter_work_visibility, list_work_visibility, replace_visible_work_ids
 
 APP_NAME = "自宅動画ライブラリ"
 # Music Library uses 8765. Keep Video Library on a different localhost origin
@@ -321,11 +321,29 @@ class VideoLibraryLauncher(tk.Tk):
         ).pack(anchor="w", pady=(4, 10))
 
         selected_count = tk.StringVar(value="")
+        filter_text = tk.StringVar(value="")
+        filter_count = tk.StringVar(value=f"表示 {len(works):,} / 全{len(works):,}作品")
         all_selected = tk.BooleanVar(value=all(bool(item["visible"]) for item in works))
         variables: dict[int, tk.BooleanVar] = {
             int(item["id"]): tk.BooleanVar(value=bool(item["visible"]))
             for item in works
         }
+
+        filter_frame = ttk.Frame(outer)
+        filter_frame.pack(fill="x", pady=(0, 8))
+        ttk.Label(filter_frame, text="作品名フィルター", font=SMALL_FONT).pack(side="left")
+        filter_entry = ttk.Entry(filter_frame, textvariable=filter_text)
+        filter_entry.pack(side="left", fill="x", expand=True, padx=(8, 6))
+        ttk.Button(
+            filter_frame,
+            text="クリア",
+            command=lambda: filter_text.set(""),
+        ).pack(side="left")
+        ttk.Label(
+            filter_frame,
+            textvariable=filter_count,
+            font=SMALL_FONT,
+        ).pack(side="right", padx=(10, 0))
 
         toolbar = ttk.Frame(outer)
         toolbar.pack(fill="x", pady=(0, 8))
@@ -373,6 +391,7 @@ class VideoLibraryLauncher(tk.Tk):
             lambda event: canvas.yview_scroll(int(-event.delta / 120), "units"),
         )
 
+        row_widgets: dict[int, ttk.Checkbutton] = {}
         for item in works:
             work_id = int(item["id"])
             title = str(item["title"] or "")
@@ -381,12 +400,29 @@ class VideoLibraryLauncher(tk.Tk):
             external_no = int(item["externalWorkNo"])
             suffix = f" ({year})" if year else ""
             label = f"{external_no:04d}  [{category}]  {title}{suffix}"
-            ttk.Checkbutton(
+            row = ttk.Checkbutton(
                 rows_frame,
                 text=label,
                 variable=variables[work_id],
                 command=refresh_selection_summary,
-            ).pack(anchor="w", fill="x", padx=4, pady=2)
+            )
+            row.pack(anchor="w", fill="x", padx=4, pady=2)
+            row_widgets[work_id] = row
+
+        def apply_filter(*_args) -> None:
+            matches = filter_work_visibility(works, filter_text.get())
+            matched_ids = {int(item["id"]) for item in matches}
+            for row in row_widgets.values():
+                row.pack_forget()
+            for item in works:
+                work_id = int(item["id"])
+                if work_id in matched_ids:
+                    row_widgets[work_id].pack(anchor="w", fill="x", padx=4, pady=2)
+            filter_count.set(f"表示 {len(matches):,} / 全{len(works):,}作品")
+            canvas.yview_moveto(0)
+            dialog.after_idle(sync_scrollregion)
+
+        filter_text.trace_add("write", apply_filter)
 
         footer = ttk.Frame(outer)
         footer.pack(fill="x", pady=(12, 0))
@@ -423,7 +459,8 @@ class VideoLibraryLauncher(tk.Tk):
         ttk.Button(footer, text="キャンセル", command=dialog.destroy).pack(side="right")
 
         refresh_selection_summary()
-        dialog.focus_set()
+        apply_filter()
+        filter_entry.focus_set()
 
     def open_tmdb_settings(self) -> None:
         dialog = tk.Toplevel(self)
