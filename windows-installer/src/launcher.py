@@ -412,13 +412,12 @@ class VideoLibraryLauncher(tk.Tk):
         def apply_filter(*_args) -> None:
             matches = filter_work_visibility(works, filter_text.get())
             matched_ids = {int(item["id"]) for item in matches}
+            for row in row_widgets.values():
+                row.pack_forget()
             for item in works:
                 work_id = int(item["id"])
-                row = row_widgets[work_id]
                 if work_id in matched_ids:
-                    row.pack(anchor="w", fill="x", padx=4, pady=2)
-                else:
-                    row.pack_forget()
+                    row_widgets[work_id].pack(anchor="w", fill="x", padx=4, pady=2)
             filter_count.set(f"表示 {len(matches):,} / 全{len(works):,}作品")
             canvas.yview_moveto(0)
             dialog.after_idle(sync_scrollregion)
