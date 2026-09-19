@@ -41,7 +41,7 @@ class CinemaLibraryDetailV2V110Tests(unittest.TestCase):
 
     def test_display_version_matches_current_release(self):
         version = (ROOT / "windows-installer" / "src" / "app_version.py").read_text(encoding="utf-8")
-        self.assertIn('APP_VERSION = "1.2.1"', version)
+        self.assertIn('APP_VERSION = "1.2.2"', version)
 
 
 if __name__ == "__main__":
