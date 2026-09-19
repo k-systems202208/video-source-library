@@ -42,7 +42,7 @@
 - SQLiteバックアップ / 復元予約 / ロールバック
 
 ### Phase 6: ffprobe / 字幕 / Windowsインストーラー
-- Phase 6でSQLite schema 4を導入（現在は1.2.1 / schema 8）
+- Phase 6でSQLite schema 4を導入（現在は1.2.2 / schema 8）
 - ffprobeによるコンテナ・Codec・解像度・再生時間取得
 - 埋込字幕stream数取得
 - 外部字幕 `.srt` / `.vtt` / `.ass` / `.ssa` を検出
@@ -175,7 +175,7 @@
 - PWA shellは `video-library-shell-v5`
 
 
-### 1.2.1: 表示設定をWindowsランチャーへ移動（現行）
+### 1.2.1: 表示設定をWindowsランチャーへ移動
 - 表示バージョンは `1.2.1`
 - SQLite schema 8を維持
 - Windowsランチャーに「表示設定」ボタンを追加
@@ -186,6 +186,19 @@
 - 非表示作品は作品詳細・動画詳細・動画配信・字幕・作品画像もブラウザから取得不可
 - metadata再取込でも `is_visible` は保持
 - PWA shellは `video-library-shell-v6`
+
+### 1.2.2: 表示設定に作品名フィルターを追加（現行）
+- 表示バージョンは `1.2.2`
+- SQLite schema 8を維持
+- Windowsランチャーの表示設定に「作品名フィルター」を追加
+- 作品名の部分一致で入力中に即時絞り込み
+- 大文字小文字を区別せず、Unicode NFKCで正規化
+- 前後空白を無視
+- 「クリア」ボタンで全作品表示へ戻せる
+- `表示 n / 全m作品` の件数を表示
+- フィルター中に隠れた作品のチェック状態を保持
+- 「すべて選択 / すべて解除」は従来どおり全作品へ適用
+- PWA shellは `video-library-shell-v6` のまま
 
 対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
@@ -400,6 +413,8 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 - [1.2.0 正式リリースノート](docs/82-1.2.0-release.md)
 - [1.2.1 Windowsランチャー表示設定](docs/83-1.2.1-launcher-work-visibility.md)
 - [1.2.1 正式リリースノート](docs/84-1.2.1-release.md)
+- [1.2.2 表示設定フィルター](docs/85-1.2.2-launcher-visibility-filter.md)
+- [1.2.2 正式リリースノート](docs/86-1.2.2-release.md)
 
 ### 実装履歴
 Phase別・バージョン別の詳細記録は `docs/` 配下に保持します。過去時点の設計判断を残すため、履歴文書は現在仕様へ機械的に書き換えません。
