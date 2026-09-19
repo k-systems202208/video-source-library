@@ -42,7 +42,7 @@
 - SQLiteバックアップ / 復元予約 / ロールバック
 
 ### Phase 6: ffprobe / 字幕 / Windowsインストーラー
-- Phase 6でSQLite schema 4を導入（現在は1.2.0 / schema 8）
+- Phase 6でSQLite schema 4を導入（現在は1.2.1 / schema 8）
 - ffprobeによるコンテナ・Codec・解像度・再生時間取得
 - 埋込字幕stream数取得
 - 外部字幕 `.srt` / `.vtt` / `.ass` / `.ssa` を検出
@@ -150,7 +150,7 @@
 
 ### 1.1.0: TMDb・映画館UI・人物名鑑
 - 表示バージョンは `1.1.0`
-- SQLiteは現行schema 7
+- SQLiteは当時schema 7
 - 既存メタデータの `監督／演出`、`主な出演者／声優` を作品詳細に表示し、人物から登録作品を検索可能
 - TMDb API Read Access TokenをBearer認証で使用し、作品照合・overview・poster/backdropを追加
 - 作品matcherはversion 8。高信頼の `MATCHED` だけ画像・overviewを採用し、集約作品や構造不一致は安全側で `REVIEW / UNMATCHED`
@@ -161,7 +161,7 @@
 - TMDb作品画像キャッシュは `work_id + remote_path hash` で識別し、同じwork_idに残った旧別作品画像を再利用しない
 - TMDb作品監査と人物監査は `%LOCALAPPDATA%\VideoLibrary\diagnostics` へJSON/CSVで保存
 
-### 1.2.0: 作品表示設定（現行）
+### 1.2.0: 作品表示設定
 - 表示バージョンは `1.2.0`
 - SQLiteは現行schema 8
 - 作品単位で `表示する / 非表示` を設定可能
@@ -173,6 +173,19 @@
 - 表示設定モードでは `表示中 / 非表示 / すべて` を切替え、複数作品を一括表示／非表示可能
 - metadata再取込では `is_visible` を上書きせず、設定を保持
 - PWA shellは `video-library-shell-v5`
+
+
+### 1.2.1: 表示設定をWindowsランチャーへ移動（現行）
+- 表示バージョンは `1.2.1`
+- SQLite schema 8を維持
+- Windowsランチャーに「表示設定」ボタンを追加
+- 登録済み全作品をチェックリストで表示し、チェックされた作品だけをブラウザへ表示
+- 「すべて選択 / すべて解除」チェックボックスで全件を一括切替
+- 保存時にチェック状態をDBへ一括反映
+- ブラウザから表示／非表示を変更するUIとAPIは撤去
+- 非表示作品は作品詳細・動画詳細・動画配信・字幕・作品画像もブラウザから取得不可
+- metadata再取込でも `is_visible` は保持
+- PWA shellは `video-library-shell-v6`
 
 対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
@@ -321,7 +334,7 @@ PWAがキャッシュするのはHTML/manifest/icon/offline shell等のアプリ
 - `video_library.json`
 - 視聴履歴などの個人状態
 
-PWA shellは `video-library-shell-v5`。更新時は旧shell cacheを削除し、manifest / offline shell / iconを現行版へ切り替えます。
+PWA shellは `video-library-shell-v6`。更新時は旧shell cacheを削除し、manifest / offline shell / iconを現行版へ切り替えます。
 
 ## バックアップ・復元
 
@@ -385,6 +398,8 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 - [1.1.0 正式リリースノート](docs/80-1.1.0-release.md)
 - [1.2.0 作品表示設定](docs/81-1.2.0-work-visibility.md)
 - [1.2.0 正式リリースノート](docs/82-1.2.0-release.md)
+- [1.2.1 Windowsランチャー表示設定](docs/83-1.2.1-launcher-work-visibility.md)
+- [1.2.1 正式リリースノート](docs/84-1.2.1-release.md)
 
 ### 実装履歴
 Phase別・バージョン別の詳細記録は `docs/` 配下に保持します。過去時点の設計判断を残すため、履歴文書は現在仕様へ機械的に書き換えません。
