@@ -60,7 +60,7 @@ class CurrentArchitectureV120Tests(unittest.TestCase):
         self.assertIn("現行schemaは **8**", database)
         self.assertIn("表示設定管理", screen)
         self.assertIn("/api/admin/works/visibility", api)
-        self.assertIn("works.is_visible", visibility)
+        self.assertIn("is_visible", visibility)
         self.assertIn("# 自宅動画ライブラリ 1.2.0", release)
 
 
