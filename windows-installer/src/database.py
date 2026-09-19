@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 def now_iso() -> str:
@@ -73,6 +73,7 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             credits_verification_note TEXT,
             credits_verification_url TEXT,
             credits_verification_status TEXT,
+            is_visible INTEGER NOT NULL DEFAULT 1 CHECK(is_visible IN (0, 1)),
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -344,6 +345,15 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         """
     )
 
+    _add_column_if_missing(
+        connection,
+        "works",
+        "is_visible",
+        "INTEGER NOT NULL DEFAULT 1 CHECK(is_visible IN (0, 1))",
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_works_visible ON works(is_visible)"
+    )
     _add_column_if_missing(
         connection,
         "user_video_state",

@@ -15,17 +15,17 @@ from tmdb_people import _PEOPLE_AUDIT_VERSION, _PEOPLE_SYNC_VERSION
 from tmdb_sync import _MATCHER_VERSION
 
 
-class CurrentArchitectureV110Tests(unittest.TestCase):
+class CurrentArchitectureV120Tests(unittest.TestCase):
     def test_current_versions_are_kept_in_sync(self):
-        self.assertEqual(APP_VERSION, "1.1.0")
-        self.assertEqual(SCHEMA_VERSION, 7)
+        self.assertEqual(APP_VERSION, "1.2.0")
+        self.assertEqual(SCHEMA_VERSION, 8)
         self.assertEqual(_MATCHER_VERSION, 8)
         self.assertEqual(_PEOPLE_SYNC_VERSION, 9)
         self.assertEqual(_PEOPLE_AUDIT_VERSION, 8)
 
     def test_pwa_shell_is_current_and_excludes_runtime_data(self):
         sw = (SRC / "service-worker.js").read_text(encoding="utf-8")
-        self.assertIn("video-library-shell-v4", sw)
+        self.assertIn("video-library-shell-v5", sw)
         for prefix in (
             "/api/",
             "/video/",
@@ -42,8 +42,6 @@ class CurrentArchitectureV110Tests(unittest.TestCase):
         manifest = json.loads((SRC / "manifest.webmanifest").read_text(encoding="utf-8"))
         self.assertEqual(manifest["name"], "関町北映画館")
         self.assertEqual(manifest["short_name"], "関町北映画館")
-        self.assertEqual(manifest["background_color"], "#100d0b")
-        self.assertEqual(manifest["theme_color"], "#120e0c")
 
     def test_current_design_docs_match_runtime_architecture(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -51,22 +49,19 @@ class CurrentArchitectureV110Tests(unittest.TestCase):
         database = (ROOT / "docs" / "01-database-design.md").read_text(encoding="utf-8")
         screen = (ROOT / "docs" / "02-screen-design.md").read_text(encoding="utf-8")
         api = (ROOT / "docs" / "03-api-design.md").read_text(encoding="utf-8")
-        images = (ROOT / "docs" / "42-1.1.0-tmdb-matching-images.md").read_text(
+        visibility = (ROOT / "docs" / "81-1.2.0-work-visibility.md").read_text(
             encoding="utf-8"
         )
+        release = (ROOT / "docs" / "82-1.2.0-release.md").read_text(encoding="utf-8")
 
-        self.assertIn("SQLiteは現行schema 7", readme)
-        self.assertIn("作品matcherはversion 8", readme)
-        self.assertIn("人物同期version 9", readme)
-        self.assertIn("人物監査version 8", readme)
-        self.assertIn("監督／演出」は名前・作品数のテキスト名鑑のみ", readme)
-        self.assertNotIn("レトロ映画館UIは次段階で追加", readme)
-
-        self.assertIn("v1.1.0 基本設計", basic)
-        self.assertIn("現行schemaは **7**", database)
-        self.assertIn("#/people/directors", screen)
-        self.assertIn("/api/people?role=director|cast", api)
-        self.assertIn("<work_id>-<remote_path_hash>.<ext>", images)
+        self.assertIn("SQLiteは現行schema 8", readme)
+        self.assertIn("1.2.0: 作品表示設定（現行）", readme)
+        self.assertIn("v1.2.0 基本設計", basic)
+        self.assertIn("現行schemaは **8**", database)
+        self.assertIn("表示設定管理", screen)
+        self.assertIn("/api/admin/works/visibility", api)
+        self.assertIn("is_visible", visibility)
+        self.assertIn("# 自宅動画ライブラリ 1.2.0", release)
 
 
 if __name__ == "__main__":

@@ -39,9 +39,9 @@ class CinemaLibraryDetailV2V110Tests(unittest.TestCase):
         self.assertIn("w.backdropUrl", self.html)
         self.assertIn("w.posterUrl", self.html)
 
-    def test_display_version_remains_1_1_0(self):
+    def test_display_version_matches_current_release(self):
         version = (ROOT / "windows-installer" / "src" / "app_version.py").read_text(encoding="utf-8")
-        self.assertIn('APP_VERSION = "1.1.0"', version)
+        self.assertIn('APP_VERSION = "1.2.0"', version)
 
 
 if __name__ == "__main__":

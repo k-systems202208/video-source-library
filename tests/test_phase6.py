@@ -103,12 +103,12 @@ class SchemaAndScannerTests(unittest.TestCase):
             playback_support="DIRECT",
         )
 
-    def test_schema7_and_tables(self):
+    def test_schema8_and_tables(self):
         with connect(self.db) as connection:
             initialize_database(connection)
             version = int(connection.execute("SELECT schema_version FROM schema_info").fetchone()[0])
-            self.assertEqual(version, 7)
-            self.assertEqual(SCHEMA_VERSION, 7)
+            self.assertEqual(version, 8)
+            self.assertEqual(SCHEMA_VERSION, 8)
             self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='subtitles'").fetchone())
             self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tmdb_people'").fetchone())
             self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tmdb_work_people'").fetchone())
@@ -170,7 +170,7 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("NOT removed", iss)
         self.assertIn("PyInstaller", build)
         self.assertIn("ISCC.exe", build)
-        self.assertIn("video-library-shell-v4", sw)
+        self.assertIn("video-library-shell-v5", sw)
         self.assertIn("/api/", sw)
         self.assertIn("/video/", sw)
         self.assertIn("/subtitle/", sw)

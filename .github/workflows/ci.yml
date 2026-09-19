@@ -65,8 +65,19 @@ jobs:
       - name: Ensure FFmpeg and ffprobe
         shell: pwsh
         run: |
+          function Install-ChocoWithRetry([string]$Package) {
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              choco install $Package --yes --no-progress
+              if ($LASTEXITCODE -eq 0) { return }
+              if ($attempt -lt 3) {
+                Write-Warning "Chocolatey install failed for $Package (attempt $attempt/3). Retrying..."
+                Start-Sleep -Seconds (10 * $attempt)
+              }
+            }
+            throw "Chocolatey install failed for $Package after 3 attempts"
+          }
           if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue)) {
-            choco install ffmpeg --yes --no-progress
+            Install-ChocoWithRetry ffmpeg
             $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
             $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
             $env:Path = "$machinePath;$userPath"
@@ -87,8 +98,19 @@ jobs:
       - name: Stage FFmpeg and ffprobe for installer
         shell: pwsh
         run: |
+          function Install-ChocoWithRetry([string]$Package) {
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              choco install $Package --yes --no-progress
+              if ($LASTEXITCODE -eq 0) { return }
+              if ($attempt -lt 3) {
+                Write-Warning "Chocolatey install failed for $Package (attempt $attempt/3). Retrying..."
+                Start-Sleep -Seconds (10 * $attempt)
+              }
+            }
+            throw "Chocolatey install failed for $Package after 3 attempts"
+          }
           if (-not (Test-Path "$env:ChocolateyInstall\lib\ffmpeg")) {
-            choco install ffmpeg --yes --no-progress
+            Install-ChocoWithRetry ffmpeg
           }
           $ffmpegRoot = Join-Path $env:ChocolateyInstall 'lib\ffmpeg\tools'
           $ffmpeg = Get-ChildItem $ffmpegRoot -Recurse -Filter ffmpeg.exe | Select-Object -First 1
@@ -103,9 +125,20 @@ jobs:
       - name: Ensure Inno Setup 6
         shell: pwsh
         run: |
+          function Install-ChocoWithRetry([string]$Package) {
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              choco install $Package --yes --no-progress
+              if ($LASTEXITCODE -eq 0) { return }
+              if ($attempt -lt 3) {
+                Write-Warning "Chocolatey install failed for $Package (attempt $attempt/3). Retrying..."
+                Start-Sleep -Seconds (10 * $attempt)
+              }
+            }
+            throw "Chocolatey install failed for $Package after 3 attempts"
+          }
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) {
-            choco install innosetup --yes --no-progress
+            Install-ChocoWithRetry innosetup
           }
       - name: Build Windows installer
         shell: pwsh

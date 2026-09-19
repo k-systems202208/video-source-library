@@ -1,6 +1,6 @@
-# 自宅動画ライブラリ v1.1.0 DB設計
+# 自宅動画ライブラリ v1.2.0 DB設計
 
-SQLiteを使用し、WALとforeign keysを有効にする。現行schemaは **7**。
+SQLiteを使用し、WALとforeign keysを有効にする。現行schemaは **8**。
 
 ## Schema履歴
 
@@ -11,8 +11,11 @@ SQLiteを使用し、WALとforeign keysを有効にする。現行schemaは **7*
 - schema 5: TMDb作品紐付け `tmdb_work_links` と `tmdb_api_cache` を追加
 - schema 6: `tmdb_people` / `tmdb_work_people` を追加し、出演者／声優の人物写真を導入
 - schema 7: `tmdb_work_people.role` に `DIRECTOR` を保存可能な互換定義を追加
+- schema 8: `works.is_visible` を追加し、館内表示対象を作品単位で管理
 
 schema 7の `DIRECTOR` は一度配布済みのDBとの後方互換のため残す。現在の通常同期では監督／演出の顔写真用人物リンクを新規作成しない。
+
+schema 8の `works.is_visible` は `1=表示 / 0=非表示`。既存作品と新規作品の初期値は1。metadata再取込ではこの列を更新対象に含めず、Ownerが設定した表示状態を保持する。
 
 既存DBは削除・再作成せずmigrationし、お気に入り、視聴位置、再生回数等の既存利用者状態を保持する。
 
@@ -36,6 +39,14 @@ schema 7の `DIRECTOR` は一度配布済みのDBとの後方互換のため残�
 - `tmdb_people`
 - `tmdb_work_people`
 - `tmdb_api_cache`
+
+## `works`
+
+作品メタデータに加え、schema 8から館内表示設定を保持する。
+
+- `is_visible`: `1=通常画面に表示` / `0=非表示`
+- 非表示は削除ではなく、動画・TMDb・お気に入り・視聴履歴を保持する
+- `#/work/{id}` の直接表示はvisibilityに関係なく可能
 
 ## `video_files`
 

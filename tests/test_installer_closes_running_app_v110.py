@@ -15,9 +15,9 @@ class InstallerCloseApplicationTests(unittest.TestCase):
         self.assertIn("RestartApplications=no", text)
         self.assertIn('Filename: "{app}\\{#MyAppExeName}"', text)
 
-    def test_display_version_remains_1_1_0(self):
+    def test_display_version_matches_current_release(self):
         text = ISS.read_text(encoding="utf-8")
-        self.assertIn('#define MyAppVersion "1.1.0"', text)
+        self.assertIn('#define MyAppVersion "1.2.0"', text)
 
 
 if __name__ == "__main__":

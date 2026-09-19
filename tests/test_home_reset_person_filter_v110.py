@@ -17,12 +17,12 @@ class HomeResetPersonFilterTests(unittest.TestCase):
         self.assertIn('function clearPersonSearchFilter()', HTML)
         self.assertIn("state.person='';state.q='';$('search').value='';return true", HTML)
         self.assertNotIn("$('headerSearch').value=''", HTML)
-        self.assertIn("async function showLibraryRoute(target='catalog',scrollTarget=true){clearPersonSearchFilter();", HTML)
+        self.assertIn("async function showLibraryRoute(target='catalog',scrollTarget=true){leaveVisibilityMode();clearPersonSearchFilter();", HTML)
         self.assertIn("await loadHome();await loadWorks(true);updateCinemaNavActive();", HTML)
         self.assertNotIn("if(!works.children.length)await loadWorks(true)", HTML)
 
     def test_people_directory_also_releases_previous_person_filter(self):
-        self.assertIn("async function showPeopleDirectory(role){const isDirector=role==='directors';clearPersonSearchFilter();", HTML)
+        self.assertIn("async function showPeopleDirectory(role){leaveVisibilityMode();const isDirector=role==='directors';clearPersonSearchFilter();", HTML)
 
 
 if __name__ == '__main__':
