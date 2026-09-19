@@ -216,6 +216,12 @@ class VideoLibraryLauncher(tk.Tk):
         self.browser_button.pack(side="left", padx=8)
         self.stop_button = ttk.Button(button_frame, text="停止", command=self.stop_server, state="disabled")
         self.stop_button.pack(side="left")
+        self.visibility_button = ttk.Button(
+            button_frame,
+            text="表示設定",
+            command=self.open_work_visibility_settings,
+        )
+        self.visibility_button.pack(side="left", padx=(8, 0))
         ttk.Button(button_frame, text="データ保存先を開く", command=self.open_data_folder).pack(side="right")
 
         remote_frame = ttk.LabelFrame(main, text="外部接続（Tailscale）", padding=10)
@@ -258,12 +264,6 @@ class VideoLibraryLauncher(tk.Tk):
         )
         self.audit_button.pack(side="left", padx=8)
         ttk.Button(operations_frame, text="状態再確認", command=self.refresh_local_status).pack(side="left")
-        self.visibility_button = ttk.Button(
-            operations_frame,
-            text="表示設定",
-            command=self.open_work_visibility_settings,
-        )
-        self.visibility_button.pack(side="left", padx=(8, 8))
         self.tmdb_sync_button = ttk.Button(operations_frame, text="TMDb同期", command=self.start_tmdb_sync)
         self.tmdb_sync_button.pack(side="left", padx=(0, 8))
         ttk.Button(operations_frame, text="TMDb設定", command=self.open_tmdb_settings).pack(side="left", padx=(0, 8))
@@ -368,7 +368,7 @@ class VideoLibraryLauncher(tk.Tk):
 
         rows_frame.bind("<Configure>", sync_scrollregion)
         canvas.bind("<Configure>", stretch_rows)
-        canvas.bind(
+        dialog.bind(
             "<MouseWheel>",
             lambda event: canvas.yview_scroll(int(-event.delta / 120), "units"),
         )
