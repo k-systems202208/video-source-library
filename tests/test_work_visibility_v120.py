@@ -260,7 +260,7 @@ class WorkVisibilityV120Tests(unittest.TestCase):
                 db,
                 host="127.0.0.1",
                 port=0,
-                owner_control_secret="test-secret",
+                owner_control_secret="test-secret-for-visibility-tests-1234567890",
                 data_root=root,
             )
             thread = threading.Thread(target=server.serve_forever, daemon=True)
