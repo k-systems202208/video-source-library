@@ -12,9 +12,9 @@ from library_service import _work_filters
 
 class CreditsPeopleUiV110Tests(unittest.TestCase):
     def test_version_and_installer_match_current_release(self):
-        self.assertEqual(APP_VERSION, "1.2.2")
+        self.assertEqual(APP_VERSION, "1.2.3")
         installer = (ROOT / "windows-installer" / "installer" / "VideoLibrary.iss").read_text(encoding="utf-8")
-        self.assertIn('#define MyAppVersion "1.2.2"', installer)
+        self.assertIn('#define MyAppVersion "1.2.3"', installer)
 
     def test_work_search_already_includes_director_and_cast(self):
         sql, params = _work_filters("テスト出演者", None)
