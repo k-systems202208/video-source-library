@@ -1,4 +1,4 @@
-# 自宅動画ライブラリ v1.2.3 API設計
+# 自宅動画ライブラリ v1.3.0 API設計
 
 通常のローカルURL例: `http://127.0.0.1:8876`
 
@@ -23,6 +23,8 @@ HTTPサーバーはlocalhostへだけbindする。
 
 `/api/me/*` の個人状態APIは認証必須。
 
+Tailscale利用者については、Serve identityから解決した同じ `user_id` を作品visibilityにも使用する。個別設定があればそれを優先し、なければ共通設定 `works.is_visible` を継承する。localhost ownerと未認証読み取りは共通設定を使用する。
+
 ### Owner
 
 スキャン実行、診断、バックアップ等の管理操作はOwner必須。
@@ -37,7 +39,7 @@ localhostのWindowsランチャーだけがcontrol secretを使用して短寿�
 - `GET /api/current-user`
 - `GET /api/stats`
 - `GET /api/scan/status`
-- `GET /api/works`（`is_visible=1` の作品のみ）
+- `GET /api/works`（現在利用者の有効visibilityが1の作品のみ）
 - `GET /api/works/{id}`
 - `GET /api/works/{id}/videos`
 - `GET /api/videos/{id}`
@@ -82,7 +84,7 @@ localhostのWindowsランチャーだけがcontrol secretを使用して短寿�
 - `POST /api/backups/restore`
 - `POST /api/backups/restore/cancel`
 
-診断GETもOwner専用。作品visibilityを変更するWeb APIは提供しない。作品一覧・作品詳細・動画詳細・動画配信・字幕・作品画像は `is_visible=1` の作品だけを返す。表示対象の変更はWindowsランチャーがSQLiteへ直接反映する。
+診断GETもOwner専用。作品visibilityを変更するWeb APIは提供しない。作品一覧・作品詳細・動画詳細・動画配信・字幕・作品画像・人物名鑑・利用者状態一覧は、リクエスト利用者の有効visibilityが1の作品だけを返す。表示対象の変更はWindowsランチャーがSQLiteへ直接反映する。
 
 メタデータ初回取込は現在Windowsランチャーから行い、Web APIとして任意ファイル取込を公開しない。
 
@@ -99,6 +101,7 @@ Cookieは `HttpOnly; SameSite=Strict`。
 
 - server bindはlocalhostのみ
 - 外部接続はTailscale Serve前提
+- Tailscale Serveの `Tailscale-User-Login` / `Tailscale-User-Name` を利用者識別に使用し、アプリはlocalhost bindを維持する
 - ワイルドカードCORSは使用しない
 - 状態変更時はOrigin / Hostを検証
 - 任意ローカルパスをAPI引数として受けない
