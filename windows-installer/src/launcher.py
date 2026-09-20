@@ -29,7 +29,14 @@ from scan_runner import scan_library
 from server import create_server
 from tmdb_people import audit_tmdb_people_profiles, people_audit_required, people_sync_required, sync_tmdb_people_library
 from tmdb_sync import sync_tmdb_library
-from work_visibility import filter_work_visibility, list_work_visibility, replace_visible_work_ids
+from work_visibility import (
+    filter_work_visibility,
+    has_user_visibility_overrides,
+    list_visibility_targets,
+    list_work_visibility,
+    replace_visible_work_ids,
+    reset_user_visibility,
+)
 
 APP_NAME = "自宅動画ライブラリ"
 # Music Library uses 8765. Keep Video Library on a different localhost origin
@@ -294,6 +301,7 @@ class VideoLibraryLauncher(tk.Tk):
         try:
             with connect(DATABASE_PATH) as connection:
                 initialize_database(connection)
+                targets = list_visibility_targets(connection)
                 works = list_work_visibility(connection)
         except Exception as exc:
             messagebox.showerror(APP_NAME, f"表示設定を読み込めませんでした。\n{exc}")
@@ -304,8 +312,8 @@ class VideoLibraryLauncher(tk.Tk):
 
         dialog = tk.Toplevel(self)
         dialog.title("作品の表示設定")
-        dialog.geometry("760x680")
-        dialog.minsize(620, 520)
+        dialog.geometry("820x740")
+        dialog.minsize(680, 580)
         dialog.transient(self)
         dialog.grab_set()
 
@@ -315,10 +323,32 @@ class VideoLibraryLauncher(tk.Tk):
         ttk.Label(outer, text="ブラウザに表示する作品", font=STATUS_FONT).pack(anchor="w")
         ttk.Label(
             outer,
-            text="チェックした作品だけがブラウザに表示されます。設定変更後はブラウザを再読み込みしてください。",
+            text=(
+                "共通設定またはTailscaleユーザーを選び、チェックした作品だけを表示します。"
+                " Tailscaleユーザーは初回アクセス後に一覧へ追加されます。"
+            ),
             font=SMALL_FONT,
-            wraplength=700,
+            wraplength=770,
         ).pack(anchor="w", pady=(4, 10))
+
+        target_frame = ttk.Frame(outer)
+        target_frame.pack(fill="x", pady=(0, 10))
+        ttk.Label(target_frame, text="対象ユーザー", font=SMALL_FONT).pack(side="left")
+
+        target_labels = [str(item["label"]) for item in targets]
+        target_by_label = {str(item["label"]): item for item in targets}
+        target_value = tk.StringVar(value=target_labels[0])
+        target_combo = ttk.Combobox(
+            target_frame,
+            textvariable=target_value,
+            values=target_labels,
+            state="readonly",
+            width=52,
+        )
+        target_combo.pack(side="left", fill="x", expand=True, padx=(8, 8))
+
+        visibility_mode = tk.StringVar(value="共通表示設定")
+        ttk.Label(target_frame, textvariable=visibility_mode, font=SMALL_FONT).pack(side="right")
 
         selected_count = tk.StringVar(value="")
         filter_text = tk.StringVar(value="")
@@ -327,6 +357,11 @@ class VideoLibraryLauncher(tk.Tk):
         variables: dict[int, tk.BooleanVar] = {
             int(item["id"]): tk.BooleanVar(value=bool(item["visible"]))
             for item in works
+        }
+        state: dict[str, Any] = {
+            "currentLabel": target_labels[0],
+            "dirty": False,
+            "loading": False,
         }
 
         filter_frame = ttk.Frame(outer)
@@ -348,16 +383,29 @@ class VideoLibraryLauncher(tk.Tk):
         toolbar = ttk.Frame(outer)
         toolbar.pack(fill="x", pady=(0, 8))
 
-        def refresh_selection_summary() -> None:
+        def current_target() -> dict[str, Any]:
+            return target_by_label[target_value.get()]
+
+        def current_user_id() -> int | None:
+            value = current_target().get("userId")
+            return int(value) if value is not None else None
+
+        def refresh_selection_summary(*, mark_dirty: bool = False) -> None:
+            if mark_dirty and not bool(state["loading"]):
+                state["dirty"] = True
             selected = sum(1 for variable in variables.values() if variable.get())
             selected_count.set(f"選択 {selected:,} / {len(works):,} 作品")
             all_selected.set(selected == len(works))
 
         def toggle_all() -> None:
             value = bool(all_selected.get())
-            for variable in variables.values():
-                variable.set(value)
-            refresh_selection_summary()
+            state["loading"] = True
+            try:
+                for variable in variables.values():
+                    variable.set(value)
+            finally:
+                state["loading"] = False
+            refresh_selection_summary(mark_dirty=True)
 
         ttk.Checkbutton(
             toolbar,
@@ -404,7 +452,7 @@ class VideoLibraryLauncher(tk.Tk):
                 rows_frame,
                 text=label,
                 variable=variables[work_id],
-                command=refresh_selection_summary,
+                command=lambda: refresh_selection_summary(mark_dirty=True),
             )
             row.pack(anchor="w", fill="x", padx=4, pady=2)
             row_widgets[work_id] = row
@@ -427,7 +475,71 @@ class VideoLibraryLauncher(tk.Tk):
         footer = ttk.Frame(outer)
         footer.pack(fill="x", pady=(12, 0))
 
+        reset_button = ttk.Button(footer, text="共通設定に戻す")
+
+        def load_target() -> None:
+            nonlocal works
+            uid = current_user_id()
+            try:
+                with connect(DATABASE_PATH) as connection:
+                    initialize_database(connection)
+                    works = list_work_visibility(connection, user_id=uid)
+                    customized = (
+                        has_user_visibility_overrides(connection, uid)
+                        if uid is not None
+                        else True
+                    )
+            except Exception as exc:
+                messagebox.showerror(
+                    APP_NAME,
+                    f"表示設定を読み込めませんでした。\n{exc}",
+                    parent=dialog,
+                )
+                return
+            state["loading"] = True
+            try:
+                for item in works:
+                    variables[int(item["id"])].set(bool(item["visible"]))
+            finally:
+                state["loading"] = False
+            state["dirty"] = False
+            state["currentLabel"] = target_value.get()
+            if uid is None:
+                visibility_mode.set("共通表示設定")
+                reset_button.configure(state="disabled")
+            elif customized:
+                visibility_mode.set("個別設定")
+                reset_button.configure(state="normal")
+            else:
+                visibility_mode.set("共通設定を継承")
+                reset_button.configure(state="disabled")
+            refresh_selection_summary()
+            apply_filter()
+
+        def on_target_changed(_event=None) -> None:
+            if bool(state["loading"]):
+                return
+            new_label = target_value.get()
+            old_label = str(state["currentLabel"])
+            if new_label == old_label:
+                return
+            if bool(state["dirty"]):
+                discard = messagebox.askyesno(
+                    APP_NAME,
+                    "未保存の変更があります。破棄して対象ユーザーを切り替えますか？",
+                    parent=dialog,
+                )
+                if not discard:
+                    state["loading"] = True
+                    target_value.set(old_label)
+                    state["loading"] = False
+                    return
+            load_target()
+
+        target_combo.bind("<<ComboboxSelected>>", on_target_changed)
+
         def save_visibility() -> None:
+            uid = current_user_id()
             selected_ids = [
                 work_id
                 for work_id, variable in variables.items()
@@ -436,7 +548,11 @@ class VideoLibraryLauncher(tk.Tk):
             try:
                 with connect(DATABASE_PATH) as connection:
                     initialize_database(connection)
-                    result = replace_visible_work_ids(connection, selected_ids)
+                    result = replace_visible_work_ids(
+                        connection,
+                        selected_ids,
+                        user_id=uid,
+                    )
             except Exception as exc:
                 messagebox.showerror(
                     APP_NAME,
@@ -444,23 +560,59 @@ class VideoLibraryLauncher(tk.Tk):
                     parent=dialog,
                 )
                 return
+            state["dirty"] = False
+            if uid is None:
+                visibility_mode.set("共通表示設定")
+            else:
+                visibility_mode.set("個別設定")
+                reset_button.configure(state="normal")
             self.refresh_local_status()
+            target_name = str(current_target()["displayName"])
             message = (
-                f"表示設定を保存しました。\n\n"
+                f"{target_name} の表示設定を保存しました。\n\n"
                 f"表示: {result['visible']:,}作品\n"
                 f"非表示: {result['hidden']:,}作品"
             )
             if self.server is not None:
                 message += "\n\nブラウザを再読み込みすると反映されます。"
             messagebox.showinfo(APP_NAME, message, parent=dialog)
-            dialog.destroy()
 
+        def reset_visibility() -> None:
+            uid = current_user_id()
+            if uid is None:
+                return
+            if not messagebox.askyesno(
+                APP_NAME,
+                "このTailscaleユーザーの個別設定を削除し、共通設定を使いますか？",
+                parent=dialog,
+            ):
+                return
+            try:
+                with connect(DATABASE_PATH) as connection:
+                    initialize_database(connection)
+                    reset_user_visibility(connection, uid)
+            except Exception as exc:
+                messagebox.showerror(
+                    APP_NAME,
+                    f"個別設定を解除できませんでした。\n{exc}",
+                    parent=dialog,
+                )
+                return
+            load_target()
+            messagebox.showinfo(
+                APP_NAME,
+                "個別設定を解除しました。現在は共通設定を継承しています。",
+                parent=dialog,
+            )
+
+        reset_button.configure(command=reset_visibility, state="disabled")
+        reset_button.pack(side="left", padx=(8, 0))
         ttk.Button(footer, text="保存", command=save_visibility).pack(side="left")
-        ttk.Button(footer, text="キャンセル", command=dialog.destroy).pack(side="right")
+        ttk.Button(footer, text="閉じる", command=dialog.destroy).pack(side="right")
 
-        refresh_selection_summary()
-        apply_filter()
+        load_target()
         filter_entry.focus_set()
+
 
     def open_tmdb_settings(self) -> None:
         dialog = tk.Toplevel(self)
