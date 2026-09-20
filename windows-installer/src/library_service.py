@@ -35,10 +35,14 @@ def _work_filters(
     q: str | None,
     category: str | None,
     *,
-    user_id: int | None,
+    user_id: int | None = None,
 ) -> tuple[str, list[Any]]:
-    clauses: list[str] = [f"{effective_visibility_sql('w')} = 1"]
-    params: list[Any] = [user_id]
+    if user_id is None:
+        clauses: list[str] = ["w.is_visible = 1"]
+        params: list[Any] = []
+    else:
+        clauses = [f"{effective_visibility_sql('w')} = 1"]
+        params = [user_id]
     if q and q.strip():
         pattern = _like_pattern(q.strip())
         clauses.append(
