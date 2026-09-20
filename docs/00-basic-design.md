@@ -1,4 +1,4 @@
-# 自宅動画ライブラリ v1.2.3 基本設計
+# 自宅動画ライブラリ v1.3.0 基本設計
 
 ## 目的
 
@@ -21,15 +21,15 @@ Web UIの現在の館名は **「関町北映画館」** とし、レトロ映�
 - TMDb照合は安全側とし、低信頼候補や構造が1対1でない作品を自動確定しない。
 - 既に確定したTMDb作品リンクは、監査済みの例外を除き勝手に別作品へ付け替えない。
 - 主な出演者／声優の顔写真は表示するが、監督／演出の顔写真は表示しない。
-- 作品の表示対象はWindowsランチャーだけで管理し、ブラウザからは変更できない。非表示でも元データ・視聴状態・TMDb情報は削除しない。
+- 作品の表示対象はWindowsランチャーだけで管理し、ブラウザからは変更できない。`works.is_visible` を共通設定とし、Tailscale利用者は `user_work_visibility` の個別値を優先する。個別値がない作品は共通設定を継承する。非表示でも元データ・視聴状態・TMDb情報は削除しない。
 - ランチャーの表示設定は作品名の部分一致フィルターで絞り込みでき、絞り込み中も全作品のチェック状態を保持する。
-- 外部利用はTailscale Serveを正式経路とし、アプリHTTPサーバーはlocalhostへbindする。
+- 外部利用はTailscale Serveを正式経路とし、アプリHTTPサーバーはlocalhostへbindする。Serveのidentity headerから既存の `users / user_identities` を解決し、同じ利用者IDを表示設定・お気に入り・視聴状態に使用する。
 - PWAはUIシェルのみキャッシュし、API・動画・字幕・TMDb画像・個人状態はService Workerへ保存しない。
 
 ## 技術構成
 
 - Python 3.11 / 3.13
-- SQLite（現行schema 8）
+- SQLite（現行schema 9）
 - HTML / CSS / JavaScript
 - PWA / Service Worker
 - Tailscale Serve
@@ -57,7 +57,7 @@ Windows InstallerにはFFmpeg / ffprobeを同梱し、利用PCへ別途導入し
 12. 主な出演者／声優のTMDbプロフィール画像
 13. PC / Tablet / Smartphoneの映画館UI
 14. Tailscale Serve / PWA
-15. Windowsランチャーによる作品表示対象のチェックリスト管理
+15. Windowsランチャーによる共通／Tailscaleユーザー別の作品表示対象管理
 
 ## TMDbの安全ルール
 
