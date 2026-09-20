@@ -1002,6 +1002,12 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
     def test_akane_reviewed_alias_uses_tmdb_credit_spelling(self):
         self.assertEqual(REVIEWED_PERSON_CREDIT_ALIASES["茜音"], ("紅音",))
 
+    def test_stephen_alpert_reviewed_alias_uses_tmdb_credit_spelling(self):
+        self.assertEqual(
+            REVIEWED_PERSON_CREDIT_ALIASES["スティーブン・アルパート"],
+            ("Stephen Alpert", "Steve Alpert"),
+        )
+
     def test_reviewed_alias_map_covers_current_real_audit_credit_not_found_names(self):
         expected = {
             "千紗", "茜音",
@@ -1012,6 +1018,7 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
             "リンダ・メイ", "スワンキー", "ボブ・ウェルズ", "トルーマン・ハンクス",
             "キリアン・マーフィー", "ジェイデン・マーテル", "セイディ・ソヴラル",
             "ニコラス・ガリツィン", "増田康好", "渡辺千秋", "小原裕貴", "藤井萩花",
+            "スティーブン・アルパート",
         }
         self.assertEqual(set(REVIEWED_PERSON_CREDIT_ALIASES), expected)
 
@@ -1346,6 +1353,23 @@ class TmdbPeoplePhase1Tests(unittest.TestCase):
                     connection,
                     "tmdb:people-sync-version",
                     {"version": 8},
+                    fetched_at=now_iso(),
+                    expires_at=None,
+                )
+                connection.commit()
+                self.assertTrue(people_sync_required(connection))
+
+    def test_people_sync_v9_marker_requires_v10_resync(self):
+        from tmdb_cache import put_cached_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "library.db"
+            with connect(db) as connection:
+                initialize_database(connection)
+                put_cached_json(
+                    connection,
+                    "tmdb:people-sync-version",
+                    {"version": 9},
                     fetched_at=now_iso(),
                     expires_at=None,
                 )
