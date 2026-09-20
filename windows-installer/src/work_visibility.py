@@ -273,8 +273,6 @@ def replace_visible_work_ids(
         "total": len(existing),
         "visible": len(selected),
         "hidden": len(existing) - len(selected),
-        "userId": int(user_id) if user_id is not None else None,
-        "customized": user_id is not None,
     }
 
 
