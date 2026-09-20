@@ -205,7 +205,7 @@ def get_work(connection: sqlite3.Connection, work_id: int, *, user_id: int | Non
                t.poster_path tmdb_poster_path,t.backdrop_path tmdb_backdrop_path,t.overview tmdb_overview
         FROM works w LEFT JOIN user_work_state s ON s.work_id=w.id AND s.user_id=?
         LEFT JOIN tmdb_work_links t ON t.work_id=w.id
-        WHERE w.id=? AND ${effective_visibility_sql("w")}=1
+        WHERE w.id=? AND {effective_visibility_sql("w")}=1
         """,
         (user_id, work_id, user_id),
     ).fetchone()
@@ -332,7 +332,7 @@ def get_video(connection: sqlite3.Connection, video_id: int, *, user_id: int | N
         FROM videos v JOIN works w ON w.id=v.work_id LEFT JOIN series_groups g ON g.id=v.series_group_id
         JOIN video_files f ON f.video_id=v.id
         LEFT JOIN user_video_state s ON s.video_id=v.id AND s.user_id=?
-        WHERE v.id=? AND ${effective_visibility_sql("w")}=1
+        WHERE v.id=? AND {effective_visibility_sql("w")}=1
         """,
         (user_id, video_id, user_id),
     ).fetchone()
