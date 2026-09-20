@@ -112,8 +112,8 @@ class TmdbDatabaseTests(unittest.TestCase):
                 connection.commit()
                 initialize_database(connection)
                 connection.commit()
-                self.assertEqual(SCHEMA_VERSION, 8)
-                self.assertEqual(int(connection.execute("SELECT schema_version FROM schema_info").fetchone()[0]), 8)
+                self.assertEqual(SCHEMA_VERSION, 9)
+                self.assertEqual(int(connection.execute("SELECT schema_version FROM schema_info").fetchone()[0]), 9)
                 self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tmdb_work_links'").fetchone())
                 self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tmdb_api_cache'").fetchone())
                 self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'tmdb_people\'").fetchone())
@@ -197,7 +197,7 @@ class TmdbDatabaseTests(unittest.TestCase):
                     """,
                     (work_id, stamp, stamp),
                 )
-                self.assertEqual(int(connection.execute("SELECT schema_version FROM schema_info").fetchone()[0]), 8)
+                self.assertEqual(int(connection.execute("SELECT schema_version FROM schema_info").fetchone()[0]), 9)
 
     def test_tmdb_json_cache_round_trip_and_expiry(self):
         with tempfile.TemporaryDirectory() as tmp:
