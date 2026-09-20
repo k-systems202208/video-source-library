@@ -110,7 +110,7 @@ def set_work_favorite(connection: sqlite3.Connection, user_id: int, work_id: int
 
 def favorite_works(connection: sqlite3.Connection, user_id: int, *, limit: int = 100) -> dict[str, Any]:
     rows = connection.execute(
-        """
+        f"""
         SELECT w.id, w.external_work_no, w.category, w.official_title, w.year_or_period
         FROM user_work_state uws
         JOIN works w ON w.id = uws.work_id
@@ -145,7 +145,7 @@ def set_video_favorite(connection: sqlite3.Connection, user_id: int, video_id: i
 
 def favorite_videos(connection: sqlite3.Connection, user_id: int, *, limit: int = 100) -> dict[str, Any]:
     rows = connection.execute(
-        """
+        f"""
         SELECT v.id, v.external_file_no, v.episode_or_type, v.episode_title,
                w.id AS work_id, w.official_title AS work_title,
                sg.display_name AS group_name
@@ -301,7 +301,7 @@ class PlaybackSessionStore:
 
 def continue_watching(connection: sqlite3.Connection, user_id: int, *, limit: int = 30) -> dict[str, Any]:
     rows = connection.execute(
-        """
+        f"""
         SELECT v.id AS video_id, v.episode_or_type, v.episode_title, v.content_type,
                w.id AS work_id, w.official_title AS work_title,
                sg.display_name AS group_name,
@@ -331,7 +331,7 @@ def continue_watching(connection: sqlite3.Connection, user_id: int, *, limit: in
 
 def history(connection: sqlite3.Connection, user_id: int, *, limit: int = 100, offset: int = 0) -> dict[str, Any]:
     rows = connection.execute(
-        """
+        f"""
         SELECT v.id AS video_id, v.episode_or_type, v.episode_title,
                w.id AS work_id, w.official_title AS work_title,
                sg.display_name AS group_name,
@@ -352,7 +352,7 @@ def history(connection: sqlite3.Connection, user_id: int, *, limit: int = 100, o
 
 def recent_works(connection: sqlite3.Connection, user_id: int, *, limit: int = 20) -> dict[str, Any]:
     rows = connection.execute(
-        """
+        f"""
         SELECT w.id, w.official_title, w.category, MAX(uvs.last_played_at) AS last_played_at
         FROM user_video_state uvs
         JOIN videos v ON v.id = uvs.video_id
@@ -369,7 +369,7 @@ def recent_works(connection: sqlite3.Connection, user_id: int, *, limit: int = 2
 
 def next_up(connection: sqlite3.Connection, user_id: int, *, limit: int = 20) -> dict[str, Any]:
     recent = connection.execute(
-        """
+        f"""
         SELECT v.work_id, v.series_group_id, MAX(uvs.last_played_at) AS last_played_at
         FROM user_video_state uvs
         JOIN videos v ON v.id = uvs.video_id
