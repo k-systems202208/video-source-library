@@ -4,6 +4,8 @@ import re
 import sqlite3
 from typing import Any
 
+from work_visibility import effective_visibility_sql, is_work_visible
+
 DEFAULT_LIMIT = 60
 MAX_LIMIT = 200
 
@@ -32,9 +34,11 @@ def _like_pattern(value: str) -> str:
 def _work_filters(
     q: str | None,
     category: str | None,
+    *,
+    user_id: int | None,
 ) -> tuple[str, list[Any]]:
-    clauses: list[str] = ["w.is_visible = 1"]
-    params: list[Any] = []
+    clauses: list[str] = [f"{effective_visibility_sql('w')} = 1"]
+    params: list[Any] = [user_id]
     if q and q.strip():
         pattern = _like_pattern(q.strip())
         clauses.append(
@@ -71,7 +75,7 @@ def list_works(
 ) -> dict[str, Any]:
     limit_value = _bounded_limit(limit)
     offset_value = _bounded_offset(offset)
-    where_sql, params = _work_filters(q, category)
+    where_sql, params = _work_filters(q, category, user_id=user_id)
     order_sql = {
         "title": "w.official_title COLLATE NOCASE, w.external_work_no",
         "year": "COALESCE(w.year_or_period, ''), w.official_title COLLATE NOCASE",
@@ -118,7 +122,12 @@ def list_works(
 
 _PERSON_SPLIT_RE = re.compile(r"\s*(?:、|,|，|;|；|\||／|/|\r?\n)\s*")
 
-def list_people(connection: sqlite3.Connection, *, role: str) -> dict[str, Any]:
+def list_people(
+    connection: sqlite3.Connection,
+    *,
+    role: str,
+    user_id: int | None = None,
+) -> dict[str, Any]:
     key = str(role or '').strip().casefold()
     role_map = {
         'director': ('director', 'director_or_direction'),
@@ -129,7 +138,13 @@ def list_people(connection: sqlite3.Connection, *, role: str) -> dict[str, Any]:
         raise ValueError('role must be director or cast')
     normalized_role, column = role_map[key]
     rows = connection.execute(
-        f"SELECT id,{column} credits FROM works WHERE is_visible=1 AND TRIM(COALESCE({column},''))<>''"
+        f"""
+        SELECT w.id,w.{column} credits
+        FROM works w
+        WHERE {effective_visibility_sql('w')}=1
+          AND TRIM(COALESCE(w.{column},''))<>''
+        """,
+        (user_id,),
     ).fetchall()
     counts: dict[str, int] = {}
     for row in rows:
@@ -145,12 +160,15 @@ def list_people(connection: sqlite3.Connection, *, role: str) -> dict[str, Any]:
     profile_by_name: dict[str, tuple[int, str] | None] = {}
     if normalized_role == 'cast':
         person_rows = connection.execute(
-            """
+            f"""
             SELECT wp.local_name,wp.tmdb_person_id,p.profile_path
             FROM tmdb_work_people wp
             JOIN tmdb_people p ON p.tmdb_person_id=wp.tmdb_person_id
+            JOIN works w ON w.id=wp.work_id
             WHERE wp.role='CAST'
-            """
+              AND {effective_visibility_sql('w')}=1
+            """,
+            (user_id,),
         ).fetchall()
         grouped: dict[str, dict[int, str]] = {}
         for person_row in person_rows:
@@ -186,9 +204,10 @@ def get_work(connection: sqlite3.Connection, work_id: int, *, user_id: int | Non
                t.confidence tmdb_confidence,t.matched_title tmdb_matched_title,t.matched_year tmdb_matched_year,
                t.poster_path tmdb_poster_path,t.backdrop_path tmdb_backdrop_path,t.overview tmdb_overview
         FROM works w LEFT JOIN user_work_state s ON s.work_id=w.id AND s.user_id=?
-        LEFT JOIN tmdb_work_links t ON t.work_id=w.id WHERE w.id=? AND w.is_visible=1
+        LEFT JOIN tmdb_work_links t ON t.work_id=w.id
+        WHERE w.id=? AND ${effective_visibility_sql("w")}=1
         """,
-        (user_id, work_id),
+        (user_id, work_id, user_id),
     ).fetchone()
     if r is None:
         return None
@@ -249,8 +268,10 @@ def get_work(connection: sqlite3.Connection, work_id: int, *, user_id: int | Non
 
 
 def list_work_videos(connection: sqlite3.Connection, work_id: int, *, user_id: int | None = None, group_id: int | None = None) -> dict[str, Any] | None:
+    if not is_work_visible(connection, work_id, user_id):
+        return None
     work = connection.execute(
-        "SELECT id,official_title FROM works WHERE id=? AND is_visible=1",
+        "SELECT id,official_title FROM works WHERE id=?",
         (work_id,),
     ).fetchone()
     if work is None:
@@ -309,9 +330,11 @@ def get_video(connection: sqlite3.Connection, video_id: int, *, user_id: int | N
                COALESCE(s.favorite,0) favorite,COALESCE(s.watched,0) watched,COALESCE(s.position_ms,0) position_ms,
                s.duration_ms state_duration_ms,COALESCE(s.play_count,0) play_count,s.last_played_at
         FROM videos v JOIN works w ON w.id=v.work_id LEFT JOIN series_groups g ON g.id=v.series_group_id
-        JOIN video_files f ON f.video_id=v.id LEFT JOIN user_video_state s ON s.video_id=v.id AND s.user_id=? WHERE v.id=? AND w.is_visible=1
+        JOIN video_files f ON f.video_id=v.id
+        LEFT JOIN user_video_state s ON s.video_id=v.id AND s.user_id=?
+        WHERE v.id=? AND ${effective_visibility_sql("w")}=1
         """,
-        (user_id, video_id),
+        (user_id, video_id, user_id),
     ).fetchone()
     if r is None:
         return None
@@ -361,30 +384,42 @@ def get_video(connection: sqlite3.Connection, video_id: int, *, user_id: int | N
     }
 
 
-def library_stats(connection: sqlite3.Connection) -> dict[str, Any]:
+def library_stats(
+    connection: sqlite3.Connection,
+    *,
+    user_id: int | None = None,
+) -> dict[str, Any]:
+    visible_sql = effective_visibility_sql("w")
     t = connection.execute(
-        """
+        f"""
+        WITH visible_works AS (
+            SELECT w.*
+            FROM works w
+            WHERE {visible_sql}=1
+        )
         SELECT
-          (SELECT COUNT(*) FROM works WHERE is_visible=1) works,
+          (SELECT COUNT(*) FROM visible_works) works,
           (SELECT COUNT(*) FROM works) all_works,
-          (SELECT COUNT(*) FROM works WHERE is_visible=0) hidden_works,
-          (SELECT COUNT(*) FROM videos v JOIN works w ON w.id=v.work_id WHERE w.is_visible=1) videos,
-          (SELECT COUNT(*) FROM video_files vf JOIN videos v ON v.id=vf.video_id JOIN works w ON w.id=v.work_id WHERE vf.is_available=1 AND w.is_visible=1) available_videos,
-          (SELECT COUNT(*) FROM subtitles st JOIN videos v ON v.id=st.video_id JOIN works w ON w.id=v.work_id WHERE st.is_available=1 AND w.is_visible=1) subtitles,
-          (SELECT COUNT(*) FROM subtitles st JOIN videos v ON v.id=st.video_id JOIN works w ON w.id=v.work_id WHERE st.is_available=1 AND st.video_id IS NOT NULL AND w.is_visible=1) matched_subtitles,
+          (SELECT COUNT(*) FROM works) - (SELECT COUNT(*) FROM visible_works) hidden_works,
+          (SELECT COUNT(*) FROM videos v JOIN visible_works w ON w.id=v.work_id) videos,
+          (SELECT COUNT(*) FROM video_files vf JOIN videos v ON v.id=vf.video_id JOIN visible_works w ON w.id=v.work_id WHERE vf.is_available=1) available_videos,
+          (SELECT COUNT(*) FROM subtitles st JOIN videos v ON v.id=st.video_id JOIN visible_works w ON w.id=v.work_id WHERE st.is_available=1) subtitles,
+          (SELECT COUNT(*) FROM subtitles st JOIN videos v ON v.id=st.video_id JOIN visible_works w ON w.id=v.work_id WHERE st.is_available=1 AND st.video_id IS NOT NULL) matched_subtitles,
           (SELECT COUNT(*) FROM subtitles st WHERE st.is_available=1 AND st.video_id IS NULL) unmatched_subtitles,
-          (SELECT COUNT(*) FROM video_files vf JOIN videos v ON v.id=vf.video_id JOIN works w ON w.id=v.work_id WHERE vf.probe_status='OK' AND w.is_visible=1) probed_videos,
-          (SELECT COUNT(*) FROM video_files vf JOIN videos v ON v.id=vf.video_id JOIN works w ON w.id=v.work_id WHERE vf.probe_status='ERROR' AND w.is_visible=1) probe_errors
-        """
+          (SELECT COUNT(*) FROM video_files vf JOIN videos v ON v.id=vf.video_id JOIN visible_works w ON w.id=v.work_id WHERE vf.probe_status='OK') probed_videos,
+          (SELECT COUNT(*) FROM video_files vf JOIN videos v ON v.id=vf.video_id JOIN visible_works w ON w.id=v.work_id WHERE vf.probe_status='ERROR') probe_errors
+        """,
+        (user_id,),
     ).fetchone()
     cats = connection.execute(
-        """
-        SELECT category,COUNT(*) work_count,COALESCE(SUM(media_file_count),0) video_count
-        FROM works
-        WHERE is_visible=1
-        GROUP BY category
-        ORDER BY category
-        """
+        f"""
+        SELECT w.category,COUNT(*) work_count,COALESCE(SUM(w.media_file_count),0) video_count
+        FROM works w
+        WHERE {visible_sql}=1
+        GROUP BY w.category
+        ORDER BY w.category
+        """,
+        (user_id,),
     ).fetchall()
     return {
         "works": int(t["works"]),
