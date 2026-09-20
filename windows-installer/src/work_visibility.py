@@ -240,12 +240,12 @@ def replace_visible_work_ids(
     try:
         connection.execute("BEGIN")
         if user_id is None:
-            connection.execute("UPDATE works SET is_visible=0, updated_at=?", (stamp,))
+            connection.execute("UPDATE works SET is_visible=0")
             if selected:
                 placeholders = ",".join("?" for _ in selected)
                 connection.execute(
-                    f"UPDATE works SET is_visible=1, updated_at=? WHERE id IN ({placeholders})",
-                    [stamp, *selected],
+                    f"UPDATE works SET is_visible=1 WHERE id IN ({placeholders})",
+                    selected,
                 )
         else:
             uid = int(user_id)
