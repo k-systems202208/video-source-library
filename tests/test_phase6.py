@@ -107,8 +107,8 @@ class SchemaAndScannerTests(unittest.TestCase):
         with connect(self.db) as connection:
             initialize_database(connection)
             version = int(connection.execute("SELECT schema_version FROM schema_info").fetchone()[0])
-            self.assertEqual(version, 8)
-            self.assertEqual(SCHEMA_VERSION, 8)
+            self.assertEqual(version, 9)
+            self.assertEqual(SCHEMA_VERSION, 9)
             self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='subtitles'").fetchone())
             self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tmdb_people'").fetchone())
             self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tmdb_work_people'").fetchone())

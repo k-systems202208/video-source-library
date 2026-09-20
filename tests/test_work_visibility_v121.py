@@ -103,10 +103,10 @@ class WorkVisibilityV121Tests(unittest.TestCase):
 
             with connect(db) as connection:
                 initialize_database(connection)
-                self.assertEqual(SCHEMA_VERSION, 8)
+                self.assertEqual(SCHEMA_VERSION, 9)
                 self.assertEqual(
                     int(connection.execute("SELECT schema_version FROM schema_info").fetchone()[0]),
-                    8,
+                    9,
                 )
                 self.assertEqual(
                     int(

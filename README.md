@@ -42,7 +42,7 @@
 - SQLiteバックアップ / 復元予約 / ロールバック
 
 ### Phase 6: ffprobe / 字幕 / Windowsインストーラー
-- Phase 6でSQLite schema 4を導入（現在は1.2.3 / schema 8）
+- Phase 6でSQLite schema 4を導入（現在は1.3.0 / schema 9）
 - ffprobeによるコンテナ・Codec・解像度・再生時間取得
 - 埋込字幕stream数取得
 - 外部字幕 `.srt` / `.vtt` / `.ass` / `.ssa` を検出
@@ -200,7 +200,7 @@
 - 「すべて選択 / すべて解除」は従来どおり全作品へ適用
 - PWA shellは `video-library-shell-v6` のまま
 
-### 1.2.3: ジブリ追加後の人物別名補正（現行）
+### 1.2.3: ジブリ追加後の人物別名補正
 - 表示バージョンは `1.2.3`
 - SQLite schema 8、TMDb matcher version 8、PWA shell v6を維持
 - 2026-09-20に追加したStudio Ghibli Collection 25作品はTMDb作品監査で25/25 MATCHED
@@ -208,6 +208,21 @@
 - 別名は対象のMATCHED作品credits内で完全一致し、person IDが1件に確定する場合だけ採用
 - 人物同期version 10、人物監査version 9
 - schema migrationはなく、既存DB・表示設定・利用者状態を保持
+
+### 1.3.0: Tailscaleユーザーごとの表示設定（現行）
+- 表示バージョンは `1.3.0`
+- SQLite schema 9
+- 従来の `works.is_visible` は「共通設定」として継続
+- Tailscale Serveで識別された利用者ごとに、作品の表示／非表示を個別設定可能
+- 個別設定がない作品・ユーザーは共通設定を継承
+- Windowsランチャーの表示設定に「対象ユーザー」を追加し、`共通設定` またはアクセス済みTailscaleユーザーを選択
+- ユーザー個別設定は「共通設定に戻す」で解除可能
+- 作品名フィルター、すべて選択／解除、選択件数表示を継続
+- 作品一覧・詳細・動画・字幕・TMDb画像・人物名鑑・お気に入り・履歴等へ同じユーザー別visibilityを適用
+- 非表示作品は、そのユーザーから直接URLを指定しても404
+- ブラウザ側にvisibility管理UI/APIは追加しない
+- 未設定ユーザーは1.2.3までと同じ共通表示になるため、アップグレード直後の表示は変わらない
+- TMDb matcher 8、人物同期10、人物監査9、PWA shell v6を維持
 
 対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
@@ -426,6 +441,8 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 - [1.2.2 正式リリースノート](docs/86-1.2.2-release.md)
 - [1.2.3 Stephen Alpert監査済み別名補正](docs/87-1.2.3-stephen-alpert-alias.md)
 - [1.2.3 正式リリースノート](docs/88-1.2.3-release.md)
+- [1.3.0 Tailscaleユーザーごとの表示設定](docs/89-1.3.0-tailscale-user-visibility.md)
+- [1.3.0 正式リリースノート](docs/90-1.3.0-release.md)
 
 ### 実装履歴
 Phase別・バージョン別の詳細記録は `docs/` 配下に保持します。過去時点の設計判断を残すため、履歴文書は現在仕様へ機械的に書き換えません。

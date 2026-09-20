@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 def now_iso() -> str:
@@ -180,6 +180,20 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
             UNIQUE(provider, subject)
         );
+
+        CREATE TABLE IF NOT EXISTS user_work_visibility (
+            user_id INTEGER NOT NULL,
+            work_id INTEGER NOT NULL,
+            is_visible INTEGER NOT NULL CHECK(is_visible IN (0, 1)),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(user_id, work_id),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(work_id) REFERENCES works(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_work_visibility_work
+            ON user_work_visibility(work_id, user_id, is_visible);
 
         CREATE TABLE IF NOT EXISTS user_work_state (
             user_id INTEGER NOT NULL,

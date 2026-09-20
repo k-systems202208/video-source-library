@@ -27,6 +27,7 @@ from subtitle_stream import resolve_subtitle_file, subtitle_file_to_webvtt
 from scanner import latest_scan_status, mime_type_for_extension, resolve_video_file
 from tailscale_identity import parse_tailscale_identity
 from tmdb_images import resolve_or_repair_cached_tmdb_image, resolve_or_repair_cached_tmdb_person_image
+from work_visibility import is_person_visible, is_subtitle_visible, is_work_visible
 from user_state import (
     PlaybackSessionStore,
     continue_watching,
@@ -267,7 +268,9 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                 self._error(409, "VIDEO_ROOT_NOT_CONFIGURED", "動画フォルダーが設定されていません。")
                 return
             with connect(db_path) as connection:
-                video = get_video(connection, video_id)
+                user = self._request_user(connection)
+                user_id = int(user["id"]) if user else None
+                video = get_video(connection, video_id, user_id=user_id)
                 if video is None:
                     self._error(404, "VIDEO_NOT_FOUND", "動画が見つかりません。")
                     return
@@ -337,17 +340,9 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                 self._error(409, "VIDEO_ROOT_NOT_CONFIGURED", "動画フォルダーが設定されていません。")
                 return
             with connect(db_path) as connection:
-                visible = connection.execute(
-                    """
-                    SELECT 1
-                    FROM subtitles st
-                    JOIN videos v ON v.id=st.video_id
-                    JOIN works w ON w.id=v.work_id
-                    WHERE st.id=? AND w.is_visible=1
-                    """,
-                    (subtitle_id,),
-                ).fetchone()
-                if visible is None:
+                user = self._request_user(connection)
+                user_id = int(user["id"]) if user else None
+                if not is_subtitle_visible(connection, subtitle_id, user_id):
                     self._error(404, "SUBTITLE_FILE_NOT_FOUND", "字幕ファイルが見つかりません。")
                     return
                 resolved = resolve_subtitle_file(connection, root_path, subtitle_id)
@@ -376,11 +371,9 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
 
         def _serve_tmdb_image(self, kind: str, work_id: int, *, head: bool = False) -> None:
             with connect(db_path) as connection:
-                visible = connection.execute(
-                    "SELECT 1 FROM works WHERE id=? AND is_visible=1",
-                    (work_id,),
-                ).fetchone()
-                if visible is None:
+                user = self._request_user(connection)
+                user_id = int(user["id"]) if user else None
+                if not is_work_visible(connection, work_id, user_id):
                     self._error(404, "TMDB_IMAGE_NOT_FOUND", "TMDb画像が見つかりません。")
                     return
                 resolved = resolve_or_repair_cached_tmdb_image(connection, app_data_root / "TMDbImages", work_id, kind)
@@ -406,6 +399,11 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
 
         def _serve_tmdb_person_image(self, person_id: int, *, head: bool = False) -> None:
             with connect(db_path) as connection:
+                user = self._request_user(connection)
+                user_id = int(user["id"]) if user else None
+                if not is_person_visible(connection, person_id, user_id):
+                    self._error(404, "TMDB_PERSON_IMAGE_NOT_FOUND", "TMDb人物画像が見つかりません。")
+                    return
                 resolved = resolve_or_repair_cached_tmdb_person_image(
                     connection, app_data_root / "TMDbImages", person_id
                 )
@@ -476,7 +474,7 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                                          "videoRootConfigured": root_path is not None}); return
                     if path == "/api/current-user":
                         self._json(200, {"authenticated": user is not None, "user": user}); return
-                    if path == "/api/stats": self._json(200, library_stats(connection)); return
+                    if path == "/api/stats": self._json(200, library_stats(connection, user_id=user_id)); return
                     if path == "/api/scan/status":
                         value = latest_scan_status(connection)
                         live = scan_progress.snapshot()
@@ -495,7 +493,7 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                         self._json(200, value); return
                     if path == "/api/people":
                         try:
-                            self._json(200, list_people(connection, role=_first(query, "role") or ""))
+                            self._json(200, list_people(connection, role=_first(query, "role") or "", user_id=user_id))
                         except ValueError as exc:
                             self._error(400, "INVALID_PEOPLE_ROLE", str(exc))
                         return

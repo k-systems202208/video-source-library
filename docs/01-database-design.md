@@ -1,6 +1,6 @@
-# 自宅動画ライブラリ v1.2.3 DB設計
+# 自宅動画ライブラリ v1.3.0 DB設計
 
-SQLiteを使用し、WALとforeign keysを有効にする。現行schemaは **8**。
+SQLiteを使用し、WALとforeign keysを有効にする。現行schemaは **9**。
 
 ## Schema履歴
 
@@ -12,10 +12,13 @@ SQLiteを使用し、WALとforeign keysを有効にする。現行schemaは **8*
 - schema 6: `tmdb_people` / `tmdb_work_people` を追加し、出演者／声優の人物写真を導入
 - schema 7: `tmdb_work_people.role` に `DIRECTOR` を保存可能な互換定義を追加
 - schema 8: `works.is_visible` を追加し、館内表示対象を作品単位で管理
+- schema 9: `user_work_visibility` を追加し、Tailscale利用者ごとの作品表示設定を保持
 
 schema 7の `DIRECTOR` は一度配布済みのDBとの後方互換のため残す。現在の通常同期では監督／演出の顔写真用人物リンクを新規作成しない。
 
-schema 8の `works.is_visible` は `1=表示 / 0=非表示`。既存作品と新規作品の初期値は1。metadata再取込ではこの列を更新対象に含めず、Windowsランチャーで設定した表示状態を保持する。
+schema 8の `works.is_visible` は `1=表示 / 0=非表示`。1.3.0以降は全利用者のフォールバックとなる「共通設定」として継続する。既存作品と新規作品の初期値は1。metadata再取込ではこの列を更新対象に含めず、Windowsランチャーで設定した表示状態を保持する。
+
+schema 9の `user_work_visibility` は `user_id + work_id` ごとの個別表示値を保持する。個別行がある場合はそれを優先し、行がない場合は `works.is_visible` を継承する。migration時に個別行を一括生成しないため、1.2.3からの更新直後は従来と同じ表示になる。
 
 既存DBは削除・再作成せずmigrationし、お気に入り、視聴位置、再生回数等の既存利用者状態を保持する。
 
@@ -29,6 +32,7 @@ schema 8の `works.is_visible` は `1=表示 / 0=非表示`。既存作品と新
 - `subtitles`
 - `users`
 - `user_identities`
+- `user_work_visibility`
 - `user_work_state`
 - `user_video_state`
 - `scan_runs`
@@ -47,6 +51,25 @@ schema 8の `works.is_visible` は `1=表示 / 0=非表示`。既存作品と新
 - `is_visible`: `1=通常画面に表示` / `0=非表示`
 - 非表示は削除ではなく、動画・TMDb・お気に入り・視聴履歴を保持する
 - `is_visible=0` の作品はブラウザAPI・直接URL・動画配信からも取得不可
+
+## `user_work_visibility`
+
+Tailscale利用者ごとの作品表示設定を保持する。
+
+- 主キー: `user_id, work_id`
+- `is_visible`: `1=表示 / 0=非表示`
+- 対象ユーザーは `user_identities.provider='tailscale'` の有効利用者
+- 個別行がない作品は `works.is_visible` を継承
+- ユーザーの「共通設定に戻す」は対象 `user_id` の行を削除
+- 新規作品は個別行がないため、自動的にその時点の共通設定を継承
+- metadata再取込はこのテーブルを初期化しない
+- ユーザー削除・作品削除時はforeign key cascade
+
+有効visibilityは概念上次で求める。
+
+```sql
+COALESCE(user_work_visibility.is_visible, works.is_visible)
+```
 
 ## `video_files`
 

@@ -92,20 +92,20 @@ class TmdbRuntimeAuditTests(unittest.TestCase):
                 image_downloader=fake_download,
             )
 
-            self.assertEqual(result["summary"]["appVersion"], "1.2.3")
+            self.assertEqual(result["summary"]["appVersion"], "1.3.0")
             self.assertEqual(result["summary"]["matcherVersion"], 8)
             self.assertEqual(result["summary"]["matched"], 1)
 
             with Path(result["jsonReport"]).open("r", encoding="utf-8") as handle:
                 payload = json.load(handle)
-            self.assertEqual(payload["summary"]["appVersion"], "1.2.3")
+            self.assertEqual(payload["summary"]["appVersion"], "1.3.0")
             self.assertEqual(payload["summary"]["matcherVersion"], 8)
-            self.assertEqual(payload["items"][0]["appVersion"], "1.2.3")
+            self.assertEqual(payload["items"][0]["appVersion"], "1.3.0")
             self.assertEqual(payload["items"][0]["matcherVersion"], 8)
 
             with Path(result["csvReport"]).open("r", encoding="utf-8-sig", newline="") as handle:
                 row = next(csv.DictReader(handle))
-            self.assertEqual(row["appVersion"], "1.2.3")
+            self.assertEqual(row["appVersion"], "1.3.0")
             self.assertEqual(row["matcherVersion"], "8")
             self.assertEqual(row["mediaType"], "tv")
             self.assertEqual(int(row["tmdbId"]), 71404)
