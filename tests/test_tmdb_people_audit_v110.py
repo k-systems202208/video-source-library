@@ -433,6 +433,22 @@ class TmdbPeopleAuditTests(unittest.TestCase):
                 connection.commit()
                 self.assertTrue(people_audit_required(connection))
 
+    def test_people_audit_v8_marker_requires_v9_reaudit(self):
+        from tmdb_cache import put_cached_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = self._db(Path(tmp))
+            with connect(db) as connection:
+                put_cached_json(
+                    connection,
+                    "tmdb:people-audit-version",
+                    {"version": 8},
+                    fetched_at=now_iso(),
+                    expires_at=None,
+                )
+                connection.commit()
+                self.assertTrue(people_audit_required(connection))
+
     def test_people_audit_version_is_independent_from_people_sync(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = self._db(Path(tmp))
