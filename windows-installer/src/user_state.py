@@ -398,7 +398,7 @@ def next_up(connection: sqlite3.Connection, user_id: int, *, limit: int = 20) ->
         if current is None:
             continue
         candidate = connection.execute(
-            """
+            f"""
             SELECT v.id, v.episode_or_type, v.episode_title,
                    w.id AS work_id, w.official_title AS work_title,
                    sg.display_name AS group_name,
