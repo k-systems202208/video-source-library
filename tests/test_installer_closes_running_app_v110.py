@@ -17,7 +17,7 @@ class InstallerCloseApplicationTests(unittest.TestCase):
 
     def test_display_version_matches_current_release(self):
         text = ISS.read_text(encoding="utf-8")
-        self.assertIn('#define MyAppVersion "1.2.2"', text)
+        self.assertIn('#define MyAppVersion "1.2.3"', text)
 
 
 if __name__ == "__main__":

@@ -36,4 +36,5 @@ REVIEWED_PERSON_CREDIT_ALIASES: dict[str, tuple[str, ...]] = {
     "渡辺千秋": ("Chiaki Watanabe",),
     "小原裕貴": ("Yuki Kohara",),
     "藤井萩花": ("Fujii Shuuka", "Shuuka Fujii", "Shuka Fujii"),
+    "スティーブン・アルパート": ("Stephen Alpert", "Steve Alpert"),
 }

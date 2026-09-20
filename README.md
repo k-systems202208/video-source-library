@@ -42,7 +42,7 @@
 - SQLiteバックアップ / 復元予約 / ロールバック
 
 ### Phase 6: ffprobe / 字幕 / Windowsインストーラー
-- Phase 6でSQLite schema 4を導入（現在は1.2.2 / schema 8）
+- Phase 6でSQLite schema 4を導入（現在は1.2.3 / schema 8）
 - ffprobeによるコンテナ・Codec・解像度・再生時間取得
 - 埋込字幕stream数取得
 - 外部字幕 `.srt` / `.vtt` / `.ass` / `.ssa` を検出
@@ -187,7 +187,7 @@
 - metadata再取込でも `is_visible` は保持
 - PWA shellは `video-library-shell-v6`
 
-### 1.2.2: 表示設定に作品名フィルターを追加（現行）
+### 1.2.2: 表示設定に作品名フィルターを追加
 - 表示バージョンは `1.2.2`
 - SQLite schema 8を維持
 - Windowsランチャーの表示設定に「作品名フィルター」を追加
@@ -199,6 +199,15 @@
 - フィルター中に隠れた作品のチェック状態を保持
 - 「すべて選択 / すべて解除」は従来どおり全作品へ適用
 - PWA shellは `video-library-shell-v6` のまま
+
+### 1.2.3: ジブリ追加後の人物別名補正（現行）
+- 表示バージョンは `1.2.3`
+- SQLite schema 8、TMDb matcher version 8、PWA shell v6を維持
+- 2026-09-20に追加したStudio Ghibli Collection 25作品はTMDb作品監査で25/25 MATCHED
+- `風立ちぬ` の公式出演者「スティーブン・アルパート」とTMDb creditsの `Stephen Alpert` を監査済み別名として安全に結び付け
+- 別名は対象のMATCHED作品credits内で完全一致し、person IDが1件に確定する場合だけ採用
+- 人物同期version 10、人物監査version 9
+- schema migrationはなく、既存DB・表示設定・利用者状態を保持
 
 対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
@@ -415,6 +424,8 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 - [1.2.1 正式リリースノート](docs/84-1.2.1-release.md)
 - [1.2.2 表示設定フィルター](docs/85-1.2.2-launcher-visibility-filter.md)
 - [1.2.2 正式リリースノート](docs/86-1.2.2-release.md)
+- [1.2.3 Stephen Alpert監査済み別名補正](docs/87-1.2.3-stephen-alpert-alias.md)
+- [1.2.3 正式リリースノート](docs/88-1.2.3-release.md)
 
 ### 実装履歴
 Phase別・バージョン別の詳細記録は `docs/` 配下に保持します。過去時点の設計判断を残すため、履歴文書は現在仕様へ機械的に書き換えません。
