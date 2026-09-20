@@ -310,7 +310,7 @@ class TailscaleUserVisibilityV130Tests(unittest.TestCase):
                 port=0,
                 video_root=root,
                 data_root=root,
-                owner_control_secret="test-secret",
+                owner_control_secret="test-secret-0123456789abcdef0123456789abcdef",
             )
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
