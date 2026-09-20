@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from work_visibility import effective_visibility_sql
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
@@ -112,11 +114,12 @@ def favorite_works(connection: sqlite3.Connection, user_id: int, *, limit: int =
         SELECT w.id, w.external_work_no, w.category, w.official_title, w.year_or_period
         FROM user_work_state uws
         JOIN works w ON w.id = uws.work_id
-        WHERE uws.user_id = ? AND uws.favorite = 1 AND w.is_visible = 1
+        WHERE uws.user_id = ? AND uws.favorite = 1
+          AND {effective_visibility_sql("w")} = 1
         ORDER BY w.official_title COLLATE NOCASE
         LIMIT ?
         """,
-        (user_id, max(1, min(int(limit), 200))),
+        (user_id, user_id, max(1, min(int(limit), 200))),
     ).fetchall()
     return {"items": [{"id": int(row["id"]), "externalWorkNo": int(row["external_work_no"]), "category": row["category"], "title": row["official_title"], "yearOrPeriod": row["year_or_period"]} for row in rows]}
 
@@ -150,11 +153,12 @@ def favorite_videos(connection: sqlite3.Connection, user_id: int, *, limit: int 
         JOIN videos v ON v.id = uvs.video_id
         JOIN works w ON w.id = v.work_id
         LEFT JOIN series_groups sg ON sg.id = v.series_group_id
-        WHERE uvs.user_id = ? AND uvs.favorite = 1 AND w.is_visible = 1
+        WHERE uvs.user_id = ? AND uvs.favorite = 1
+          AND {effective_visibility_sql("w")} = 1
         ORDER BY w.official_title COLLATE NOCASE, v.episode_sort_key, v.id
         LIMIT ?
         """,
-        (user_id, max(1, min(int(limit), 200))),
+        (user_id, user_id, max(1, min(int(limit), 200))),
     ).fetchall()
     return {"items": [{"id": int(row["id"]), "externalFileNo": int(row["external_file_no"]), "workId": int(row["work_id"]), "workTitle": row["work_title"], "groupName": row["group_name"], "episodeOrType": row["episode_or_type"], "episodeTitle": row["episode_title"]} for row in rows]}
 
@@ -309,10 +313,12 @@ def continue_watching(connection: sqlite3.Connection, user_id: int, *, limit: in
         LEFT JOIN series_groups sg ON sg.id = v.series_group_id
         LEFT JOIN tmdb_work_links t ON t.work_id = w.id
         JOIN video_files vf ON vf.video_id = v.id
-        WHERE uvs.user_id = ? AND uvs.position_ms > 0 AND uvs.watched = 0 AND vf.is_available = 1 AND w.is_visible = 1
+        WHERE uvs.user_id = ? AND uvs.position_ms > 0 AND uvs.watched = 0
+          AND vf.is_available = 1
+          AND {effective_visibility_sql("w")} = 1
         ORDER BY uvs.last_played_at DESC LIMIT ?
         """,
-        (user_id, max(1, min(int(limit), 100))),
+        (user_id, user_id, max(1, min(int(limit), 100))),
     ).fetchall()
     items = []
     for row in rows:
@@ -335,10 +341,11 @@ def history(connection: sqlite3.Connection, user_id: int, *, limit: int = 100, o
         JOIN videos v ON v.id = uvs.video_id
         JOIN works w ON w.id = v.work_id
         LEFT JOIN series_groups sg ON sg.id = v.series_group_id
-        WHERE uvs.user_id = ? AND uvs.last_played_at IS NOT NULL AND w.is_visible = 1
+        WHERE uvs.user_id = ? AND uvs.last_played_at IS NOT NULL
+          AND {effective_visibility_sql("w")} = 1
         ORDER BY uvs.last_played_at DESC LIMIT ? OFFSET ?
         """,
-        (user_id, max(1, min(int(limit), 200)), max(0, int(offset))),
+        (user_id, user_id, max(1, min(int(limit), 200)), max(0, int(offset))),
     ).fetchall()
     return {"items": [{"videoId": int(row["video_id"]), "workId": int(row["work_id"]), "workTitle": row["work_title"], "groupName": row["group_name"], "episodeOrType": row["episode_or_type"], "episodeTitle": row["episode_title"], "positionMs": int(row["position_ms"] or 0), "durationMs": row["duration_ms"], "watched": bool(row["watched"]), "playCount": int(row["play_count"] or 0), "lastPlayedAt": row["last_played_at"]} for row in rows]}
 
@@ -350,11 +357,12 @@ def recent_works(connection: sqlite3.Connection, user_id: int, *, limit: int = 2
         FROM user_video_state uvs
         JOIN videos v ON v.id = uvs.video_id
         JOIN works w ON w.id = v.work_id
-        WHERE uvs.user_id = ? AND uvs.last_played_at IS NOT NULL AND w.is_visible = 1
+        WHERE uvs.user_id = ? AND uvs.last_played_at IS NOT NULL
+          AND {effective_visibility_sql("w")} = 1
         GROUP BY w.id, w.official_title, w.category
         ORDER BY last_played_at DESC LIMIT ?
         """,
-        (user_id, max(1, min(int(limit), 100))),
+        (user_id, user_id, max(1, min(int(limit), 100))),
     ).fetchall()
     return {"items": [{"id": int(row["id"]), "title": row["official_title"], "category": row["category"], "lastPlayedAt": row["last_played_at"]} for row in rows]}
 
@@ -366,11 +374,13 @@ def next_up(connection: sqlite3.Connection, user_id: int, *, limit: int = 20) ->
         FROM user_video_state uvs
         JOIN videos v ON v.id = uvs.video_id
         JOIN works w ON w.id = v.work_id
-        WHERE uvs.user_id = ? AND uvs.last_played_at IS NOT NULL AND v.content_type = 'EPISODE' AND w.is_visible = 1
+        WHERE uvs.user_id = ? AND uvs.last_played_at IS NOT NULL
+          AND v.content_type = 'EPISODE'
+          AND {effective_visibility_sql("w")} = 1
         GROUP BY v.work_id, v.series_group_id
         ORDER BY last_played_at DESC LIMIT 100
         """,
-        (user_id,),
+        (user_id, user_id),
     ).fetchall()
     result = []
     for key in recent:
@@ -402,10 +412,18 @@ def next_up(connection: sqlite3.Connection, user_id: int, *, limit: int = 20) ->
             WHERE v.work_id = ?
               AND ((v.series_group_id = ?) OR (v.series_group_id IS NULL AND ? IS NULL))
               AND v.content_type = 'EPISODE' AND v.episode_sort_key > ?
-              AND vf.is_available = 1 AND COALESCE(next_state.watched, 0) = 0 AND w.is_visible = 1
+              AND vf.is_available = 1 AND COALESCE(next_state.watched, 0) = 0
+              AND {effective_visibility_sql("w")} = 1
             ORDER BY v.episode_sort_key, v.id LIMIT 1
             """,
-            (user_id, key["work_id"], key["series_group_id"], key["series_group_id"], current["episode_sort_key"]),
+            (
+                user_id,
+                key["work_id"],
+                key["series_group_id"],
+                key["series_group_id"],
+                current["episode_sort_key"],
+                user_id,
+            ),
         ).fetchone()
         if candidate is not None:
             result.append({"videoId": int(candidate["id"]), "workId": int(candidate["work_id"]), "workTitle": candidate["work_title"], "groupName": candidate["group_name"], "episodeOrType": candidate["episode_or_type"], "episodeTitle": candidate["episode_title"], "posterUrl": f'/tmdb-image/poster/{int(candidate["work_id"])}' if candidate["tmdb_match_status"] == "MATCHED" and candidate["tmdb_poster_path"] else None})
