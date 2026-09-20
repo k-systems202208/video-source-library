@@ -196,7 +196,7 @@ def list_people(
 
 def get_work(connection: sqlite3.Connection, work_id: int, *, user_id: int | None = None) -> dict[str, Any] | None:
     r = connection.execute(
-        """
+        f"""
         SELECT w.id,w.external_work_no,w.category,w.year_or_period,w.source_title,w.official_title,
                w.media_file_count,w.subtitle_file_count,w.media_format,w.director_or_direction,
                w.main_cast_or_voice_actors,w.verification_status,w.credits_verification_status,
@@ -322,7 +322,7 @@ def _video_summary(r: sqlite3.Row) -> dict[str, Any]:
 
 def get_video(connection: sqlite3.Connection, video_id: int, *, user_id: int | None = None) -> dict[str, Any] | None:
     r = connection.execute(
-        """
+        f"""
         SELECT v.id,v.external_file_no,v.work_id,w.official_title work_title,v.series_group_id,g.display_name group_name,
                g.group_type,v.episode_or_type,v.episode_number,v.episode_title,v.content_type,v.episode_sort_key,v.verification_status,
                f.extension,f.duration_ms,f.container_format,f.video_codec,f.audio_codec,f.width,f.height,
