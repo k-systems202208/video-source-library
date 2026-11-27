@@ -27,7 +27,16 @@ from paths import CONFIG_PATH, DATABASE_PATH, DATA_ROOT, RUNTIME_PATH
 from remote_access import disable_remote_access, enable_remote_access, get_remote_status
 from scan_runner import scan_library
 from server import create_server
+from tmdb_people import audit_tmdb_people_profiles, people_audit_required, people_sync_required, sync_tmdb_people_library
 from tmdb_sync import sync_tmdb_library
+from work_visibility import (
+    filter_work_visibility,
+    has_user_visibility_overrides,
+    list_visibility_targets,
+    list_work_visibility,
+    replace_visible_work_ids,
+    reset_user_visibility,
+)
 
 APP_NAME = "自宅動画ライブラリ"
 # Music Library uses 8765. Keep Video Library on a different localhost origin
@@ -136,6 +145,7 @@ class VideoLibraryLauncher(tk.Tk):
         self.scan_thread: threading.Thread | None = None
         self.audit_thread: threading.Thread | None = None
         self.tmdb_thread: threading.Thread | None = None
+        self.people_thread: threading.Thread | None = None
         self.audit_started_monotonic: float | None = None
         self.scan_started_monotonic: float | None = None
         self.control_secret = ""
@@ -213,6 +223,12 @@ class VideoLibraryLauncher(tk.Tk):
         self.browser_button.pack(side="left", padx=8)
         self.stop_button = ttk.Button(button_frame, text="停止", command=self.stop_server, state="disabled")
         self.stop_button.pack(side="left")
+        self.visibility_button = ttk.Button(
+            button_frame,
+            text="表示設定",
+            command=self.open_work_visibility_settings,
+        )
+        self.visibility_button.pack(side="left", padx=(8, 0))
         ttk.Button(button_frame, text="データ保存先を開く", command=self.open_data_folder).pack(side="right")
 
         remote_frame = ttk.LabelFrame(main, text="外部接続（Tailscale）", padding=10)
@@ -278,6 +294,326 @@ class VideoLibraryLauncher(tk.Tk):
         self.log_text.pack(fill="both", expand=True)
 
 
+    def open_work_visibility_settings(self) -> None:
+        if not DATABASE_PATH.is_file():
+            messagebox.showerror(APP_NAME, "ライブラリDBが見つかりません。")
+            return
+        try:
+            with connect(DATABASE_PATH) as connection:
+                initialize_database(connection)
+                targets = list_visibility_targets(connection)
+                works = list_work_visibility(connection)
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"表示設定を読み込めませんでした。\n{exc}")
+            return
+        if not works:
+            messagebox.showinfo(APP_NAME, "表示設定できる作品がありません。")
+            return
+
+        dialog = tk.Toplevel(self)
+        dialog.title("作品の表示設定")
+        dialog.geometry("820x740")
+        dialog.minsize(680, 580)
+        dialog.transient(self)
+        dialog.grab_set()
+
+        outer = ttk.Frame(dialog, padding=16)
+        outer.pack(fill="both", expand=True)
+
+        ttk.Label(outer, text="ブラウザに表示する作品", font=STATUS_FONT).pack(anchor="w")
+        ttk.Label(
+            outer,
+            text=(
+                "共通設定またはTailscaleユーザーを選び、チェックした作品だけを表示します。"
+                " Tailscaleユーザーは初回アクセス後に一覧へ追加されます。"
+            ),
+            font=SMALL_FONT,
+            wraplength=770,
+        ).pack(anchor="w", pady=(4, 10))
+
+        target_frame = ttk.Frame(outer)
+        target_frame.pack(fill="x", pady=(0, 10))
+        ttk.Label(target_frame, text="対象ユーザー", font=SMALL_FONT).pack(side="left")
+
+        target_labels = [str(item["label"]) for item in targets]
+        target_by_label = {str(item["label"]): item for item in targets}
+        target_value = tk.StringVar(value=target_labels[0])
+        target_combo = ttk.Combobox(
+            target_frame,
+            textvariable=target_value,
+            values=target_labels,
+            state="readonly",
+            width=52,
+        )
+        target_combo.pack(side="left", fill="x", expand=True, padx=(8, 8))
+
+        visibility_mode = tk.StringVar(value="共通表示設定")
+        ttk.Label(target_frame, textvariable=visibility_mode, font=SMALL_FONT).pack(side="right")
+
+        selected_count = tk.StringVar(value="")
+        filter_text = tk.StringVar(value="")
+        filter_count = tk.StringVar(value=f"表示 {len(works):,} / 全{len(works):,}作品")
+        all_selected = tk.BooleanVar(value=all(bool(item["visible"]) for item in works))
+        variables: dict[int, tk.BooleanVar] = {
+            int(item["id"]): tk.BooleanVar(value=bool(item["visible"]))
+            for item in works
+        }
+        state: dict[str, Any] = {
+            "currentLabel": target_labels[0],
+            "dirty": False,
+            "loading": False,
+        }
+
+        filter_frame = ttk.Frame(outer)
+        filter_frame.pack(fill="x", pady=(0, 8))
+        ttk.Label(filter_frame, text="作品名フィルター", font=SMALL_FONT).pack(side="left")
+        filter_entry = ttk.Entry(filter_frame, textvariable=filter_text)
+        filter_entry.pack(side="left", fill="x", expand=True, padx=(8, 6))
+        ttk.Button(
+            filter_frame,
+            text="クリア",
+            command=lambda: filter_text.set(""),
+        ).pack(side="left")
+        ttk.Label(
+            filter_frame,
+            textvariable=filter_count,
+            font=SMALL_FONT,
+        ).pack(side="right", padx=(10, 0))
+
+        toolbar = ttk.Frame(outer)
+        toolbar.pack(fill="x", pady=(0, 8))
+
+        def current_target() -> dict[str, Any]:
+            return target_by_label[target_value.get()]
+
+        def current_user_id() -> int | None:
+            value = current_target().get("userId")
+            return int(value) if value is not None else None
+
+        def refresh_selection_summary(*, mark_dirty: bool = False) -> None:
+            if mark_dirty and not bool(state["loading"]):
+                state["dirty"] = True
+            selected = sum(1 for variable in variables.values() if variable.get())
+            selected_count.set(f"選択 {selected:,} / {len(works):,} 作品")
+            all_selected.set(selected == len(works))
+
+        def toggle_all() -> None:
+            value = bool(all_selected.get())
+            state["loading"] = True
+            try:
+                for variable in variables.values():
+                    variable.set(value)
+            finally:
+                state["loading"] = False
+            refresh_selection_summary(mark_dirty=True)
+
+        ttk.Checkbutton(
+            toolbar,
+            text="すべて選択 / すべて解除",
+            variable=all_selected,
+            command=toggle_all,
+        ).pack(side="left")
+        ttk.Label(toolbar, textvariable=selected_count, font=SMALL_FONT).pack(side="right")
+
+        list_frame = ttk.Frame(outer)
+        list_frame.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(list_frame, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
+        rows_frame = ttk.Frame(canvas)
+        window_id = canvas.create_window((0, 0), window=rows_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def sync_scrollregion(_event=None) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def stretch_rows(event) -> None:
+            canvas.itemconfigure(window_id, width=event.width)
+
+        rows_frame.bind("<Configure>", sync_scrollregion)
+        canvas.bind("<Configure>", stretch_rows)
+        dialog.bind(
+            "<MouseWheel>",
+            lambda event: canvas.yview_scroll(int(-event.delta / 120), "units"),
+        )
+
+        row_widgets: dict[int, ttk.Checkbutton] = {}
+        for item in works:
+            work_id = int(item["id"])
+            title = str(item["title"] or "")
+            category = str(item["category"] or "")
+            year = str(item["yearOrPeriod"] or "")
+            external_no = int(item["externalWorkNo"])
+            suffix = f" ({year})" if year else ""
+            label = f"{external_no:04d}  [{category}]  {title}{suffix}"
+            row = ttk.Checkbutton(
+                rows_frame,
+                text=label,
+                variable=variables[work_id],
+                command=lambda: refresh_selection_summary(mark_dirty=True),
+            )
+            row.pack(anchor="w", fill="x", padx=4, pady=2)
+            row_widgets[work_id] = row
+
+        def apply_filter(*_args) -> None:
+            matches = filter_work_visibility(works, filter_text.get())
+            matched_ids = {int(item["id"]) for item in matches}
+            for row in row_widgets.values():
+                row.pack_forget()
+            for item in works:
+                work_id = int(item["id"])
+                if work_id in matched_ids:
+                    row_widgets[work_id].pack(anchor="w", fill="x", padx=4, pady=2)
+            filter_count.set(f"表示 {len(matches):,} / 全{len(works):,}作品")
+            canvas.yview_moveto(0)
+            dialog.after_idle(sync_scrollregion)
+
+        filter_text.trace_add("write", apply_filter)
+
+        footer = ttk.Frame(outer)
+        footer.pack(fill="x", pady=(12, 0))
+
+        reset_button = ttk.Button(footer, text="共通設定に戻す")
+
+        def load_target() -> None:
+            nonlocal works
+            uid = current_user_id()
+            try:
+                with connect(DATABASE_PATH) as connection:
+                    initialize_database(connection)
+                    works = list_work_visibility(connection, user_id=uid)
+                    customized = (
+                        has_user_visibility_overrides(connection, uid)
+                        if uid is not None
+                        else True
+                    )
+            except Exception as exc:
+                messagebox.showerror(
+                    APP_NAME,
+                    f"表示設定を読み込めませんでした。\n{exc}",
+                    parent=dialog,
+                )
+                return
+            state["loading"] = True
+            try:
+                for item in works:
+                    variables[int(item["id"])].set(bool(item["visible"]))
+            finally:
+                state["loading"] = False
+            state["dirty"] = False
+            state["currentLabel"] = target_value.get()
+            if uid is None:
+                visibility_mode.set("共通表示設定")
+                reset_button.configure(state="disabled")
+            elif customized:
+                visibility_mode.set("個別設定")
+                reset_button.configure(state="normal")
+            else:
+                visibility_mode.set("共通設定を継承")
+                reset_button.configure(state="disabled")
+            refresh_selection_summary()
+            apply_filter()
+
+        def on_target_changed(_event=None) -> None:
+            if bool(state["loading"]):
+                return
+            new_label = target_value.get()
+            old_label = str(state["currentLabel"])
+            if new_label == old_label:
+                return
+            if bool(state["dirty"]):
+                discard = messagebox.askyesno(
+                    APP_NAME,
+                    "未保存の変更があります。破棄して対象ユーザーを切り替えますか？",
+                    parent=dialog,
+                )
+                if not discard:
+                    state["loading"] = True
+                    target_value.set(old_label)
+                    state["loading"] = False
+                    return
+            load_target()
+
+        target_combo.bind("<<ComboboxSelected>>", on_target_changed)
+
+        def save_visibility() -> None:
+            uid = current_user_id()
+            selected_ids = [
+                work_id
+                for work_id, variable in variables.items()
+                if variable.get()
+            ]
+            try:
+                with connect(DATABASE_PATH) as connection:
+                    initialize_database(connection)
+                    result = replace_visible_work_ids(
+                        connection,
+                        selected_ids,
+                        user_id=uid,
+                    )
+            except Exception as exc:
+                messagebox.showerror(
+                    APP_NAME,
+                    f"表示設定を保存できませんでした。\n{exc}",
+                    parent=dialog,
+                )
+                return
+            state["dirty"] = False
+            if uid is None:
+                visibility_mode.set("共通表示設定")
+            else:
+                visibility_mode.set("個別設定")
+                reset_button.configure(state="normal")
+            self.refresh_local_status()
+            target_name = str(current_target()["displayName"])
+            message = (
+                f"{target_name} の表示設定を保存しました。\n\n"
+                f"表示: {result['visible']:,}作品\n"
+                f"非表示: {result['hidden']:,}作品"
+            )
+            if self.server is not None:
+                message += "\n\nブラウザを再読み込みすると反映されます。"
+            messagebox.showinfo(APP_NAME, message, parent=dialog)
+
+        def reset_visibility() -> None:
+            uid = current_user_id()
+            if uid is None:
+                return
+            if not messagebox.askyesno(
+                APP_NAME,
+                "このTailscaleユーザーの個別設定を削除し、共通設定を使いますか？",
+                parent=dialog,
+            ):
+                return
+            try:
+                with connect(DATABASE_PATH) as connection:
+                    initialize_database(connection)
+                    reset_user_visibility(connection, uid)
+            except Exception as exc:
+                messagebox.showerror(
+                    APP_NAME,
+                    f"個別設定を解除できませんでした。\n{exc}",
+                    parent=dialog,
+                )
+                return
+            load_target()
+            messagebox.showinfo(
+                APP_NAME,
+                "個別設定を解除しました。現在は共通設定を継承しています。",
+                parent=dialog,
+            )
+
+        reset_button.configure(command=reset_visibility, state="disabled")
+        reset_button.pack(side="left", padx=(8, 0))
+        ttk.Button(footer, text="保存", command=save_visibility).pack(side="left")
+        ttk.Button(footer, text="閉じる", command=dialog.destroy).pack(side="right")
+
+        load_target()
+        filter_entry.focus_set()
+
+
     def open_tmdb_settings(self) -> None:
         dialog = tk.Toplevel(self)
         dialog.title("TMDb設定")
@@ -339,7 +675,7 @@ class VideoLibraryLauncher(tk.Tk):
 
 
     def start_tmdb_sync(self) -> None:
-        if self.server is not None or self.scan_thread is not None or self.audit_thread is not None or self.tmdb_thread is not None:
+        if self.server is not None or self.scan_thread is not None or self.audit_thread is not None or self.tmdb_thread is not None or self.people_thread is not None:
             messagebox.showinfo(APP_NAME, "TMDb同期の前にライブラリを停止してください。")
             return
         if not DATABASE_PATH.is_file():
@@ -351,8 +687,8 @@ class VideoLibraryLauncher(tk.Tk):
             return
         if not messagebox.askyesno(
             APP_NAME,
-            "登録作品をTMDbと照合し、高信頼で一致した作品のポスター／背景画像を保存します。\n"
-            "低信頼候補は自動確定しません。開始しますか？",
+            "登録作品をTMDbと照合し、高信頼で一致した作品のポスター／背景画像と出演者写真を保存します。\n"
+            "低信頼候補や人物名が一意に一致しない場合は自動確定しません。開始しますか？",
         ):
             return
         self._set_busy(True)
@@ -415,6 +751,14 @@ class VideoLibraryLauncher(tk.Tk):
         unmatched = int(summary.get("unmatched") or 0)
         posters = int(summary.get("posterCached") or 0)
         backdrops = int(summary.get("backdropCached") or 0)
+        people = int(summary.get("peopleMatched") or 0)
+        people_profiles = int(summary.get("peopleProfileCached") or 0)
+        people_combined = int(summary.get("peopleMatchedByCombinedCredits") or 0)
+        people_unique = int(summary.get("peopleMatchedByUniqueExactSearch") or 0)
+        people_alias = int(summary.get("peopleMatchedByCreditAlias") or 0)
+        people_reviewed = int(summary.get("peopleMatchedByReviewedAlias") or 0)
+        people_work_person = int(summary.get("peopleMatchedByReviewedWorkPerson") or 0)
+        people_failures = int(summary.get("peopleSyncFailures") or 0)
         self.scan_progress.configure(mode="determinate", maximum=max(1, total))
         self.scan_progress["value"] = total
         self.scan_status.set("完了 — TMDb作品情報を同期しました")
@@ -424,15 +768,40 @@ class VideoLibraryLauncher(tk.Tk):
         self._append_log(
             f"TMDb同期完了: {total:,}作品 / MATCHED {matched:,} / REVIEW {review:,} / UNMATCHED {unmatched:,}"
         )
-        self._append_log(f"ポスター {posters:,} / 背景 {backdrops:,} / JSON: {report.get('jsonReport', '')}")
+        self._append_log(
+            f"ポスター {posters:,} / 背景 {backdrops:,} / 出演者 {people:,} / 顔写真 {people_profiles:,} / "
+            f"第3照合回収 {people_combined:,} / 第4照合回収 {people_unique:,} / "
+            f"第5照合回収 {people_alias:,} / 第6照合回収 {people_reviewed:,} / "
+            f"第7照合回収 {people_work_person:,} / 人物同期失敗 {people_failures:,} / "
+            f"JSON: {report.get('jsonReport', '')}"
+        )
         self._append_log(f"CSV : {report.get('csvReport', '')}")
+        people_audit = report.get("peopleAudit") or {}
+        people_audit_summary = people_audit.get("summary") or {}
+        if people_audit:
+            self._append_log(
+                "人物写真監査: "
+                f"写真あり {int(people_audit_summary.get('profileReady') or 0):,} / "
+                f"TMDb人物あり写真なし {int(people_audit_summary.get('personNoProfile') or 0):,} / "
+                f"TMDb未照合作品のみ {int(people_audit_summary.get('noMatchedWork') or 0):,} / "
+                f"credits表記差 {int(people_audit_summary.get('creditNameMismatch') or 0):,} / "
+                f"検索候補がcredits外 {int(people_audit_summary.get('personSearchNotInCredits') or 0):,} / "
+                f"credits候補なし {int(people_audit_summary.get('creditPersonNotFound') or 0):,} / "
+                f"曖昧 {int(people_audit_summary.get('ambiguous') or 0):,}"
+            )
+            self._append_log(f"人物監査JSON: {people_audit.get('jsonReport', '')}")
+            self._append_log(f"人物監査CSV : {people_audit.get('csvReport', '')}")
         self._set_busy(False)
         messagebox.showinfo(
             APP_NAME,
             "TMDb同期が完了しました。\n\n"
             f"登録作品: {total:,}\nMATCHED: {matched:,}\nREVIEW: {review:,}\nUNMATCHED: {unmatched:,}\n"
-            f"ポスター保存: {posters:,}\n背景保存: {backdrops:,}\n\n"
-            "REVIEWは自動確定していません。診断CSVで確認できます。",
+            f"ポスター保存: {posters:,}\n背景保存: {backdrops:,}\n"
+            f"出演者照合: {people:,}\n顔写真保存: {people_profiles:,}\n"
+            f"第3照合回収: {people_combined:,}\n第4照合回収: {people_unique:,}\n"
+            f"第5照合回収: {people_alias:,}\n第6照合回収: {people_reviewed:,}\n"
+            f"第7照合回収: {people_work_person:,}\n人物同期失敗: {people_failures:,}\n\n"
+            "REVIEWおよび一意に照合できない人物は自動確定していません。",
         )
 
     def _tmdb_sync_failed(self, exc: Exception) -> None:
@@ -644,6 +1013,7 @@ class VideoLibraryLauncher(tk.Tk):
         self.meta_browse_button.configure(state=state)
         self.import_button.configure(state=state)
         self.audit_button.configure(state=state)
+        self.visibility_button.configure(state=state)
         self.tmdb_sync_button.configure(state=state)
         if busy:
             self.browser_button.configure(state="disabled")
@@ -877,6 +1247,111 @@ class VideoLibraryLauncher(tk.Tk):
             return
         self._set_busy(False)
         self.open_browser()
+        self._start_people_sync_if_needed()
+
+    def _start_people_sync_if_needed(self) -> None:
+        if self.people_thread is not None or not DATABASE_PATH.is_file():
+            return
+        token = configured_tmdb_token(config_path=CONFIG_PATH)
+        if not token:
+            return
+        try:
+            with connect(DATABASE_PATH) as connection:
+                initialize_database(connection)
+                sync_required = people_sync_required(connection)
+                audit_required = people_audit_required(connection)
+                if not sync_required and not audit_required:
+                    return
+        except Exception as exc:
+            self._append_log(f"出演者写真同期の確認に失敗: {exc}")
+            return
+
+        if sync_required:
+            self._append_log("出演者／声優の顔写真をバックグラウンド同期します。")
+        else:
+            self._append_log("出演者／声優の顔写真監査をバックグラウンド実行します。")
+        self.people_thread = threading.Thread(
+            target=self._people_sync_worker,
+            args=(token, sync_required),
+            daemon=True,
+            name="VideoLibraryPeopleSync",
+        )
+        self.people_thread.start()
+
+    def _people_sync_worker(self, token: str, sync_required: bool) -> None:
+        try:
+            if sync_required:
+                report = sync_tmdb_people_library(
+                    DATABASE_PATH,
+                    TMDB_IMAGE_PATH,
+                    token,
+                    report_dir=TMDB_REPORT_OUTPUT_PATH,
+                )
+            else:
+                report = {
+                    "matchedPeople": 0,
+                    "matchedBySearch": 0,
+                    "matchedByCombinedCredits": 0,
+                    "matchedByUniqueExactSearch": 0,
+                    "matchedByCreditAlias": 0,
+                    "matchedByReviewedAlias": 0,
+                    "matchedByReviewedWorkPerson": 0,
+                    "repairedWorkLinks": 0,
+                    "profileCached": 0,
+                    "failures": 0,
+                    "completed": True,
+                    "peopleAudit": audit_tmdb_people_profiles(
+                        DATABASE_PATH,
+                        TMDB_REPORT_OUTPUT_PATH,
+                        token,
+                    ),
+                }
+        except Exception as exc:
+            self.after(0, lambda e=exc: self._people_sync_failed(e))
+            return
+        self.after(0, lambda r=report: self._people_sync_succeeded(r))
+
+    def _people_sync_succeeded(self, report: dict[str, Any]) -> None:
+        self.people_thread = None
+        matched = int(report.get("matchedPeople") or 0)
+        recovered = int(report.get("matchedBySearch") or 0)
+        recovered_combined = int(report.get("matchedByCombinedCredits") or 0)
+        recovered_unique = int(report.get("matchedByUniqueExactSearch") or 0)
+        recovered_alias = int(report.get("matchedByCreditAlias") or 0)
+        recovered_reviewed = int(report.get("matchedByReviewedAlias") or 0)
+        recovered_work_person = int(report.get("matchedByReviewedWorkPerson") or 0)
+        repaired_work_links = int(report.get("repairedWorkLinks") or 0)
+        cached = int(report.get("profileCached") or 0)
+        failures = int(report.get("failures") or 0)
+        self._append_log(
+            f"出演者写真同期: 人物 {matched:,} / 第2照合回収 {recovered:,} / "
+            f"第3照合回収 {recovered_combined:,} / 第4照合回収 {recovered_unique:,} / "
+            f"第5照合回収 {recovered_alias:,} / 第6照合回収 {recovered_reviewed:,} / "
+            f"第7照合回収 {recovered_work_person:,} / 誤作品リンク修復 {repaired_work_links:,} / "
+            f"顔写真 {cached:,} / 失敗 {failures:,}"
+        )
+        audit = report.get("peopleAudit") or {}
+        audit_summary = audit.get("summary") or {}
+        if audit:
+            self._append_log(
+                "人物写真監査: "
+                f"写真あり {int(audit_summary.get('profileReady') or 0):,} / "
+                f"TMDb人物あり写真なし {int(audit_summary.get('personNoProfile') or 0):,} / "
+                f"TMDb未照合作品のみ {int(audit_summary.get('noMatchedWork') or 0):,} / "
+                f"credits表記差 {int(audit_summary.get('creditNameMismatch') or 0):,} / "
+                f"検索候補がcredits外 {int(audit_summary.get('personSearchNotInCredits') or 0):,} / "
+                f"credits候補なし {int(audit_summary.get('creditPersonNotFound') or 0):,} / "
+                f"曖昧 {int(audit_summary.get('ambiguous') or 0):,}"
+            )
+            self._append_log(f"人物監査JSON: {audit.get('jsonReport', '')}")
+            self._append_log(f"人物監査CSV : {audit.get('csvReport', '')}")
+        if failures:
+            self._append_log("未完了分は次回起動時に自動再試行します。")
+
+    def _people_sync_failed(self, exc: Exception) -> None:
+        self.people_thread = None
+        self._append_log(f"出演者写真同期 ERROR: {type(exc).__name__}: {exc}")
+        self._append_log("次回起動時に自動再試行します。")
 
     def _startup_scan_failed(self, exc: Exception) -> None:
         self.scan_thread = None

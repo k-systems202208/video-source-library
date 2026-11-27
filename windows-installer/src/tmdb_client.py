@@ -141,10 +141,39 @@ class TmdbClient:
         value = self.get_json("/search/tv", params)
         return value if isinstance(value, dict) else {}
 
+    def search_person(self, query: str, *, language: str = "ja-JP") -> dict[str, Any]:
+        value = self.get_json(
+            "/search/person",
+            {"query": query, "language": language, "include_adult": "false"},
+        )
+        return value if isinstance(value, dict) else {}
+
+    def person_combined_credits(self, person_id: int, *, language: str = "ja-JP") -> dict[str, Any]:
+        value = self.get_json(
+            f"/person/{int(person_id)}/combined_credits",
+            {"language": language},
+        )
+        return value if isinstance(value, dict) else {}
+
+    def person_details(self, person_id: int, *, language: str = "ja-JP") -> dict[str, Any]:
+        value = self.get_json(
+            f"/person/{int(person_id)}",
+            {"language": language},
+        )
+        return value if isinstance(value, dict) else {}
+
     def movie_details(self, movie_id: int, *, language: str = "ja-JP") -> dict[str, Any]:
         value = self.get_json(f"/movie/{int(movie_id)}", {"language": language})
         return value if isinstance(value, dict) else {}
 
     def tv_details(self, tv_id: int, *, language: str = "ja-JP") -> dict[str, Any]:
         value = self.get_json(f"/tv/{int(tv_id)}", {"language": language})
+        return value if isinstance(value, dict) else {}
+
+    def movie_credits(self, movie_id: int, *, language: str = "ja-JP") -> dict[str, Any]:
+        value = self.get_json(f"/movie/{int(movie_id)}/credits", {"language": language})
+        return value if isinstance(value, dict) else {}
+
+    def tv_aggregate_credits(self, tv_id: int, *, language: str = "ja-JP") -> dict[str, Any]:
+        value = self.get_json(f"/tv/{int(tv_id)}/aggregate_credits", {"language": language})
         return value if isinstance(value, dict) else {}

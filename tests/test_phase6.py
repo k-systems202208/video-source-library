@@ -103,13 +103,15 @@ class SchemaAndScannerTests(unittest.TestCase):
             playback_support="DIRECT",
         )
 
-    def test_schema5_and_tables(self):
+    def test_schema8_and_tables(self):
         with connect(self.db) as connection:
             initialize_database(connection)
             version = int(connection.execute("SELECT schema_version FROM schema_info").fetchone()[0])
-            self.assertEqual(version, 5)
-            self.assertEqual(SCHEMA_VERSION, 5)
+            self.assertEqual(version, 9)
+            self.assertEqual(SCHEMA_VERSION, 9)
             self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='subtitles'").fetchone())
+            self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tmdb_people'").fetchone())
+            self.assertIsNotNone(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tmdb_work_people'").fetchone())
             columns = {row[1] for row in connection.execute("PRAGMA table_info(video_files)").fetchall()}
             self.assertTrue({"probe_status", "probed_at", "embedded_subtitle_count"}.issubset(columns))
 
@@ -168,7 +170,7 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("NOT removed", iss)
         self.assertIn("PyInstaller", build)
         self.assertIn("ISCC.exe", build)
-        self.assertIn("video-library-shell-v3", sw)
+        self.assertIn("video-library-shell-v6", sw)
         self.assertIn("/api/", sw)
         self.assertIn("/video/", sw)
         self.assertIn("/subtitle/", sw)

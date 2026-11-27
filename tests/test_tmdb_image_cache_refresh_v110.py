@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "windows-installer" / "src"
 sys.path.insert(0, str(SRC))
 
+from tmdb_images import cached_image_path
 from tmdb_sync import Candidate, _cache_candidate_images, _image_refresh_flags
 
 
@@ -43,8 +44,8 @@ class TmdbImageCacheRefreshV110Tests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            poster = root / "poster" / "112.jpg"
-            backdrop = root / "backdrop" / "112.jpg"
+            poster = cached_image_path(root, 112, "poster", c.poster_path)
+            backdrop = cached_image_path(root, 112, "backdrop", c.backdrop_path)
             poster.parent.mkdir(parents=True)
             backdrop.parent.mkdir(parents=True)
             poster.write_bytes(b"wrong poster")
