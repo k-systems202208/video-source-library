@@ -732,14 +732,18 @@ class VideoLibraryLauncher(tk.Tk):
         matched = int(progress.get("matched") or 0)
         review = int(progress.get("review") or 0)
         unmatched = int(progress.get("unmatched") or 0)
+        errors = int(progress.get("errors") or 0)
         self.scan_status.set(f"TMDb同期中 — {current:,} / {total:,}")
-        self.scan_counts.set(f"MATCHED {matched:,} / REVIEW {review:,} / UNMATCHED {unmatched:,}")
+        self.scan_counts.set(
+            f"MATCHED {matched:,} / REVIEW {review:,} / UNMATCHED {unmatched:,} / ERROR {errors:,}"
+        )
         self.scan_current.set(f"現在処理中: {progress.get('currentItem') or '—'}")
         self.scan_progress.configure(mode="determinate", maximum=max(1, total))
         self.scan_progress["value"] = min(current, total)
         if current and (current % 25 == 0 or current == total):
             self._append_log(
-                f"TMDb {current:,}/{total:,}: MATCHED {matched:,} / REVIEW {review:,} / UNMATCHED {unmatched:,}"
+                f"TMDb {current:,}/{total:,}: MATCHED {matched:,} / REVIEW {review:,} / "
+                f"UNMATCHED {unmatched:,} / ERROR {errors:,}"
             )
 
     def _tmdb_sync_succeeded(self, report: dict[str, Any]) -> None:
@@ -749,6 +753,7 @@ class VideoLibraryLauncher(tk.Tk):
         matched = int(summary.get("matched") or 0)
         review = int(summary.get("review") or 0)
         unmatched = int(summary.get("unmatched") or 0)
+        errors = int(summary.get("errors") or 0)
         posters = int(summary.get("posterCached") or 0)
         backdrops = int(summary.get("backdropCached") or 0)
         people = int(summary.get("peopleMatched") or 0)
@@ -762,11 +767,14 @@ class VideoLibraryLauncher(tk.Tk):
         self.scan_progress.configure(mode="determinate", maximum=max(1, total))
         self.scan_progress["value"] = total
         self.scan_status.set("完了 — TMDb作品情報を同期しました")
-        self.scan_counts.set(f"MATCHED {matched:,} / REVIEW {review:,} / UNMATCHED {unmatched:,}")
+        self.scan_counts.set(
+            f"MATCHED {matched:,} / REVIEW {review:,} / UNMATCHED {unmatched:,} / ERROR {errors:,}"
+        )
         self.scan_current.set("現在処理中: 完了")
         self.status.set("TMDb作品情報の同期が完了しました")
         self._append_log(
-            f"TMDb同期完了: {total:,}作品 / MATCHED {matched:,} / REVIEW {review:,} / UNMATCHED {unmatched:,}"
+            f"TMDb同期完了: {total:,}作品 / MATCHED {matched:,} / REVIEW {review:,} / "
+            f"UNMATCHED {unmatched:,} / ERROR {errors:,}"
         )
         self._append_log(
             f"ポスター {posters:,} / 背景 {backdrops:,} / 出演者 {people:,} / 顔写真 {people_profiles:,} / "
@@ -795,7 +803,8 @@ class VideoLibraryLauncher(tk.Tk):
         messagebox.showinfo(
             APP_NAME,
             "TMDb同期が完了しました。\n\n"
-            f"登録作品: {total:,}\nMATCHED: {matched:,}\nREVIEW: {review:,}\nUNMATCHED: {unmatched:,}\n"
+            f"登録作品: {total:,}\nMATCHED: {matched:,}\nREVIEW: {review:,}\n"
+            f"UNMATCHED: {unmatched:,}\nERROR: {errors:,}\n"
             f"ポスター保存: {posters:,}\n背景保存: {backdrops:,}\n"
             f"出演者照合: {people:,}\n顔写真保存: {people_profiles:,}\n"
             f"第3照合回収: {people_combined:,}\n第4照合回収: {people_unique:,}\n"
