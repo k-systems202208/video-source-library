@@ -13,24 +13,34 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from app_version import APP_VERSION
-from database import connect, now_iso
+from database import connect, initialize_database, now_iso
 from tmdb_cache import get_cached_json, put_cached_json
 from tmdb_client import TmdbClient
-from tmdb_images import cached_image_path, download_tmdb_image
+from tmdb_images import cached_image_path, cached_person_image_path, download_tmdb_image
+from tmdb_people import audit_tmdb_people_profiles, mark_people_sync_complete, sync_cast_people_for_work
+from tmdb_people_reviewed_overrides import (
+    REVIEWED_AGGREGATE_WORKS,
+    REVIEWED_SPECIAL_UNMATCHED_WORKS,
+)
 
 _MATCHED = "MATCHED"
 _REVIEW = "REVIEW"
 _UNMATCHED = "UNMATCHED"
-_MATCHER_VERSION = 7
+_MATCHER_VERSION = 8
 _MATCHER_VERSION_CACHE_KEY = "tmdb:matcher-version"
 _SEARCH_CACHE_VERSION = 3
-_IMAGE_CACHE_REPAIR_VERSION = 2
+_IMAGE_CACHE_REPAIR_VERSION = 3
 _IMAGE_CACHE_REPAIR_KEY = "tmdb:image-cache-repair-version"
 
-# v3時代に誤MATCHEDだったTRICKは、後続matcherでtv/19616へ修正されても
-# workId.jpg が残り続けたため、既存インストールで一度だけ画像を取り直す。
-_LEGACY_STALE_IMAGE_WORKS: set[tuple[str, str]] = {
-    ("TRICK", "2000-2003"),
+# 過去の誤候補画像が workId 名のローカルキャッシュとして残った作品。
+# matcherの既存MATCHEDは維持し、TMDb詳細を同じIDから再取得して画像だけ取り直す。
+# タイトルは _normalize_title() 後の値で保持し、全角/半角記号などの表記揺れに耐える。
+_STALE_IMAGE_REPAIR_WORKS: set[tuple[str, str]] = {
+    ("trick", "2000-2003"),
+    ("pricelessあるわけねぇだろんなもん", "2012"),
+    ("スマイル", "2009"),
+    ("ビギナーズ", "2012"),
+    ("プライド", "2004"),
 }
 
 # 440作品の実機監査で確認済みの「同一作品だがTMDb側の表記が異なる」名称。
@@ -54,24 +64,22 @@ _AUDIT_APPROVED_MATCHES: dict[tuple[str, str], tuple[str, int, str]] = {
     ("誰にも言えない", "1993"): ("tv", 36167, "1993"),
     ("こんな恋のはなし", "1997"): ("tv", 9327, "1997"),
     ("牙狼〈GARO〉", "2005-2006"): ("tv", 1941, "2005"),
-    ("半分の月がのぼる空", "2006"): ("tv", 34746, "2006"),
     ("SUMMER NUDE", "2013"): ("tv", 64293, "2013"),
     ("夜行観覧車", "2013"): ("tv", 81864, "2013"),
     ("信長協奏曲", "2014"): ("tv", 62911, "2014"),
     ("仰げば尊し", "2016"): ("tv", 83474, "2016"),
 }
 
-# 1つのTMDb作品へ自動確定してはいけないローカル集約項目。
-_AUDIT_AGGREGATE_WORKS: set[tuple[str, str]] = {
-    ("男はつらいよ", "1969-2019"),
-    ("仁義なき戦い", "1973-1974"),
-    ("福岡恋愛白書", "2011-2016"),
-    ("殺人分析班シリーズ", "2016-2019"),
-}
+# 監査済みルールは人物監査でも同じ定義を参照する。
+# matcher側の挙動はv8から変更しない。
+_AUDIT_AGGREGATE_WORKS = REVIEWED_AGGREGATE_WORKS
+_AUDIT_SPECIAL_UNMATCHED = REVIEWED_SPECIAL_UNMATCHED_WORKS
 
-# TMDbのシリーズ構造とローカル管理単位が一致しないため自動紐付けしない項目。
-_AUDIT_SPECIAL_UNMATCHED: set[tuple[str, str]] = {
-    ("3年B組金八先生 第6シリーズ", "2001"),
+# Existing MATCHED links normally stay fixed after matcher v4.  These audited
+# signatures are exceptions because the stored TMDb work was confirmed to be a
+# different production and must be re-evaluated once.
+_AUDIT_FORCE_REASSESS_WORKS: set[tuple[str, str]] = {
+    ("半分の月がのぼる空", "2006"),
 }
 
 
@@ -220,6 +228,16 @@ def _work_audit_key(work: sqlite3.Row | dict[str, Any]) -> tuple[str, str]:
         str(_work_value(work, "official_title", "") or "").strip(),
         str(_work_value(work, "year_or_period", "") or "").strip(),
     )
+
+
+def _requires_image_cache_repair(work: sqlite3.Row | dict[str, Any]) -> bool:
+    period = str(_work_value(work, "year_or_period", "") or "").strip()
+    titles = {
+        _normalize_title(_work_value(work, "official_title", "")),
+        _normalize_title(_work_value(work, "source_title", "")),
+    }
+    titles.discard("")
+    return any((title, period) in _STALE_IMAGE_REPAIR_WORKS for title in titles)
 
 
 def _audit_approved_candidate(
@@ -766,12 +784,21 @@ def sync_tmdb_library(
     tmdb = client or TmdbClient(token)
     image_root_path = Path(image_root)
     rows: list[dict[str, Any]] = []
+    people_matched_ids: set[int] = set()
+    people_profile_cached_ids: set[int] = set()
+    people_combined_match_count = 0
+    people_unique_exact_match_count = 0
+    people_credit_alias_match_count = 0
+    people_reviewed_alias_match_count = 0
+    people_reviewed_work_person_match_count = 0
+    people_sync_failures = 0
 
     with connect(database_path) as connection:
+        initialize_database(connection)
         works = connection.execute(
             """
             SELECT
-                w.id,w.category,w.year_or_period,w.source_title,w.official_title,
+                w.id,w.category,w.year_or_period,w.source_title,w.official_title,w.main_cast_or_voice_actors,
                 w.media_file_count,w.subfolder_count,
                 (SELECT COUNT(*) FROM videos v WHERE v.work_id=w.id AND v.content_type='EPISODE') AS episode_count,
                 (SELECT COUNT(*) FROM videos v WHERE v.work_id=w.id AND v.content_type='MOVIE') AS movie_content_count
@@ -805,6 +832,7 @@ def sync_tmdb_library(
                 and existing is not None
                 and existing["match_status"] == _MATCHED
                 and existing["tmdb_id"]
+                and _work_audit_key(work) not in _AUDIT_FORCE_REASSESS_WORKS
             ):
                 candidate = Candidate(
                     media_type=str(existing["media_type"]),
@@ -820,7 +848,7 @@ def sync_tmdb_library(
                 )
                 status = _MATCHED
                 reason = "EXISTING_MATCH"
-                if legacy_image_repair and _work_audit_key(work) in _LEGACY_STALE_IMAGE_WORKS:
+                if legacy_image_repair and _requires_image_cache_repair(work):
                     candidate = _refresh_matched_candidate_details(tmdb, candidate)
                     _upsert_link(connection, int(work["id"]), status, candidate)
                     connection.commit()
@@ -835,7 +863,7 @@ def sync_tmdb_library(
             backdrop_cached = False
             if status == _MATCHED and candidate is not None:
                 force_poster_refresh, force_backdrop_refresh = _image_refresh_flags(existing, status, candidate)
-                if legacy_image_repair and _work_audit_key(work) in _LEGACY_STALE_IMAGE_WORKS:
+                if legacy_image_repair and _requires_image_cache_repair(work):
                     force_poster_refresh = True
                     force_backdrop_refresh = True
                 try:
@@ -867,6 +895,54 @@ def sync_tmdb_library(
                         ).is_file()
                     )
 
+            cast_people_matched = 0
+            cast_profiles_cached = 0
+            if status == _MATCHED and candidate is not None:
+                try:
+                    people_result = sync_cast_people_for_work(
+                        connection,
+                        tmdb,
+                        work_id=int(work["id"]),
+                        media_type=candidate.media_type,
+                        tmdb_id=candidate.tmdb_id,
+                        local_cast=str(work["main_cast_or_voice_actors"] or ""),
+                        image_root=image_root_path,
+                        image_downloader=image_downloader,
+                    )
+                    cast_people_matched = int(people_result.get("matched") or 0)
+                    cast_profiles_cached = int(people_result.get("profileCached") or 0)
+                    people_combined_match_count += int(people_result.get("matchedByCombinedCredits") or 0)
+                    people_unique_exact_match_count += int(people_result.get("matchedByUniqueExactSearch") or 0)
+                    people_credit_alias_match_count += int(people_result.get("matchedByCreditAlias") or 0)
+                    people_reviewed_alias_match_count += int(people_result.get("matchedByReviewedAlias") or 0)
+                    people_reviewed_work_person_match_count += int(
+                        people_result.get("matchedByReviewedWorkPerson") or 0
+                    )
+                    people_matched_ids.update(int(value) for value in people_result.get("personIds") or [])
+                    for person_id in people_result.get("personIds") or []:
+                        person_row = connection.execute(
+                            "SELECT profile_path FROM tmdb_people WHERE tmdb_person_id=?",
+                            (int(person_id),),
+                        ).fetchone()
+                        if person_row is not None and person_row["profile_path"]:
+                            try:
+                                if cached_person_image_path(
+                                    image_root_path, int(person_id), str(person_row["profile_path"])
+                                ).is_file():
+                                    people_profile_cached_ids.add(int(person_id))
+                            except ValueError:
+                                pass
+                except Exception:
+                    # Person photos are enrichment only.  Preserve a completed
+                    # work match even if credits/profile retrieval is temporarily unavailable.
+                    people_sync_failures += 1
+            else:
+                connection.execute(
+                    "DELETE FROM tmdb_work_people WHERE work_id=? AND role='CAST'",
+                    (int(work["id"]),),
+                )
+                connection.commit()
+
             row = {
                 "appVersion": APP_VERSION,
                 "matcherVersion": _MATCHER_VERSION,
@@ -883,6 +959,8 @@ def sync_tmdb_library(
                 "reason": reason,
                 "posterCached": poster_cached,
                 "backdropCached": backdrop_cached,
+                "castPeopleMatched": cast_people_matched,
+                "castProfilesCached": cast_profiles_cached,
             }
             rows.append(row)
 
@@ -900,6 +978,8 @@ def sync_tmdb_library(
 
         _store_matcher_version(connection)
         _store_image_cache_repair_version(connection)
+        if people_sync_failures == 0:
+            mark_people_sync_complete(connection)
         connection.commit()
 
     summary = {
@@ -911,10 +991,25 @@ def sync_tmdb_library(
         "unmatched": sum(1 for item in rows if item["status"] == _UNMATCHED),
         "posterCached": sum(1 for item in rows if item["posterCached"]),
         "backdropCached": sum(1 for item in rows if item["backdropCached"]),
+        "peopleMatched": len(people_matched_ids),
+        "peopleProfileCached": len(people_profile_cached_ids),
+        "peopleMatchedByCombinedCredits": people_combined_match_count,
+        "peopleMatchedByUniqueExactSearch": people_unique_exact_match_count,
+        "peopleMatchedByCreditAlias": people_credit_alias_match_count,
+        "peopleMatchedByReviewedAlias": people_reviewed_alias_match_count,
+        "peopleMatchedByReviewedWorkPerson": people_reviewed_work_person_match_count,
+        "peopleSyncFailures": people_sync_failures,
     }
     json_path, csv_path = _write_report(Path(report_dir), rows, summary)
+    people_audit = audit_tmdb_people_profiles(
+        database_path,
+        report_dir,
+        token,
+        client=tmdb,
+    )
     return {
         "summary": summary,
         "jsonReport": str(json_path),
         "csvReport": str(csv_path),
+        "peopleAudit": people_audit,
     }

@@ -68,7 +68,7 @@ class TmdbDetailMetadataRefreshV110Tests(unittest.TestCase):
             _refresh_matched_candidate_details(FakeClient(), old)
 
     def test_repair_version_is_incremented_for_existing_run167_installs(self):
-        self.assertEqual(_IMAGE_CACHE_REPAIR_VERSION, 2)
+        self.assertEqual(_IMAGE_CACHE_REPAIR_VERSION, 3)
 
 
 if __name__ == "__main__":

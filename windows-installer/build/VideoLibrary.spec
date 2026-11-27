@@ -11,6 +11,9 @@ assets = [
     "service-worker.js",
     "offline.html",
     "icon.svg",
+    "cinema-header.svg",
+    "cinema-sidebar.svg",
+    "cinema-footer.svg",
 ]
 datas = [(str(SRC / name), ".") for name in assets]
 for tool_name in ("ffprobe.exe", "ffmpeg.exe"):

@@ -42,7 +42,7 @@
 - SQLiteバックアップ / 復元予約 / ロールバック
 
 ### Phase 6: ffprobe / 字幕 / Windowsインストーラー
-- SQLite schema 4
+- Phase 6でSQLite schema 4を導入（現在は1.3.0 / schema 9）
 - ffprobeによるコンテナ・Codec・解像度・再生時間取得
 - 埋込字幕stream数取得
 - 外部字幕 `.srt` / `.vtt` / `.ass` / `.ssa` を検出
@@ -148,13 +148,81 @@
 - Tailscale Serve / PWA / 外部字幕 / 日本語音声優先 / FFmpeg互換変換 / PlaybackCache / Backup / 全件監査を正式版の基準として固定
 - 元動画・字幕・SQLite利用者状態を自動変更しない方針を維持
 
-### 1.1.0: クレジット表示と人物別作品検索（第1段階）
-- 既存メタデータの `監督／演出`、`主な出演者／声優` を作品詳細に表示
-- 人物名をクリックすると、その人物が関わる登録作品一覧を表示
-- 人物別一覧は既存の作品検索APIを再利用し、この段階では外部通信を追加しない
-- 外国人名の中黒 `・` を人物区切りとして扱わず、クレジット文字列を安全側で分割
-- TMDb API Read Access TokenのBearer認証、schema 5の作品紐付け／APIキャッシュ基盤、ランチャーのTMDb設定を追加
-- 作品自動マッチング、人物ID、ポスター／背景画像、レトロ映画館UIは次段階で追加
+### 1.1.0: TMDb・映画館UI・人物名鑑
+- 表示バージョンは `1.1.0`
+- SQLiteは当時schema 7
+- 既存メタデータの `監督／演出`、`主な出演者／声優` を作品詳細に表示し、人物から登録作品を検索可能
+- TMDb API Read Access TokenをBearer認証で使用し、作品照合・overview・poster/backdropを追加
+- 作品matcherはversion 8。高信頼の `MATCHED` だけ画像・overviewを採用し、集約作品や構造不一致は安全側で `REVIEW / UNMATCHED`
+- Web UIを「関町北映画館」のレトロ映画館デザインへ統一し、PC / Tablet / SmartphoneのPlaywright E2Eで確認
+- 「主な出演者／声優」は安全にTMDb人物IDが確定した場合だけ顔写真を表示
+- 人物同期version 9、人物監査version 8。実機997人の監査で未説明残件0を確認
+- 「監督／演出」は名前・作品数のテキスト名鑑のみ。顔写真用TMDb人物同期は行わない
+- TMDb作品画像キャッシュは `work_id + remote_path hash` で識別し、同じwork_idに残った旧別作品画像を再利用しない
+- TMDb作品監査と人物監査は `%LOCALAPPDATA%\VideoLibrary\diagnostics` へJSON/CSVで保存
+
+### 1.2.0: 作品表示設定
+- 表示バージョンは `1.2.0`
+- SQLiteは現行schema 8
+- 作品単位で `表示する / 非表示` を設定可能
+- 既存作品・新規取込作品の初期値は「表示する」
+- 非表示は削除ではなく、動画・TMDb情報・お気に入り・視聴履歴を保持
+- 通常の作品目録、検索、上映中、次回上映、人物名鑑、お気に入り、履歴等から非表示作品を除外
+- `#/work/{id}` の直接URLは非表示作品でも開ける
+- Ownerだけが作品詳細または作品目録の表示設定モードから変更可能
+- 表示設定モードでは `表示中 / 非表示 / すべて` を切替え、複数作品を一括表示／非表示可能
+- metadata再取込では `is_visible` を上書きせず、設定を保持
+- PWA shellは `video-library-shell-v5`
+
+
+### 1.2.1: 表示設定をWindowsランチャーへ移動
+- 表示バージョンは `1.2.1`
+- SQLite schema 8を維持
+- Windowsランチャーに「表示設定」ボタンを追加
+- 登録済み全作品をチェックリストで表示し、チェックされた作品だけをブラウザへ表示
+- 「すべて選択 / すべて解除」チェックボックスで全件を一括切替
+- 保存時にチェック状態をDBへ一括反映
+- ブラウザから表示／非表示を変更するUIとAPIは撤去
+- 非表示作品は作品詳細・動画詳細・動画配信・字幕・作品画像もブラウザから取得不可
+- metadata再取込でも `is_visible` は保持
+- PWA shellは `video-library-shell-v6`
+
+### 1.2.2: 表示設定に作品名フィルターを追加
+- 表示バージョンは `1.2.2`
+- SQLite schema 8を維持
+- Windowsランチャーの表示設定に「作品名フィルター」を追加
+- 作品名の部分一致で入力中に即時絞り込み
+- 大文字小文字を区別せず、Unicode NFKCで正規化
+- 前後空白を無視
+- 「クリア」ボタンで全作品表示へ戻せる
+- `表示 n / 全m作品` の件数を表示
+- フィルター中に隠れた作品のチェック状態を保持
+- 「すべて選択 / すべて解除」は従来どおり全作品へ適用
+- PWA shellは `video-library-shell-v6` のまま
+
+### 1.2.3: ジブリ追加後の人物別名補正
+- 表示バージョンは `1.2.3`
+- SQLite schema 8、TMDb matcher version 8、PWA shell v6を維持
+- 2026-09-20に追加したStudio Ghibli Collection 25作品はTMDb作品監査で25/25 MATCHED
+- `風立ちぬ` の公式出演者「スティーブン・アルパート」とTMDb creditsの `Stephen Alpert` を監査済み別名として安全に結び付け
+- 別名は対象のMATCHED作品credits内で完全一致し、person IDが1件に確定する場合だけ採用
+- 人物同期version 10、人物監査version 9
+- schema migrationはなく、既存DB・表示設定・利用者状態を保持
+
+### 1.3.0: Tailscaleユーザーごとの表示設定（現行）
+- 表示バージョンは `1.3.0`
+- SQLite schema 9
+- 従来の `works.is_visible` は「共通設定」として継続
+- Tailscale Serveで識別された利用者ごとに、作品の表示／非表示を個別設定可能
+- 個別設定がない作品・ユーザーは共通設定を継承
+- Windowsランチャーの表示設定に「対象ユーザー」を追加し、`共通設定` またはアクセス済みTailscaleユーザーを選択
+- ユーザー個別設定は「共通設定に戻す」で解除可能
+- 作品名フィルター、すべて選択／解除、選択件数表示を継続
+- 作品一覧・詳細・動画・字幕・TMDb画像・人物名鑑・お気に入り・履歴等へ同じユーザー別visibilityを適用
+- 非表示作品は、そのユーザーから直接URLを指定しても404
+- ブラウザ側にvisibility管理UI/APIは追加しない
+- 未設定ユーザーは1.2.3までと同じ共通表示になるため、アップグレード直後の表示は変わらない
+- TMDb matcher 8、人物同期10、人物監査9、PWA shell v6を維持
 
 対象動画拡張子: `.mkv`, `.mp4`, `.avi`, `.webm`, `.mpg`, `.flv`, `.m4v`, `.mov`, `.wmv`
 
@@ -224,6 +292,9 @@ CI / Releaseで生成された `VideoLibrary-<version>-setup.exe` を実行し�
 ├─ config.json
 ├─ runtime.json
 ├─ metadata\video_library.json
+├─ PlaybackCache\
+├─ TMDbImages\
+├─ diagnostics\
 ├─ Backups\
 └─ Logs\
 ```
@@ -290,13 +361,17 @@ Tailscale Serveが付与する本人情報を `user_identities` へ紐付けま�
 ## PWA
 PWAがキャッシュするのはHTML/manifest/icon/offline shell等のアプリシェルのみです。
 
-以下はキャッシュ対象外です。
+以下はService Workerのキャッシュ対象外です。
 - `/api/*`
 - `/video/*`
 - `/subtitle/*`
+- `/tmdb-image/*`
+- `/tmdb-person-image/*`
 - SQLite
 - `video_library.json`
 - 視聴履歴などの個人状態
+
+PWA shellは `video-library-shell-v6`。更新時は旧shell cacheを削除し、manifest / offline shell / iconを現行版へ切り替えます。
 
 ## バックアップ・復元
 
@@ -344,34 +419,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\windows-installer\build\bu
 CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsインストーラーも生成します。
 
 ## ドキュメント
+
+### 現在仕様
 - [基本設計](docs/00-basic-design.md)
 - [DB設計](docs/01-database-design.md)
 - [画面設計](docs/02-screen-design.md)
 - [API設計](docs/03-api-design.md)
-- [Phase 1](docs/04-phase1-design.md)
-- [Phase 2](docs/05-phase2-implementation.md)
-- [Phase 3](docs/06-phase3-implementation.md)
-- [Phase 4](docs/07-phase4-implementation.md)
-- [Phase 5](docs/08-phase5-implementation.md)
-- [Phase 6](docs/09-phase6-implementation.md)
-- [0.6.9 起動時スキャンフロー](docs/20-0.6.9-startup-scan-flow.md)
-- [0.7.0 スキャン診断](docs/21-0.7.0-scan-diagnostics.md)
-- [0.7.1 Unicode / 文字化けパス修復](docs/22-0.7.1-unicode-path-repair.md)
-- [0.7.2 安全な字幕一意照合](docs/23-0.7.2-safe-subtitle-match.md)
-- [0.7.3 ランチャーUI統一](docs/24-0.7.3-launcher-ui-parity.md)
-- [0.7.4 残存字幕照合](docs/24-0.7.4-residual-subtitle-matching.md)
-- [0.7.5 対応動画なし字幕診断](docs/25-0.7.5-orphan-subtitle-diagnostics.md)
-- [0.7.6 字幕判定表示](docs/26-0.7.6-diagnostics-subtitle-judgement.md)
-- [0.7.7 整合性整理](docs/27-0.7.7-consistency-cleanup.md)
-- [0.7.8 MKV複数音声の日本語優先再生](docs/28-0.7.8-japanese-audio-default.md)
-- [0.7.9 動画版Tailscale外部URLの分離](docs/29-0.7.9-video-remote-url.md)
-- [0.8.0 外部字幕のブラウザ再生](docs/30-0.8.0-external-subtitle-playback.md)
-- [全動画形式再生CI](docs/31-playback-format-ci.md)
-- [0.9.0 互換再生とプレイヤーモーダル](docs/31-0.9.0-playback-runtime-modal.md)
-- [0.9.1 再生キャッシュ容量管理](docs/32-0.9.1-playback-cache-management.md)
-- [0.9.2 実ライブラリ全件再生監査](docs/33-0.9.2-playback-audit.md)
-- [1.1.0 既存クレジット表示と人物クリック作品検索](docs/40-1.1.0-credits-person-links.md)
-- [1.1.0 TMDb連携基盤](docs/41-1.1.0-tmdb-foundation.md)
+- [TMDb作品照合・ポスター／背景画像](docs/42-1.1.0-tmdb-matching-images.md)
+- [人物名鑑ナビゲーション](docs/59-1.1.0-navigation-people-menu.md)
+- [主な出演者／声優 顔写真](docs/67-1.1.0-cast-voice-profile-images-phase1.md)
+- [人物監査の残件resolution](docs/76-1.1.0-people-audit-residual-resolution.md)
+- [監督／演出 顔写真機能の撤回](docs/77-1.1.0-director-profile-images-withdrawn.md)
+- [TMDb作品画像キャッシュ識別修正](docs/78-1.1.0-tmdb-image-cache-identity.md)
+- [1.1.0 ソース・ドキュメント最終整合性監査](docs/79-1.1.0-final-consistency-audit.md)
+- [1.1.0 正式リリースノート](docs/80-1.1.0-release.md)
+- [1.2.0 作品表示設定](docs/81-1.2.0-work-visibility.md)
+- [1.2.0 正式リリースノート](docs/82-1.2.0-release.md)
+- [1.2.1 Windowsランチャー表示設定](docs/83-1.2.1-launcher-work-visibility.md)
+- [1.2.1 正式リリースノート](docs/84-1.2.1-release.md)
+- [1.2.2 表示設定フィルター](docs/85-1.2.2-launcher-visibility-filter.md)
+- [1.2.2 正式リリースノート](docs/86-1.2.2-release.md)
+- [1.2.3 Stephen Alpert監査済み別名補正](docs/87-1.2.3-stephen-alpert-alias.md)
+- [1.2.3 正式リリースノート](docs/88-1.2.3-release.md)
+- [1.3.0 Tailscaleユーザーごとの表示設定](docs/89-1.3.0-tailscale-user-visibility.md)
+- [1.3.0 正式リリースノート](docs/90-1.3.0-release.md)
+
+### 実装履歴
+Phase別・バージョン別の詳細記録は `docs/` 配下に保持します。過去時点の設計判断を残すため、履歴文書は現在仕様へ機械的に書き換えません。
 
 ## 正本
 - 動画そのもの: ユーザー指定の動画フォルダー
@@ -380,18 +454,27 @@ CIはWindows / Python 3.11・3.13です。全テスト成功後にWindowsイン�
 
 元動画・字幕を変更・削除・移動しないことを設計原則とします。
 
-## TMDb作品照合とポスター（1.1.0）
+## TMDb作品照合・人物画像（1.1.0）
 
-ランチャーの `TMDb設定` で API Read Access Token を設定した後、ライブラリ停止中に `TMDb同期` を実行できます。作品名・年・種別から保守的に照合し、高信頼の `MATCHED` だけを自動確定して poster/backdrop を `%LOCALAPPDATA%\VideoLibrary\TMDbImages` に保存します。低信頼候補は `REVIEW` として監査CSVへ残し、画像は採用しません。
+ランチャーの `TMDb設定` でAPI Read Access Tokenを設定すると、ライブラリ停止中に `TMDb同期` を実行できます。
 
-同期結果は `%LOCALAPPDATA%\VideoLibrary\diagnostics\tmdb-match-audit-*.json/.csv` に保存します。TMDb未設定や通信失敗でも、動画再生・字幕・利用者状態など既存機能はそのまま利用できます。
+作品名・年・種別から保守的に照合し、matcher version 8で安全に確定した `MATCHED` だけを作品情報の補助として利用します。
+
+- overview
+- poster
+- backdrop
+- 主な出演者／声優のTMDb人物IDとprofile image
+
+低信頼候補、複数作品をまとめたローカル作品、ローカル/TMDb構造が1対1でない作品は `REVIEW` / `UNMATCHED` を維持します。
+
+作品画像は `%LOCALAPPDATA%\VideoLibrary\TMDbImages` に保存します。キャッシュ名は現在のTMDb `remote_path` のhashを含むため、TMDbリンク修正後に同じwork_idの古い別作品画像を再利用しません。ブラウザへは `/tmdb-image/poster/{workId}` / `backdrop` の同一origin URLだけを返します。
+
+主な出演者／声優の顔写真は `/tmdb-person-image/{personId}` から表示します。監督／演出はテキスト名鑑のみで、顔写真は表示しません。
+
+監査レポート:
+- `tmdb-match-audit-*.json/.csv`
+- `tmdb-people-audit-*.json/.csv`
+
+保存先は `%LOCALAPPDATA%\VideoLibrary\diagnostics` です。TMDb未設定や通信失敗でも、ローカルメタデータ、動画再生、字幕、利用者状態は利用できます。
 
 TMDB attribution: This product uses the TMDB API but is not endorsed or certified by TMDB.
-
-### TMDb複合カテゴリ照合（1.1.0-a2）
-
-`日本映画・ドラマ` / `海外映画・ドラマ` はmovieとtvの両方を検索します。旧ロジックで作成された既存MATCHEDはmatcher version 2への初回移行時だけ再評価し、その後は従来どおり確定済みMATCHEDを保護します。
-
-### TMDb監査ランタイム識別（1.1.0）
-
-TMDb監査JSON/CSVには `appVersion` と `matcherVersion` を記録します。matcher更新時は内部version差分で既存MATCHEDを一度だけ再評価し、実機監査ファイルだけで実行ロジックを識別できます。

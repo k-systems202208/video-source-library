@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#1a100d">
+  <meta name="theme-color" content="#120e0c">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg">
-  <title>シネマ蔵書館</title>
+  <title>関町北映画館</title>
   <style>
     :root{color-scheme:dark;--bg:#111318;--panel:#191c22;--panel2:#14171c;--line:#303641;--text:#f2f4f7;--muted:#a8b0bd;--accent:#e7b85c;--accent2:#f6d994;--danger:#ef8b8b;--ok:#83cf9a}
-    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+    *{box-sizing:border-box}.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
     button,input,select{font:inherit}.app{max-width:1240px;margin:0 auto;padding:20px 20px 80px}header{display:flex;gap:18px;align-items:flex-end;justify-content:space-between;margin-bottom:20px}.brand h1{margin:0}.brand p{margin:5px 0 0;color:var(--muted)}.header-actions{display:flex;gap:10px;align-items:center}.stats,.scan-status,.user{font-size:12px;color:var(--muted)}
     .toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;margin-bottom:12px}.search,.sort{background:var(--panel);border:1px solid var(--line);color:var(--text);padding:11px 13px;border-radius:12px}.chips,.groups,.tags{display:flex;gap:8px;overflow:auto;flex-wrap:wrap}.chips{padding-bottom:14px}.chip,.ghost,.primary,.group,.action,.tag{border:1px solid var(--line);border-radius:999px;padding:8px 13px;background:var(--panel);color:var(--text)}button.chip,button.ghost,button.primary,button.group,button.action{cursor:pointer}.chip.active,.primary{background:var(--accent);color:#17130c;border-color:var(--accent);font-weight:700}.action.on{border-color:var(--accent);color:var(--accent2)}.tag{padding:5px 9px;font-size:12px;color:var(--muted)}
     .home-strip{margin:0 0 22px}.home-strip h2{font-size:16px;margin:0 0 10px}.strip{display:flex;gap:12px;overflow:auto;padding:2px 2px 8px}.mini{min-width:300px;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:14px;display:grid;grid-template-columns:76px minmax(0,1fr);overflow:hidden;cursor:pointer;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}.mini:hover,.mini:focus-within{transform:translateY(-2px);border-color:#5d5138;box-shadow:0 10px 28px rgba(0,0,0,.24)}.mini-poster{width:76px;height:114px;object-fit:cover;display:block;background:linear-gradient(145deg,#29231a,#111318)}.mini-poster-fallback{width:76px;height:114px;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#29231a,#111318);color:var(--accent2);font-size:22px;font-weight:800}.mini-body{min-width:0;padding:12px 13px}.mini strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.mini small{color:var(--muted);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.progress{height:5px;background:#303641;border-radius:99px;margin-top:9px;overflow:hidden}.progress>span{display:block;height:100%;background:var(--accent)}
@@ -21,45 +21,368 @@
     @media(max-width:700px){.hero-layout{grid-template-columns:100px minmax(0,1fr)}.hero-poster{width:100px}.player-modal{padding:0}.player-dialog{width:100%;height:100dvh;max-height:none;border-radius:0;padding:12px}.player-modal .player{max-height:65vh}header{align-items:flex-start;flex-direction:column}.header-actions{width:100%;justify-content:space-between}.toolbar{grid-template-columns:1fr}.grid{grid-template-columns:1fr 1fr}.hero-line{display:block}.hero-actions{margin-top:10px}.episode{grid-template-columns:78px 1fr}.episode-state{grid-column:2}.tech{grid-template-columns:1fr 1fr}.scan-counts{grid-template-columns:1fr 1fr}}
     @media(max-width:440px){.grid{grid-template-columns:1fr}.mini{min-width:270px}.tech{grid-template-columns:1fr}.scan-counts{grid-template-columns:1fr}}
 
-    /* cinema-library-theme-v1: classic private cinema */
-    :root{--bg:#100c0a;--panel:#1b1511;--panel2:#15100d;--line:#574226;--text:#f4ead8;--muted:#b9aa90;--accent:#c9a45b;--accent2:#f1d493;--wine:#741c22;--wine2:#9a2f35;--danger:#e58d85;--ok:#8fc39b}
-    html,body{background:radial-gradient(circle at 50% -20%,rgba(116,28,34,.20),transparent 34rem),linear-gradient(180deg,#15100d 0,#100c0a 38rem,#0c0908 100%);color:var(--text)}
-    body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;opacity:.24;background:repeating-linear-gradient(90deg,rgba(255,255,255,.012) 0,rgba(255,255,255,.012) 1px,transparent 1px,transparent 5px)}
-    .app{max-width:1320px;padding-top:18px}
-    header{position:relative;padding:18px 20px 16px;margin-bottom:24px;border:1px solid rgba(201,164,91,.46);border-left:0;border-right:0;background:linear-gradient(90deg,rgba(116,28,34,.20),rgba(27,21,17,.94) 22%,rgba(27,21,17,.94) 78%,rgba(116,28,34,.14));box-shadow:0 14px 34px rgba(0,0,0,.24)}
-    .brand h1,.home-strip h2,.card h2,.hero h1,.hero h2,.player-dialog-head h2,.scan-dialog h2{font-family:"Yu Mincho","Hiragino Mincho ProN","Hiragino Mincho Pro",Georgia,serif}
-    .brand h1{font-size:30px;letter-spacing:.12em;color:#f3dfb0;text-shadow:0 1px 0 #5d3f16,0 0 24px rgba(201,164,91,.16)}
-    .brand p{font-family:Georgia,"Times New Roman",serif;font-size:11px;letter-spacing:.22em;color:#c8aa72;text-transform:uppercase}
-    .toolbar{margin-bottom:16px}.search,.sort{background:rgba(21,16,13,.94);border-color:#5c4729;box-shadow:inset 0 1px 0 rgba(255,255,255,.025)}.search:focus,.sort:focus{outline:1px solid var(--accent);border-color:var(--accent)}
-    .chips{border-bottom:1px solid rgba(201,164,91,.28);margin-bottom:18px}.chip,.ghost,.group,.action,.tag{background:linear-gradient(180deg,#211913,#17110e);border-color:#5b4529}.chip:hover,.ghost:hover,.group:hover,.action:hover{border-color:var(--accent);color:var(--accent2)}.chip.active,.primary{background:linear-gradient(180deg,var(--wine2),var(--wine));color:#fff3de;border:1px solid #d4b061;box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 4px 14px rgba(0,0,0,.20)}
-    .home-strip{padding:0 0 5px}.home-strip h2{display:flex;align-items:center;gap:10px;font-size:18px;letter-spacing:.08em;color:#edcf8b}.home-strip h2::before{content:"◆";font-size:10px;color:var(--wine2);text-shadow:0 0 8px rgba(201,164,91,.25)}.home-strip h2::after{content:"";height:1px;flex:1;background:linear-gradient(90deg,rgba(201,164,91,.55),transparent)}
-    .mini{background:linear-gradient(145deg,#211811,#15100d);border-color:#594326;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.20)}.mini:hover,.mini:focus-within{border-color:#c19a52;box-shadow:0 12px 30px rgba(0,0,0,.34),0 0 0 1px rgba(201,164,91,.10)}.mini-poster,.mini-poster-fallback{border-right:1px solid rgba(201,164,91,.38)}
-    .grid{gap:18px}.card{background:linear-gradient(180deg,#1e1712,#15100d);border:1px solid #5f492b;border-radius:7px;box-shadow:0 11px 30px rgba(0,0,0,.23)}.card:hover,.card:focus-within{transform:translateY(-4px);border-color:#c7a05a;box-shadow:0 16px 40px rgba(0,0,0,.38),0 0 0 1px rgba(201,164,91,.09)}.poster{margin:7px 7px 0;aspect-ratio:2/3;border:1px solid #8a6936;border-bottom-color:#6a4f2a;background:#120d0a;box-shadow:inset 0 0 0 3px #24190f,0 5px 14px rgba(0,0,0,.36)}.poster::before{content:"";position:absolute;inset:3px;border:1px solid rgba(238,205,138,.20);z-index:2;pointer-events:none}.card-body{padding:13px 15px 16px}.badge,.ep-no{color:#e4bf72;letter-spacing:.04em}.card h2{color:#f7eddd;font-size:18px}.card-foot{border-top:1px solid rgba(201,164,91,.18);padding-top:10px;margin-top:12px}
-    .hero{border-radius:8px;border:1px solid #765a32;background:#1b1511;box-shadow:0 18px 44px rgba(0,0,0,.32)}.hero.has-backdrop::before{background:linear-gradient(90deg,rgba(15,10,8,.98) 0%,rgba(15,10,8,.86) 42%,rgba(15,10,8,.68) 70%,rgba(15,10,8,.88) 100%)}.hero-poster{border-radius:3px;border:1px solid #b28b48;box-shadow:0 0 0 5px #1a120c,0 0 0 6px #624927,0 14px 34px rgba(0,0,0,.55)}.hero-body h1,.hero-body h2{letter-spacing:.06em;color:#fff0d1}.overview{color:#e5dac7}.credits{border-top-color:rgba(201,164,91,.34)}.credit-label{color:#d1b781}.person-link{background:rgba(24,17,13,.82);border-color:#67502f;color:#f0d08a}.person-link:hover,.person-link:focus-visible{background:#2a1d14;border-color:#cba65c}
-    .groups{border-top:1px solid rgba(201,164,91,.24);padding-top:16px}.group.active{background:rgba(116,28,34,.24);border-color:#caa25b;color:#f1d493}.episode,.video-detail,.tech-item{background:linear-gradient(180deg,#1b1511,#14100d);border-color:#574226;border-radius:6px}.episode:hover{border-color:#aa8348;background:#211711}.progress,.scan-track{background:#33251a}.progress>span,.scan-bar{background:linear-gradient(90deg,#7d1f24,#c89f56)}
-    .player-dialog,.scan-dialog{background:linear-gradient(180deg,#1d1611,#120e0b);border-color:#6d522d;border-radius:8px}.player-status,.scan-current{background:#140f0c;border-color:#503c24}.tmdb-credit{border-top-color:rgba(201,164,91,.22);color:#8f806c}.tmdb-credit a{color:#c9a45b}
-    #back{margin-bottom:14px}.load .primary{padding-left:20px;padding-right:20px}
-    @media(max-width:700px){header{padding:14px 2px 14px;background:none;border-top-color:rgba(201,164,91,.32)}.brand h1{font-size:25px}.app{padding-left:14px;padding-right:14px}.grid{gap:12px}.poster{margin:5px 5px 0}.hero{padding:16px}.hero-poster{box-shadow:0 0 0 3px #1a120c,0 0 0 4px #624927,0 10px 24px rgba(0,0,0,.48)}}
+    /* CINEMA_LIBRARY_BASE_DESIGN_V1 */
+    :root{
+      --bg:#100d0b;--panel:#1b1714;--panel2:#15110f;--line:#4b3b2c;
+      --text:#f3ead8;--muted:#b8aa95;--accent:#c59a4a;--accent2:#f1d99a;
+      --cinema-red:#6f171b;--cinema-red2:#932a29;--brass:#b88b3e;--cream:#efe2c7;
+    }
+    html,body{background:radial-gradient(circle at 50% -20%,rgba(111,23,27,.18),transparent 36rem),linear-gradient(180deg,#120f0d 0%,#0d0b0a 100%);color:var(--text)}
+    body::before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.10;z-index:-1;background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.03) 0 1px,transparent 1px 5px)}
+    .app{max-width:1320px;padding-top:14px}
+    header{position:relative;align-items:center;margin-bottom:24px;padding:14px 18px 16px;border:1px solid #58432e;border-radius:6px;background:linear-gradient(180deg,#251b16,#17120f);box-shadow:inset 0 1px rgba(255,255,255,.05),0 12px 30px rgba(0,0,0,.28)}
+    header::before,header::after{content:"";position:absolute;left:12px;right:12px;height:1px;background:linear-gradient(90deg,transparent,var(--brass),transparent)}
+    header::before{top:5px}header::after{bottom:5px}
+    .brand-kicker{font:600 10px/1.3 Georgia,"Times New Roman",serif;letter-spacing:.24em;color:var(--accent);margin-bottom:4px}
+    .brand h1{font-family:"Yu Mincho","Hiragino Mincho ProN",Georgia,serif;font-size:30px;letter-spacing:.06em;color:var(--cream);text-shadow:0 1px #000}
+    .brand-mark{display:inline-grid;place-items:center;color:var(--accent);font-size:.8em;transform:translateY(-1px)}
+    .brand p{font-family:"Yu Mincho","Hiragino Mincho ProN",serif;color:#cab999;letter-spacing:.12em;font-size:12px}
+    .search,.sort{background:#14110f;border-color:#59442f;border-radius:5px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)}
+    .search:focus,.sort:focus{outline:1px solid var(--accent);border-color:var(--accent)}
+    .chip,.ghost,.group,.action,.tag{border-color:#57442f;background:linear-gradient(180deg,#211a15,#17120f);border-radius:5px}
+    .chip.active,.primary{background:linear-gradient(180deg,var(--cinema-red2),var(--cinema-red));color:#fff3df;border:1px solid #c99c4e;border-radius:5px;box-shadow:inset 0 0 0 1px rgba(255,225,164,.12);font-weight:700}
+    .ghost:hover,.group:hover,.action:hover,.chip:hover{border-color:var(--accent);color:var(--accent2)}
+    .home-strip{margin-bottom:25px;padding-top:3px}
+    .home-strip h2{display:flex;align-items:baseline;gap:8px;font-family:"Yu Mincho","Hiragino Mincho ProN",Georgia,serif;font-size:19px;letter-spacing:.06em;color:var(--cream);padding-bottom:8px;border-bottom:1px solid #59432e}
+    .home-strip h2::after{content:"";height:1px;flex:1;background:linear-gradient(90deg,#6f5636,transparent)}
+    .home-strip h2 small{font:600 9px/1.2 Georgia,serif;letter-spacing:.18em;color:var(--accent)}
+    .section-icon{font-size:9px;color:var(--accent)}
+    .mini{background:linear-gradient(145deg,#201914,#15110f);border-color:#4e3d2d;border-radius:6px;box-shadow:inset 0 0 0 1px rgba(196,151,72,.04)}
+    .mini:hover,.mini:focus-within{border-color:var(--accent);box-shadow:0 10px 28px rgba(0,0,0,.38),inset 0 0 0 1px rgba(197,154,74,.12)}
+    .mini-poster,.mini-poster-fallback{border-right:1px solid #5b442d}
+    .grid{gap:17px}
+    .card{background:linear-gradient(155deg,#211a15 0%,#171310 72%);border:1px solid #55412e;border-radius:6px;box-shadow:0 7px 20px rgba(0,0,0,.22),inset 0 0 0 1px rgba(218,174,91,.035)}
+    .card:hover,.card:focus-within{transform:translateY(-4px);border-color:#ae8240;box-shadow:0 15px 36px rgba(0,0,0,.4),0 0 0 1px rgba(197,154,74,.12)}
+    .poster{background:#0c0a09;border-bottom-color:#674c30;padding:7px}
+    .poster img,.poster-fallback{border:1px solid #76562f;box-shadow:0 5px 16px rgba(0,0,0,.45)}
+    .card-body{padding:13px 15px 16px}
+    .card h2{font-family:"Yu Mincho","Hiragino Mincho ProN",Georgia,serif;color:var(--cream);letter-spacing:.025em}
+    .badge,.ep-no{color:#d5a854;letter-spacing:.04em}
+    .progress{background:#33291f;border-radius:0}.progress>span{background:linear-gradient(90deg,#7b1c1f,#c29445)}
+    .hero{border:1px solid #644a30;border-radius:7px;background:#18130f;box-shadow:0 16px 45px rgba(0,0,0,.32)}
+    .hero.has-backdrop::before{background:linear-gradient(90deg,rgba(15,12,10,.97) 0%,rgba(15,12,10,.88) 38%,rgba(15,12,10,.67) 72%,rgba(15,12,10,.82) 100%)}
+    .hero-poster,.hero-poster-fallback{border-radius:3px;border:1px solid #b18646;box-shadow:0 12px 30px rgba(0,0,0,.58),0 0 0 5px rgba(30,23,17,.86)}
+    .hero-body h1,.hero-body h2{font-family:"Yu Mincho","Hiragino Mincho ProN",Georgia,serif;letter-spacing:.045em;color:#f5e8ce}
+    .overview{color:#ded3c1;text-shadow:0 1px 2px #000}
+    .credits{border-top-color:#674c30}
+    .credit-label{color:#c6b294;font-family:"Yu Mincho","Hiragino Mincho ProN",serif}
+    .person-link{background:rgba(25,19,15,.84);border-color:#655039;color:#f0d797;border-radius:999px}
+    .person-link:hover,.person-link:focus-visible{background:#291d15;border-color:#c59a4a}
+    .group.active,.action.on{border-color:#b88b3e;color:#efd898;background:#261d16}
+    .episode,.video-detail,.tech-item{border-color:#4e3d2d;border-radius:5px;background:linear-gradient(180deg,#1d1713,#15110f)}
+    .player-dialog,.scan-dialog{border-color:#604a33;background:#18130f;border-radius:7px}
+    .tmdb-credit{border-top-color:#493829;color:#857967;font-family:Georgia,"Times New Roman",serif;letter-spacing:.04em}
+    .available,.scan-status.ok,.watched{color:#91c493}
+    @media(max-width:700px){header{padding:13px 14px}.brand h1{font-size:25px}.brand-kicker{font-size:8px}.home-strip h2 small{display:none}.poster{padding:5px}.card-body{padding:11px 12px 14px}}
 
-  </style>
+
+    /* CINEMA_LIBRARY_DETAIL_V2 */
+    .detail #back{
+      margin:0 0 14px;padding:8px 14px;border-color:#745533;background:linear-gradient(180deg,#211812,#15100d);
+      color:#e8d6b2;font-family:"Yu Mincho","Hiragino Mincho ProN",Georgia,serif;letter-spacing:.06em
+    }
+    .detail #back:hover{border-color:#c49a52;color:#fff1cf;background:#251912}
+    .hero{
+      padding:30px 32px 32px;border-color:#735431;background:#17110d;
+      box-shadow:0 18px 54px rgba(0,0,0,.40),inset 0 0 0 1px rgba(215,171,91,.05)
+    }
+    .hero::after{content:"";position:absolute;left:18px;right:18px;bottom:8px;height:1px;background:linear-gradient(90deg,transparent,#8a6335,transparent);opacity:.65}
+    .hero.has-backdrop::before{background:linear-gradient(90deg,rgba(13,10,8,.98) 0%,rgba(13,10,8,.92) 28%,rgba(13,10,8,.72) 66%,rgba(13,10,8,.84) 100%)}
+    .hero-layout{grid-template-columns:205px minmax(0,1fr);gap:36px;align-items:start}
+    .hero-poster{width:205px;border-radius:2px;border:2px solid #b88941;box-shadow:0 16px 38px rgba(0,0,0,.62),0 0 0 6px rgba(31,22,16,.88),0 0 0 7px #5a4024}
+    .hero-poster-fallback{width:205px;min-height:307px;border-radius:2px}
+    .hero-body{padding-top:3px}
+    .hero-line{display:block}
+    .hero-title-block{max-width:880px}
+    .hero-kicker{margin-bottom:12px;color:#c59a4a;font:700 9px/1.2 Georgia,"Times New Roman",serif;letter-spacing:.28em}
+    .hero-title-block>.badge{display:inline-block;margin-bottom:9px;color:#d7ab5c;font-size:11px;letter-spacing:.10em}
+    .hero-body h2{margin:0 0 10px;font-size:clamp(32px,3.5vw,48px);line-height:1.12;letter-spacing:.055em;text-shadow:0 2px 5px #000}
+    .hero-meta{font-size:12px;color:#b9aa92;letter-spacing:.03em}
+    .hero-actions{margin-top:16px}
+    .favorite-action{padding:8px 13px;border-radius:3px!important;background:linear-gradient(180deg,rgba(37,27,20,.94),rgba(21,16,12,.96))!important;border-color:#8b6738!important;color:#ead4a5!important;font-size:12px;letter-spacing:.04em;box-shadow:none}
+    .favorite-action.on{background:linear-gradient(180deg,#762125,#501519)!important;border-color:#c49a52!important;color:#fff1cc!important}
+    .overview{max-width:920px;margin:22px 0 0;padding:18px 0 4px;border-top:1px solid rgba(167,121,62,.42);font-size:15px;line-height:1.9;color:#e2d8c7}
+    .credits{max-width:920px;margin-top:18px;padding-top:16px;border-top:1px solid rgba(167,121,62,.38);gap:11px}
+    .credit-row{grid-template-columns:128px minmax(0,1fr);gap:16px}
+    .credit-label{padding-top:6px;color:#c6ad82;font-size:11px;letter-spacing:.08em}
+    .credit-people{gap:7px 8px}
+    .person-link{padding:6px 12px;border-radius:3px;background:linear-gradient(180deg,rgba(43,31,22,.9),rgba(24,18,14,.94));border-color:#705333;color:#efd497;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:12px;letter-spacing:.03em;box-shadow:inset 0 0 0 1px rgba(204,159,78,.04)}
+    .person-link:hover,.person-link:focus-visible{background:#342419;border-color:#c59a4a;color:#fff0c9}
+    .program-section,.screening-list{margin-top:24px}
+    .section-heading{display:flex;align-items:baseline;gap:10px;margin:0 0 11px;padding:0 2px 8px;border-bottom:1px solid #64492e}
+    .section-heading::after{content:"";height:1px;flex:1;background:linear-gradient(90deg,#8a6539,transparent)}
+    .section-heading-jp{color:#ead9b7;font-family:"Yu Mincho","Hiragino Mincho ProN",Georgia,serif;font-size:17px;letter-spacing:.10em}
+    .section-heading-en{color:#aa8044;font:700 8px/1 Georgia,"Times New Roman",serif;letter-spacing:.22em}
+    .groups{margin:0;gap:7px}
+    .group{position:relative;padding:9px 14px 9px 18px;border-radius:2px;background:linear-gradient(180deg,#211811,#15100d);border-color:#64482d;color:#d9c5a0;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:12px;letter-spacing:.025em}
+    .group::before{content:"";position:absolute;left:7px;top:50%;width:4px;height:4px;border:1px solid #a77a3d;transform:translateY(-50%) rotate(45deg)}
+    .group:hover{border-color:#b88945;color:#fff0c8;background:#291c13}
+    .group.active{background:linear-gradient(180deg,#7c2527,#531719);border-color:#c59a4a;color:#fff0cc;box-shadow:inset 0 0 0 1px rgba(255,221,159,.09),0 5px 14px rgba(0,0,0,.20)}
+    .group.active::before{background:#d4a95c;border-color:#f1d99a}
+    .screening-list{margin-top:19px}
+    .episodes{gap:7px}
+    .episode{grid-template-columns:72px minmax(0,1fr) 120px;gap:17px;padding:14px 17px;border-radius:3px;border-color:#4d3928;background:linear-gradient(180deg,rgba(30,23,18,.96),rgba(20,16,13,.98));transition:border-color .15s ease,background .15s ease,transform .15s ease}
+    .episode:hover{border-color:#8e683a;background:linear-gradient(180deg,#261b14,#18120e);transform:translateX(2px)}
+    .ep-no{align-self:stretch;display:flex;align-items:center;padding-right:13px;border-right:1px solid #61482e;color:#d2a34f;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:10px;letter-spacing:.05em}
+    .episode-title{color:#f0e2c7;font-family:"Yu Mincho","Hiragino Mincho ProN",Georgia,serif;font-size:16px;line-height:1.4;letter-spacing:.03em}
+    .episode-main small{margin-top:5px;color:#8f8374;font-size:10px;letter-spacing:.025em}
+    .episode-state{justify-content:flex-end;align-items:center;color:#d7c5a6;font-size:11px;white-space:nowrap}
+    .episode-state.watched{color:#9ac89b}
+    header{padding:16px 20px 18px;background:radial-gradient(circle at 11% 20%,rgba(133,37,38,.13),transparent 20rem),linear-gradient(180deg,#271c16,#17110e)}
+    .brand-kicker{font-size:9px;letter-spacing:.30em}
+    .brand h1{font-size:33px;letter-spacing:.075em}
+    .brand-mark{width:27px;height:27px;border:1px solid #b88b3e;border-radius:50%;font-size:13px;vertical-align:middle;box-shadow:inset 0 0 0 3px rgba(184,139,62,.08)}
+    .brand p{margin-top:7px;font-size:11px;letter-spacing:.16em;color:#d0b98f}
+    @media(max-width:900px){
+      .hero-layout{grid-template-columns:170px minmax(0,1fr);gap:28px}.hero-poster{width:170px}.hero-poster-fallback{width:170px;min-height:255px}.hero-body h2{font-size:36px}
+    }
+    @media(max-width:700px){
+      .hero{padding:22px 18px 24px}.hero-layout{grid-template-columns:112px minmax(0,1fr);gap:20px}.hero-poster{width:112px;box-shadow:0 10px 24px rgba(0,0,0,.55),0 0 0 4px rgba(31,22,16,.88),0 0 0 5px #5a4024}.hero-poster-fallback{width:112px;min-height:168px}.hero-kicker{font-size:7px;margin-bottom:8px}.hero-body h2{font-size:28px}.overview{grid-column:1/-1;font-size:13px;line-height:1.75}.credits{grid-column:1/-1}.credit-row{grid-template-columns:1fr;gap:5px}.credit-label{padding-top:0}.episode{grid-template-columns:58px minmax(0,1fr);gap:11px;padding:12px}.episode-state{grid-column:2;justify-content:flex-start}.ep-no{padding-right:9px}.episode-title{font-size:14px}.section-heading-jp{font-size:15px}.brand h1{font-size:27px}
+    }
+    @media(max-width:440px){
+      .hero-layout{grid-template-columns:90px minmax(0,1fr);gap:16px}.hero-poster{width:90px}.hero-poster-fallback{width:90px;min-height:135px}.hero-body h2{font-size:23px}.hero-actions{margin-top:11px}.favorite-action{padding:6px 9px;font-size:11px}.program-section,.screening-list{margin-top:20px}
+    }
+
+    /* CINEMA_LIBRARY_CATALOG_V3 */
+    .header-actions{gap:14px;align-items:center;padding-left:24px;border-left:1px solid rgba(184,139,62,.25)}
+    .header-actions>div{position:relative;min-width:250px;padding-top:12px;text-align:left}
+    .header-actions>div::before{content:"ARCHIVE STATUS";position:absolute;top:0;left:0;color:#957044;font:700 7px/1 Georgia,"Times New Roman",serif;letter-spacing:.22em}
+    .header-actions .user,.header-actions .stats,.header-actions .scan-status{font-size:10px;line-height:1.45;color:#9d8f7b}
+    #scanButton{padding:8px 11px;border-radius:2px;font-size:11px;color:#cdb68f;border-color:#62482f;background:#17110e}
+    #scanButton:hover{border-color:#a37b43;color:#f0ddb5}
+    .home-strip{position:relative;margin:0 0 28px;padding:16px 17px 14px;border:1px solid #4d3928;border-radius:4px;background:linear-gradient(180deg,rgba(31,23,18,.92),rgba(17,13,11,.96));box-shadow:0 10px 26px rgba(0,0,0,.18)}
+    .home-strip::before{content:"";position:absolute;inset:5px;border:1px solid rgba(184,139,62,.08);pointer-events:none}
+    .home-strip h2{position:relative;margin:0 0 13px;padding:0 0 9px;border-bottom:1px solid #5d432b;font-size:19px;letter-spacing:.09em}
+    .home-strip h2 small{margin-left:2px;font-size:8px;letter-spacing:.24em}
+    .home-strip .section-icon{font-size:8px;color:#c79b4b}
+    .strip{position:relative;gap:14px;padding-bottom:5px}
+    .mini{min-width:330px;max-width:390px;grid-template-columns:92px minmax(0,1fr);border-radius:3px;border-color:#60472f;background:linear-gradient(145deg,#251b15,#15110e);box-shadow:0 6px 18px rgba(0,0,0,.25),inset 0 0 0 1px rgba(211,163,76,.035)}
+    .mini::after{content:"NOW IN ARCHIVE";position:absolute;right:10px;bottom:8px;color:#765a37;font:700 6px/1 Georgia,"Times New Roman",serif;letter-spacing:.16em;pointer-events:none}
+    #nextSection .mini::after{content:"NEXT PROGRAM"}
+    .mini{position:relative}
+    .mini-poster,.mini-poster-fallback{width:92px;height:138px;border-right:1px solid #725333;background:#0d0a08}
+    .mini-body{padding:13px 14px 20px}
+    .mini strong{font-family:"Yu Mincho","Hiragino Mincho ProN",Georgia,serif;font-size:15px;line-height:1.45;color:#f0dfbd;letter-spacing:.025em}
+    .mini small{margin-top:5px;color:#9e907d;font-size:10px}
+    .mini .progress{margin-top:11px;height:3px;background:#35271d}
+    .catalog{margin-top:8px;padding-top:4px}
+    .catalog-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin:0 0 17px;padding:0 2px 13px;border-bottom:1px solid #674a2e}
+    .catalog-title-block{min-width:0}
+    .catalog-kicker{margin-bottom:6px;color:#a67a40;font:700 8px/1 Georgia,"Times New Roman",serif;letter-spacing:.28em}
+    .catalog-heading h2{display:flex;align-items:baseline;gap:10px;margin:0;color:#efdfbf;font-family:"Yu Mincho","Hiragino Mincho ProN",Georgia,serif;font-size:24px;letter-spacing:.09em;font-weight:600}
+    .catalog-heading h2 small{color:#a77a40;font:700 8px/1 Georgia,"Times New Roman",serif;letter-spacing:.25em}
+    .catalog-heading p{margin:6px 0 0;color:#8f8270;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:11px;letter-spacing:.06em}
+    .catalog-count{flex:0 0 auto;min-width:122px;padding:8px 11px 7px;border-left:1px solid #62472e;text-align:right}
+    .catalog-count strong{display:block;color:#d7bb84;font:500 16px/1.2 "Yu Mincho","Hiragino Mincho ProN",serif;letter-spacing:.05em}
+    .catalog-count small{display:block;margin-top:4px;color:#755a38;font:700 6px/1 Georgia,"Times New Roman",serif;letter-spacing:.17em}
+    .catalog-tools{grid-template-columns:minmax(0,1fr) 190px;gap:12px;margin:0 0 13px;padding:14px;border:1px solid #493728;border-radius:3px;background:linear-gradient(180deg,#1d1612,#14100d)}
+    .catalog-tool{display:grid;gap:6px;min-width:0}
+    .catalog-tool>span{color:#b59c76;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:10px;letter-spacing:.08em}
+    .catalog-tool>span small{margin-left:5px;color:#705637;font:700 6px/1 Georgia,"Times New Roman",serif;letter-spacing:.18em}
+    .catalog-tools .search,.catalog-tools .sort{width:100%;border-radius:2px;border-color:#59412b;background:#0f0c0a;color:#eee0c5;padding:10px 12px;outline:none}
+    .catalog-tools .search:focus,.catalog-tools .sort:focus{border-color:#b28648;box-shadow:0 0 0 1px rgba(178,134,72,.16)}
+    .catalog-tools .search::placeholder{color:#6f6558}
+    .category-heading{display:flex;align-items:baseline;gap:8px;margin:0 0 7px;padding-left:2px;color:#b69b72;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:10px;letter-spacing:.10em}
+    .category-heading small{color:#6e5435;font:700 6px/1 Georgia,"Times New Roman",serif;letter-spacing:.18em}
+    .chips{gap:6px;padding:0 0 17px}
+    .chip{position:relative;border-radius:2px;padding:7px 12px 7px 16px;background:linear-gradient(180deg,#201711,#15100d);border-color:#584029;color:#bfa984;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:11px}
+    .chip::before{content:"";position:absolute;left:7px;top:50%;width:3px;height:3px;border:1px solid #8a6638;transform:translateY(-50%) rotate(45deg)}
+    .chip:hover{border-color:#9b713e;color:#f1dcae}
+    .chip.active{background:linear-gradient(180deg,#762326,#51171a);border-color:#c49a50;color:#fff0ca;box-shadow:inset 0 0 0 1px rgba(255,222,161,.08)}
+    .chip.active::before{background:#d4a95c;border-color:#efd18f}
+    .catalog .grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:20px 16px}
+    .catalog .card{position:relative;border-radius:3px;border-color:#59412d;background:linear-gradient(155deg,#211812,#14100d);box-shadow:0 9px 22px rgba(0,0,0,.28),inset 0 0 0 1px rgba(211,163,76,.025)}
+    .catalog .card:hover,.catalog .card:focus-within{transform:translateY(-4px);border-color:#b18446;box-shadow:0 16px 34px rgba(0,0,0,.42),0 0 0 1px rgba(197,154,74,.10)}
+    .catalog .poster{padding:8px;background:linear-gradient(180deg,#16100d,#0c0908);border-bottom-color:#684b2e}
+    .catalog .poster img,.catalog .poster-fallback{border:1px solid #7e5a32;box-shadow:0 6px 18px rgba(0,0,0,.52)}
+    .catalog .card-body{padding:12px 13px 14px}
+    .catalog .card .badge{min-height:14px;color:#b28a4b;font-size:9px;letter-spacing:.07em}
+    .catalog .card h2{margin:7px 0 8px;color:#f0dfbf;font-size:16px;line-height:1.42;letter-spacing:.035em}
+    .catalog .card .source{color:#7d7264;font-size:9px}
+    .catalog .card .meta{margin-top:3px;color:#998b77;font-size:10px}
+    .catalog .card-foot{margin-top:11px;padding-top:8px;border-top:1px solid #453326;color:#8c7e6b;font-size:9px}
+    .catalog .card-foot .available{color:#a9c99e}
+    .catalog .load{margin-top:24px;padding-top:16px;border-top:1px solid #443326}
+    .catalog .load .primary{border-radius:2px;padding:9px 18px;background:linear-gradient(180deg,#7c2527,#54181a);border-color:#bf9047;color:#ffeac0}
+    #message:not(:empty){margin:0 0 14px}
+    @media(max-width:900px){
+      .header-actions{padding-left:15px}.header-actions>div{min-width:210px}.catalog .grid{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+    }
+    @media(max-width:700px){
+      .header-actions{width:100%;padding:11px 0 0;border-left:0;border-top:1px solid rgba(184,139,62,.22)}.header-actions>div{min-width:0;flex:1}.catalog-heading{align-items:flex-start}.catalog-count{min-width:105px}.catalog-tools{grid-template-columns:1fr}.catalog .grid{grid-template-columns:1fr 1fr;gap:13px 10px}.home-strip{padding:13px 12px 11px}.mini{min-width:290px;grid-template-columns:82px minmax(0,1fr)}.mini-poster,.mini-poster-fallback{width:82px;height:123px}
+    }
+    @media(max-width:440px){
+      .catalog-heading{display:block}.catalog-count{margin-top:10px;padding:7px 0 0;border-left:0;border-top:1px solid #3f3024;text-align:left}.catalog-count small{display:inline;margin-left:7px}.catalog .grid{grid-template-columns:1fr 1fr}.catalog .card-body{padding:10px}.catalog .card h2{font-size:13px}.catalog .poster{padding:5px}.mini{min-width:268px}.catalog-heading h2{font-size:21px}
+    }
+
+
+    /* CINEMA_LIBRARY_FINAL_POLISH */
+    .header-actions{opacity:.72;transition:opacity .18s ease}
+    .header-actions:hover,.header-actions:focus-within{opacity:.96}
+    .header-actions>div::before{color:#765936;font-size:6px}
+    .header-actions .user,.header-actions .stats,.header-actions .scan-status{font-size:9px;line-height:1.5;color:#817666}
+    #scanButton{padding:7px 10px;font-size:10px;color:#a9977a;border-color:#503b29;background:#14100d}
+    #scanButton:hover,#scanButton:focus-visible{color:#ead7ae;border-color:#917044;background:#1b140f}
+    .strip-shell{position:relative}
+    .strip{scroll-behavior:smooth;scrollbar-width:thin;scrollbar-color:#65492f #17110e}
+    .strip::-webkit-scrollbar{height:7px}.strip::-webkit-scrollbar-track{background:#17110e}.strip::-webkit-scrollbar-thumb{background:#65492f;border-radius:10px;border:1px solid #2d2118}
+    .strip-scroll-hint{position:absolute;z-index:5;right:0;top:0;bottom:7px;width:68px;padding:0 10px 0 24px;border:0;border-radius:0;background:linear-gradient(90deg,transparent 0%,rgba(17,13,11,.72) 42%,rgba(17,13,11,.97) 76%);color:#dbb76f;cursor:pointer;display:flex;align-items:center;justify-content:flex-end;transition:opacity .15s ease,color .15s ease}
+    .strip-scroll-hint[hidden]{display:none}
+    .strip-scroll-hint span{display:grid;place-items:center;width:29px;height:44px;border:1px solid #765630;background:rgba(31,23,18,.88);font:400 30px/1 Georgia,"Times New Roman",serif;box-shadow:0 5px 14px rgba(0,0,0,.32)}
+    .strip-scroll-hint:hover,.strip-scroll-hint:focus-visible{color:#fff0c8}.strip-scroll-hint:hover span,.strip-scroll-hint:focus-visible span{border-color:#c4984e;background:#2b1d13}
+    .cinema-poster-fallback{position:relative;display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:8px;width:100%;height:100%;padding:18px;background:radial-gradient(circle at 50% 34%,rgba(126,86,39,.20),transparent 38%),repeating-linear-gradient(135deg,rgba(255,255,255,.012) 0 1px,transparent 1px 6px),linear-gradient(180deg,#17110e,#090706)!important;color:#d9bf8b!important;font-family:"Yu Mincho","Hiragino Mincho ProN",Georgia,serif;text-align:center;overflow:hidden}
+    .cinema-poster-fallback::before{content:"";position:absolute;inset:7px;border:1px solid rgba(184,139,62,.34);pointer-events:none}
+    .poster-fallback-mark{position:relative;z-index:1;display:grid;place-items:center;width:34px;height:34px;border:1px solid #9b723d;border-radius:50%;color:#c99b4c;font-size:14px;box-shadow:inset 0 0 0 4px rgba(184,139,62,.05)}
+    .poster-fallback-title{position:relative;z-index:1;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;max-width:100%;color:#ead8b5;font-size:12px;line-height:1.45;letter-spacing:.04em}
+    .poster-fallback-label{position:relative;z-index:1;color:#705638;font:700 5px/1.35 Georgia,"Times New Roman",serif;letter-spacing:.18em}
+    .mini-poster-fallback.cinema-poster-fallback{width:92px;height:138px;padding:8px;gap:5px;border-right:1px solid #725333}
+    .mini-poster-fallback .poster-fallback-mark{width:25px;height:25px;font-size:10px}
+    .mini-poster-fallback .poster-fallback-title{-webkit-line-clamp:3;font-size:8px;line-height:1.35;letter-spacing:.02em}
+    .mini-poster-fallback .poster-fallback-label{font-size:4px;letter-spacing:.10em}
+    button:focus-visible,.card:focus-visible,.mini:focus-visible,.search:focus-visible,.sort:focus-visible{outline:1px solid #d4aa5c!important;outline-offset:2px}
+    .card:focus-visible,.mini:focus-visible{border-color:#bd8f48;box-shadow:0 0 0 1px rgba(212,170,92,.10),0 14px 34px rgba(0,0,0,.34)}
+    @media(max-width:700px){
+      .header-actions{opacity:.86}.strip-scroll-hint{width:48px;padding-left:15px}.strip-scroll-hint span{width:24px;height:38px;font-size:24px}.mini-poster-fallback.cinema-poster-fallback{width:82px;height:123px}.poster-fallback-label{letter-spacing:.10em}
+    }
+    @media(max-width:440px){.strip-scroll-hint{width:42px;padding-right:6px}.strip-scroll-hint span{width:22px;height:34px;font-size:21px}}
+
+  
+    /* CINEMA_IMAGE_RESPONSIVE_V1 */
+    :root{--cinema-nav-w:228px;--cinema-footer-h:70px}
+    body{background:#0b0908}
+    .cinema-nav{display:none}
+    .cinema-nav-backdrop{display:none}
+    .mobile-menu-toggle,.cinema-nav-close{display:none}
+    .header-search-wrap{display:flex;align-items:center;gap:8px;min-width:min(320px,34vw)}
+    .header-search{width:100%;background:rgba(8,7,6,.78);border:1px solid #8b6a3d;color:var(--cream);padding:10px 13px;border-radius:7px;box-shadow:inset 0 0 0 1px rgba(255,220,150,.05)}
+    .header-search::placeholder{color:#998d7b}
+    header{background-image:linear-gradient(90deg,rgba(14,10,8,.28),rgba(14,10,8,.08),rgba(14,10,8,.35)),url('/cinema-header.svg');background-size:auto 100%,cover;background-position:center;background-repeat:no-repeat;min-height:112px}
+    header .brand{background:linear-gradient(#e4c98e,#a97c39);padding:8px 18px;border:4px solid #5d3519;outline:1px solid #d9b86e;box-shadow:0 5px 18px rgba(0,0,0,.45);text-align:center;min-width:260px}
+    header .brand-kicker{color:#4c2b16}.brand h1{color:#26150d;text-shadow:0 1px #f4dfac}.brand p{color:#56351f;margin-top:2px}
+    .cinema-footer{position:relative;margin:26px -20px -80px;padding:20px 30px 22px;min-height:var(--cinema-footer-h);background:url('/cinema-footer.svg') center/cover no-repeat;border-top:1px solid #a97a36;color:#ead9b4;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:18px;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;letter-spacing:.1em}
+    .cinema-footer .tmdb-credit{margin:0;padding:0;border:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:0;text-align:center;color:#b4a78f;font-size:10px}
+    .cinema-footer-copy:last-child{text-align:right}
+    .cinema-footer-mark{display:none}
+    .app{transition:filter .2s ease}
+    .cinema-nav-item{appearance:none;width:100%;border:0;background:transparent;color:#eadfc7;text-align:left;padding:15px 18px;display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center;border-bottom:1px solid rgba(181,137,73,.22);cursor:pointer;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:16px}
+    .cinema-nav-item small{display:block;color:#9d8d78;font:11px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;margin-top:2px}
+    .cinema-nav-item:hover,.cinema-nav-item:focus-visible{background:linear-gradient(90deg,rgba(132,31,32,.88),rgba(91,22,23,.5));outline:1px solid #c39243;outline-offset:-3px;color:#fff3d4}
+    .cinema-nav-icon{color:#e1b75f;font-size:24px;text-align:center}
+    .cinema-nav-brand{text-align:center;padding:20px 10px 14px;border-bottom:1px solid rgba(193,147,75,.5);font-family:"Yu Mincho","Hiragino Mincho ProN",serif;color:#f0ddae}.cinema-nav-brand strong{display:block;font-size:23px;letter-spacing:.08em}.cinema-nav-brand small{font-size:10px;letter-spacing:.18em;color:#c9aa6d}
+    .cinema-nav-art{position:absolute;left:0;right:0;bottom:0;height:42%;background:url('/cinema-sidebar.svg') center bottom/cover no-repeat;opacity:.82;pointer-events:none;mask-image:linear-gradient(transparent,#000 25%)}
+    .cinema-home-reset{appearance:none;background:transparent;border:0;color:inherit;cursor:pointer}.brand.cinema-home-reset{text-align:left;padding:0}.cinema-nav-brand.cinema-home-reset{width:100%;border-bottom:1px solid rgba(193,147,75,.5)}.cinema-home-reset:focus-visible{outline:1px solid #c39243;outline-offset:3px}.cinema-home-reset:hover h1,.cinema-home-reset:hover strong{color:#fff3d4}
+    @media(min-width:1200px){
+      body{padding-left:var(--cinema-nav-w)}
+      .cinema-nav{display:block;position:fixed;z-index:900;left:0;top:0;bottom:0;width:var(--cinema-nav-w);background:linear-gradient(rgba(12,10,8,.94),rgba(12,9,7,.9)),url('/cinema-sidebar.svg') center/cover no-repeat;border-right:1px solid #8b6737;box-shadow:10px 0 30px rgba(0,0,0,.35);overflow:hidden}
+      .cinema-nav nav{position:relative;z-index:1}.cinema-nav-art{display:block}
+      .app{max-width:1500px;padding-top:12px}
+      header{display:grid;grid-template-columns:minmax(270px,.8fr) minmax(320px,1.2fr) auto;align-items:center}
+      header .brand{justify-self:start}.header-search-wrap{grid-column:2;grid-row:1;justify-self:stretch}.header-actions{grid-column:3;grid-row:1}
+    }
+    @media(min-width:768px) and (max-width:1199px){
+      .mobile-menu-toggle{display:grid;place-items:center;position:fixed;z-index:940;left:14px;top:18px;width:44px;height:44px;border:1px solid #b18446;background:#17110d;color:#f2d796;border-radius:6px;font-size:22px;box-shadow:0 5px 18px #0008;cursor:pointer}
+      .cinema-nav{display:block;position:fixed;z-index:960;left:0;top:0;bottom:0;width:min(300px,78vw);transform:translateX(-102%);transition:transform .22s ease;background:linear-gradient(rgba(12,10,8,.95),rgba(12,9,7,.91)),url('/cinema-sidebar.svg') center/cover no-repeat;border-right:1px solid #8b6737;box-shadow:16px 0 40px rgba(0,0,0,.55);overflow:auto}.cinema-nav.open{transform:none}
+      .cinema-nav-backdrop{display:block;position:fixed;z-index:950;inset:0;background:#0009;opacity:0;pointer-events:none;transition:opacity .2s}.cinema-nav-backdrop.open{opacity:1;pointer-events:auto}
+      .cinema-nav-close{display:block;position:absolute;right:8px;top:8px;background:#160f0b;border:1px solid #846238;color:#ecd49b;width:36px;height:36px;border-radius:5px;cursor:pointer}
+      header{padding-left:64px;display:grid;grid-template-columns:1fr minmax(220px,34vw) auto}.header-search-wrap{display:flex}.brand h1{font-size:24px}.brand p,.brand-kicker{display:none}.header-actions .stats,.header-actions .scan-status,.header-actions .user{display:none}
+      .app{max-width:100%;padding-left:18px;padding-right:18px}.cinema-footer{margin-left:-18px;margin-right:-18px}
+    }
+    @media(max-width:767px){
+      .mobile-menu-toggle{display:grid;place-items:center;position:fixed;z-index:940;left:10px;top:12px;width:40px;height:40px;border:1px solid #b18446;background:#17110d;color:#f2d796;border-radius:5px;font-size:20px;box-shadow:0 4px 14px #0009;cursor:pointer}
+      .cinema-nav{display:block;position:fixed;z-index:960;left:0;top:0;bottom:0;width:min(310px,86vw);transform:translateX(-102%);transition:transform .22s ease;background:linear-gradient(rgba(12,10,8,.96),rgba(12,9,7,.92)),url('/cinema-sidebar.svg') center/cover no-repeat;border-right:1px solid #8b6737;box-shadow:16px 0 40px rgba(0,0,0,.6);overflow:auto}.cinema-nav.open{transform:none}
+      .cinema-nav-backdrop{display:block;position:fixed;z-index:950;inset:0;background:#000b;opacity:0;pointer-events:none;transition:opacity .2s}.cinema-nav-backdrop.open{opacity:1;pointer-events:auto}
+      .cinema-nav-close{display:block;position:absolute;right:8px;top:8px;background:#160f0b;border:1px solid #846238;color:#ecd49b;width:36px;height:36px;border-radius:5px}
+      .app{padding:8px 10px 72px;max-width:none}header{min-height:74px;padding:8px 8px 8px 52px;display:grid;grid-template-columns:1fr 42px;gap:8px;background-size:auto 100%,cover;margin-bottom:12px}
+      header .brand{min-width:0;padding:5px 9px;border-width:2px}.brand-kicker,.brand p{display:none}.brand h1{font-size:19px;white-space:nowrap}.brand-mark{font-size:.7em}
+      .header-actions{display:none}.header-search-wrap{min-width:0}.header-search{padding:9px 10px;font-size:13px}
+      .catalog-tools{grid-template-columns:1fr}.catalog-heading{align-items:end}.catalog-title-block p{display:none}.catalog-count{font-size:11px}
+      .cinema-footer{margin:20px -10px -72px;padding:15px 12px 18px;min-height:58px;grid-template-columns:1fr;text-align:center}.cinema-footer-copy{display:none}.cinema-footer .tmdb-credit{text-align:center;font-size:9px}
+      .hero-layout{grid-template-columns:92px minmax(0,1fr);gap:13px}.hero-poster{width:92px}.hero h2{font-size:30px}.overview{grid-column:1/-1}.credit-row{grid-template-columns:1fr}.credit-label{padding-top:0}.person-link{min-height:38px}
+      .mini{min-width:82vw}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.card-body{padding:10px}.card h2{font-size:15px}.poster{aspect-ratio:2/3}
+      .strip-scroll-hint{width:42px}.toolbar{margin-bottom:8px}
+    }
+    @media(max-width:480px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.card .source{display:none}.card-foot{font-size:10px}.hero-layout{grid-template-columns:82px minmax(0,1fr)}.hero-poster{width:82px}.hero h2{font-size:26px}.header-search{font-size:12px}}
+
+
+    /* SEKIMACHI_KITA_CINEMA_HEADER_V2 */
+    header{
+      display:flex!important;align-items:center!important;justify-content:center!important;
+      min-height:112px;padding:16px 20px 18px!important
+    }
+    header .brand{
+      justify-self:auto!important;margin:0 auto!important;text-align:center!important;
+      width:fit-content!important;max-width:calc(100% - 24px)!important;min-width:0!important;
+      padding:8px 10px!important
+    }
+    .brand.cinema-home-reset{text-align:center!important}
+    header .brand p,.header-search-wrap,.header-actions{display:none!important}
+    @media(min-width:1200px){
+      header{display:flex!important;justify-content:center!important}
+      header .brand{width:fit-content!important;max-width:calc(100% - 40px)!important;padding:10px 12px!important}
+    }
+    @media(min-width:768px) and (max-width:1199px){
+      header{display:flex!important;justify-content:center!important;min-height:96px;padding:12px 20px!important}
+      header .brand{width:fit-content!important;max-width:calc(100% - 32px)!important;padding:8px 10px!important}
+      header .brand-kicker{display:none}
+      header .brand h1{font-size:clamp(24px,3.6vw,31px)}
+    }
+    @media(max-width:767px){
+      header{display:flex!important;justify-content:center!important;min-height:74px;padding:8px 52px!important;margin-bottom:12px}
+      header .brand{width:fit-content!important;max-width:100%!important;padding:6px 8px!important;border-width:2px}
+      header .brand-kicker{display:none}
+      header .brand h1{font-size:clamp(18px,5.4vw,24px);white-space:nowrap}
+      header .brand-mark{font-size:.7em}
+    }
+
+    /* NAVIGATION_PEOPLE_MENU_V2 */
+    .people-directory[hidden]{display:none}.people-directory{padding:2px 0 28px}.people-heading{margin-bottom:16px}.people-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}.people-card{min-height:76px;text-align:left;border:1px solid #72552d;border-radius:5px;background:linear-gradient(180deg,rgba(45,31,22,.94),rgba(23,18,15,.96));color:var(--cream);padding:13px 14px;cursor:pointer;box-shadow:inset 0 1px rgba(255,255,255,.04);overflow:hidden}.people-card:hover,.people-card:focus-visible{border-color:var(--accent);outline:none;transform:translateY(-1px)}.people-card strong{display:block;font-family:"Yu Mincho","Hiragino Mincho ProN",serif;font-size:16px}.people-card small{display:block;margin-top:5px;color:var(--muted);font-size:11px}
+    .people-grid.cast-people-grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}.people-card-profile{padding:0;display:flex;flex-direction:column;min-height:260px}.people-profile-media{position:relative;width:100%;aspect-ratio:2/3;background:linear-gradient(145deg,#241b14,#100d0b);overflow:hidden;border-bottom:1px solid #72552d}.people-profile-media img{width:100%;height:100%;display:block;object-fit:cover;object-position:center top}.people-profile-fallback{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;color:#c99a4b;background:radial-gradient(circle at 50% 34%,rgba(181,132,62,.16),transparent 32%),linear-gradient(145deg,#241b14,#100d0b)}.people-profile-fallback span{font-size:40px;line-height:1}.people-profile-fallback small{margin:0;font:7px/1.2 "Times New Roman",serif;letter-spacing:.18em;color:#9b7541}.people-card-caption{padding:11px 12px 12px;min-height:66px}.people-card-caption strong{line-height:1.35}.people-card-caption small{margin-top:4px}.cinema-nav-item.active{background:linear-gradient(90deg,rgba(126,28,28,.78),rgba(68,21,18,.55));border-color:#a36a32;color:#fff0c2}
+    @media(max-width:767px){.people-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.people-grid.cast-people-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.people-card{min-height:68px;padding:11px}.people-card-profile{padding:0;min-height:0}.people-card strong{font-size:14px}.people-card-caption{padding:9px 8px 10px;min-height:58px}.people-profile-fallback span{font-size:32px}}
+
+</style>
 </head>
 <body>
+<button class="mobile-menu-toggle" id="mobileMenuToggle" type="button" aria-label="館内メニューを開く" aria-controls="cinemaNav" aria-expanded="false">☰</button>
+<div class="cinema-nav-backdrop" id="cinemaNavBackdrop"></div>
+<aside class="cinema-nav" id="cinemaNav" aria-label="館内メニュー">
+  <button class="cinema-nav-close" id="cinemaNavClose" type="button" aria-label="館内メニューを閉じる">×</button>
+  <button class="cinema-nav-brand cinema-home-reset" id="cinemaNavBrandReset" type="button" aria-label="関町北映画館を初期状態で再読み込み"><span aria-hidden="true">◉</span><strong>関町北映画館</strong><small>PRIVATE CINEMA ARCHIVE</small></button>
+  <nav>
+    <button class="cinema-nav-item" type="button" data-route="#/home/continue"><span class="cinema-nav-icon">●</span><span>上映中<small>いま観られる作品</small></span></button>
+    <button class="cinema-nav-item" type="button" data-route="#/home/next"><span class="cinema-nav-icon">◆</span><span>次回上映<small>次に観る作品</small></span></button>
+    <button class="cinema-nav-item" type="button" data-route="#/library"><span class="cinema-nav-icon">▣</span><span>作品目録<small>すべての作品</small></span></button>
+    <button class="cinema-nav-item" type="button" data-route="#/people/directors"><span class="cinema-nav-icon">▤</span><span>監督／演出<small>監督・演出家から探す</small></span></button>
+    <button class="cinema-nav-item" type="button" data-route="#/people/cast"><span class="cinema-nav-icon">◎</span><span>主な出演者／声優<small>出演者・声優から探す</small></span></button>
+  </nav>
+  <div class="cinema-nav-art" aria-hidden="true"></div>
+</aside>
 <div class="app">
   <header>
-    <div class="brand"><h1>シネマ蔵書館</h1><p>CINEMA COLLECTION · PRIVATE SCREENING</p></div>
-    <div class="header-actions"><div><div class="user" id="currentUser"></div><div class="stats" id="stats">読み込み中...</div><div class="scan-status" id="scanStatus"></div></div><button class="ghost" id="scanButton">再スキャン</button></div>
+    <button class="brand cinema-home-reset" id="headerBrandReset" type="button" aria-label="関町北映画館を初期状態で再読み込み"><div class="brand-kicker">PRIVATE CINEMA ARCHIVE</div><h1><span class="brand-mark" aria-hidden="true">◉</span> 関町北映画館</h1></button>
   </header>
   <main>
-    <section id="continueSection" class="home-strip" hidden><h2>上映中</h2><div id="continueStrip" class="strip"></div></section>
-    <section id="nextSection" class="home-strip" hidden><h2>次回上映</h2><div id="nextStrip" class="strip"></div></section>
+    <section id="continueSection" class="home-strip" hidden><h2><span class="section-icon" aria-hidden="true">●</span> 上映中 <small>NOW SHOWING</small></h2><div class="strip-shell"><div id="continueStrip" class="strip"></div><button class="strip-scroll-hint" type="button" data-strip-target="continueStrip" aria-label="上映中の次の作品を表示"><span aria-hidden="true">›</span></button></div></section>
+    <section id="nextSection" class="home-strip" hidden><h2><span class="section-icon" aria-hidden="true">◆</span> 次回上映 <small>COMING SOON</small></h2><div class="strip-shell"><div id="nextStrip" class="strip"></div><button class="strip-scroll-hint" type="button" data-strip-target="nextStrip" aria-label="次回上映の次の作品を表示"><span aria-hidden="true">›</span></button></div></section>
     <section class="catalog" id="catalog">
-      <div class="toolbar"><input id="search" class="search" type="search" placeholder="作品名・監督・出演者を検索"><select id="sort" class="sort"><option value="title">作品名順</option><option value="year">年順</option><option value="added">登録順</option></select></div>
+      <div class="catalog-heading">
+        <div class="catalog-title-block"><div class="catalog-kicker">PRIVATE SCREENING CATALOG</div><h2>作品目録 <small>CATALOG</small></h2><p>アーカイブに収められた作品から、次の一本を。</p></div>
+        <div class="catalog-count"><strong id="catalogCount">— 作品</strong><small>ARCHIVED TITLES</small></div>
+      </div>
+      <div class="toolbar catalog-tools">
+        <label class="catalog-tool search-tool"><span>目録検索 <small>SEARCH</small></span><input id="search" class="search" type="search" placeholder="作品名・俳優・監督を検索..."></label>
+        <label class="catalog-tool sort-tool"><span>並び順 <small>ORDER</small></span><select id="sort" class="sort"><option value="title">作品名順</option><option value="year">年順</option><option value="added">登録順</option></select></label>
+      </div>
+      <div class="category-heading"><span>分類</span><small>GENRE / CATEGORY</small></div>
       <div class="chips" id="categories"></div><div id="message"></div><div class="grid" id="works"></div>
       <div class="load" id="loadWrap" hidden><button class="primary" id="loadMore">さらに表示</button></div>
     </section>
+    <section class="people-directory" id="peopleDirectory" hidden>
+      <div class="catalog-heading people-heading"><div class="catalog-title-block"><div class="catalog-kicker" id="peopleDirectoryKicker">PEOPLE DIRECTORY</div><h2 id="peopleDirectoryTitle">人物名鑑</h2><p id="peopleDirectoryDescription">人物から登録作品を探します。</p></div><div class="catalog-count"><strong id="peopleDirectoryCount">— 人</strong><small>REGISTERED PEOPLE</small></div></div>
+      <div class="people-grid" id="peopleDirectoryList"></div>
+    </section>
     <section class="detail" id="detail" hidden><button class="ghost" id="back">← 作品目録</button><div id="workDetail"></div></section>
   </main>
-  <footer class="tmdb-credit">This product uses the TMDB API but is not endorsed or certified by TMDB. · <a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer">TMDB</a></footer>
+  <footer class="cinema-footer"><div class="cinema-footer-copy">映画は、人生のよき友だ。</div><div class="tmdb-credit">This product uses the TMDB API but is not endorsed or certified by TMDB. · <a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer">TMDB</a></div><div class="cinema-footer-copy">よい映画で、よい時間を。</div></footer>
 </div>
 <div class="player-modal" id="playerModal" hidden role="dialog" aria-modal="true" aria-labelledby="playerModalTitle"><div class="player-dialog"><div class="player-dialog-head"><h2 id="playerModalTitle">動画再生</h2><button class="ghost player-close" id="playerClose" aria-label="プレイヤーを閉じる">× 閉じる</button></div><div id="playerContent"></div></div></div>
 <div class="scan-modal" id="scanModal" hidden role="dialog" aria-modal="true" aria-labelledby="scanModalTitle">
@@ -88,13 +411,28 @@
 const PAGE=60,state={offset:0,total:0,q:'',category:'',sort:'title',person:'',loading:false},$=id=>document.getElementById(id),works=$('works'),loadWrap=$('loadWrap');
 let scanRunning=false,scanPollTimer=null;
 function node(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e}
+function posterFallback(title,compact=false){const f=node('div',compact?'mini-poster-fallback cinema-poster-fallback':'poster-fallback cinema-poster-fallback');f.append(node('span','poster-fallback-mark','◉'),node('strong','poster-fallback-title',String(title||'作品')),node('small','poster-fallback-label','POSTER NOT AVAILABLE'));return f}
+function personProfileFallback(){const f=node('div','people-profile-fallback');f.append(node('span','', '◎'),node('small','','PROFILE NOT AVAILABLE'));return f}
+function makeOpenable(c,open){c.tabIndex=0;c.setAttribute('role','button');c.onclick=open;c.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open()}}}
+function updateStripHint(sec,strip){const hint=sec.querySelector('.strip-scroll-hint');if(!hint)return;const overflow=strip.scrollWidth>strip.clientWidth+4,atEnd=strip.scrollLeft+strip.clientWidth>=strip.scrollWidth-4;hint.hidden=!overflow||atEnd}
+function setupStripNavigation(sec,strip){const hint=sec.querySelector('.strip-scroll-hint');if(strip.dataset.navReady!=='1'){strip.dataset.navReady='1';strip.addEventListener('scroll',()=>updateStripHint(sec,strip),{passive:true});strip.addEventListener('wheel',e=>{if(!window.matchMedia('(pointer:fine)').matches)return;if(Math.abs(e.deltaY)<=Math.abs(e.deltaX))return;const max=strip.scrollWidth-strip.clientWidth;if(max<=4)return;const forward=e.deltaY>0&&strip.scrollLeft<max-2,backward=e.deltaY<0&&strip.scrollLeft>2;if(!forward&&!backward)return;e.preventDefault();strip.scrollBy({left:e.deltaY,behavior:'smooth'})},{passive:false});window.addEventListener('resize',()=>updateStripHint(sec,strip),{passive:true});if(hint)hint.onclick=()=>strip.scrollBy({left:Math.max(260,strip.clientWidth*.72),behavior:'smooth'})}requestAnimationFrame(()=>updateStripHint(sec,strip))}
+function setCinemaNav(open){const nav=$('cinemaNav'),back=$('cinemaNavBackdrop'),toggle=$('mobileMenuToggle');nav.classList.toggle('open',open);back.classList.toggle('open',open);toggle.setAttribute('aria-expanded',open?'true':'false');document.body.classList.toggle('cinema-nav-open',open)}
+$('mobileMenuToggle').onclick=()=>setCinemaNav(!$('cinemaNav').classList.contains('open'));
+$('cinemaNavClose').onclick=()=>setCinemaNav(false);$('cinemaNavBackdrop').onclick=()=>setCinemaNav(false);
+function updateCinemaNavActive(){const hash=location.hash||'#/library';document.querySelectorAll('.cinema-nav-item[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===hash))}
+document.querySelectorAll('.cinema-nav-item[data-route]').forEach(b=>b.onclick=()=>{const next=b.dataset.route;if(location.hash===next)route();else location.hash=next;setCinemaNav(false)});
+function resetCinemaHome(){history.replaceState(null,'',location.pathname+location.search);location.reload()}
+$('cinemaNavBrandReset').onclick=resetCinemaHome;$('headerBrandReset').onclick=resetCinemaHome;
+window.addEventListener('hashchange',()=>setCinemaNav(false));
 async function api(p,o={}){const r=await fetch(p,{...o,headers:{Accept:'application/json',...(o.headers||{})}});const text=await r.text();let d={};try{d=text?JSON.parse(text):{}}catch{d={}}if(!r.ok)throw new Error(d?.error?.message||`HTTP ${r.status}`);return d}
 function jo(method,x){return{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(x)}}
 function ft(ms){if(!ms)return'0:00';const s=Math.floor(ms/1000),m=Math.floor(s/60),q=s%60;return`${m}:${String(q).padStart(2,'0')}`}
 function techValue(v,fallback='未取得'){return v===null||v===undefined||v===''?fallback:String(v)}
 function splitCreditPeople(value){const raw=String(value||'').trim();if(!raw)return[];const items=raw.split(/\s*(?:、|,|，|;|；|\||\r?\n|\s+\/\s+)\s*/u).map(x=>x.trim()).filter(Boolean);return[...new Set(items)]}
 function creditRow(label,value){const names=splitCreditPeople(value);if(!names.length)return null;const row=node('div','credit-row'),people=node('div','credit-people');row.append(node('strong','credit-label',label));for(const name of names){const b=node('button','person-link',name);b.type='button';b.title=`${name} の登録作品を表示`;b.onclick=()=>{location.hash=`#/person/${encodeURIComponent(name)}`};people.append(b)}row.append(people);return row}
-async function showPersonWorks(name){const person=String(name||'').trim();if(!person){location.hash='#/library';return}state.person=person;state.q=person;state.category='';$('search').value=person;$('detail').hidden=true;$('catalog').hidden=false;$('continueSection').hidden=true;$('nextSection').hidden=true;document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('active',(x.dataset.category||'')===''));const msg=node('div','notice person-filter');msg.append('人物「',node('strong','',person),'」が関わる登録作品');$('message').replaceChildren(msg);await loadWorks(true)}
+async function showPersonWorks(name){const person=String(name||'').trim();if(!person){location.hash='#/library';return}state.person=person;state.q=person;state.category='';$('search').value=person;$('detail').hidden=true;$('peopleDirectory').hidden=true;$('catalog').hidden=false;$('continueSection').hidden=true;$('nextSection').hidden=true;document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('active',(x.dataset.category||'')===''));const msg=node('div','notice person-filter');msg.append('人物「',node('strong','',person),'」が関わる登録作品');$('message').replaceChildren(msg);updateCinemaNavActive();await loadWorks(true)}
+function clearPersonSearchFilter(){if(!state.person)return false;state.person='';state.q='';$('search').value='';return true}
+async function showPeopleDirectory(role){const isDirector=role==='directors';clearPersonSearchFilter();$('detail').hidden=true;$('catalog').hidden=true;$('continueSection').hidden=true;$('nextSection').hidden=true;$('peopleDirectory').hidden=false;$('peopleDirectoryKicker').textContent=isDirector?'DIRECTOR / DIRECTION DIRECTORY':'CAST / VOICE DIRECTORY';$('peopleDirectoryTitle').textContent=isDirector?'監督／演出':'主な出演者／声優';$('peopleDirectoryDescription').textContent=isDirector?'監督・演出家から、この蔵書館の作品を探します。':'出演者・声優から、このアーカイブの作品を探します。';const list=$('peopleDirectoryList');list.classList.toggle('cast-people-grid',!isDirector);list.replaceChildren(node('div','notice','人物名鑑を読み込んでいます…'));try{const d=await api(`/api/people?role=${isDirector?'director':'cast'}`);$('peopleDirectoryCount').textContent=`${Number(d.total||0).toLocaleString()} 人`;list.replaceChildren();for(const p of d.items){const b=node('button',isDirector?'people-card':'people-card people-card-profile');b.type='button';if(isDirector){b.append(node('strong','',p.name),node('small','',`${p.workCount} 作品`))}else{const media=node('div','people-profile-media');if(p.profileUrl){const img=document.createElement('img');img.alt=`${p.name} 顔写真`;img.loading='lazy';loadImageResilient(img,p.profileUrl,()=>media.replaceChildren(personProfileFallback()));media.append(img)}else media.append(personProfileFallback());const caption=node('div','people-card-caption');caption.append(node('strong','',p.name),node('small','',`${p.workCount} 作品`));b.append(media,caption)}b.onclick=()=>{location.hash=`#/person/${encodeURIComponent(p.name)}`};list.append(b)}if(!d.items.length)list.append(node('div','empty','登録された人物情報がありません。'))}catch(e){list.replaceChildren(node('div','error',`人物名鑑を取得できませんでした。 ${e.message}`))}updateCinemaNavActive()}
 function preferJapaneseAudio(p){const tracks=p.audioTracks;if(!tracks||!tracks.length)return false;let jp=-1;for(let i=0;i<tracks.length;i++){const t=tracks[i],lang=String(t.language||'').toLowerCase().replace('_','-'),label=String(t.label||'').toLowerCase();if(lang==='ja'||lang==='jpn'||lang.startsWith('ja-')||lang.startsWith('jpn-')||label.includes('japanese')||label.includes('日本語')){jp=i;break}}if(jp<0)return false;for(let i=0;i<tracks.length;i++)tracks[i].enabled=i===jp;return true}
 function subtitleLanguage(s){const x=String(s?.language||'').toLowerCase().replace('_','-');if(x==='jp'||x==='jpn'||x==='japanese')return'ja';if(x==='eng'||x==='english')return'en';return x||'und'}
 function subtitleLabel(s,i){const lang=subtitleLanguage(s);let label=lang==='ja'?'日本語':lang==='en'?'English':`字幕 ${i+1}`;if(s?.forced)label+=' (forced)';return label}
@@ -104,20 +442,23 @@ function formatClock(ms){if(ms===null||ms===undefined)return'—';const s=Math.m
 function showScanModal(){ $('scanModal').hidden=false }
 function hideScanModal(){ $('scanModal').hidden=true }
 function renderScanProgress(s){const p=s.progress||{};const running=!!s.running;scanRunning=running;$('scanPhase').textContent=phaseLabel(p.phase);$('scanMessage').textContent=p.message||'スキャン状況を確認中';const bar=$('scanBar'),total=Number(p.total||0),current=Number(p.current||0),percent=Number(p.percent||0);bar.classList.toggle('indeterminate',running&&total<=0);bar.style.width=(total>0?Math.max(0,Math.min(100,percent)):0)+'%';$('scanProgressText').textContent=total>0?`${current.toLocaleString()} / ${total.toLocaleString()}`:'対象数を確認中';$('scanPercent').textContent=total>0?`${percent}%`:'—';$('scanMatched').textContent=Number(p.filesMatched||0).toLocaleString();$('scanMissing').textContent=Number(p.filesMissing||0).toLocaleString();$('scanNew').textContent=Number(p.filesNew||0).toLocaleString();$('scanSubtitles').textContent=Number(p.subtitlesFound||0).toLocaleString();$('scanSubtitleUnmatched').textContent=Number(p.subtitlesUnmatched||0).toLocaleString();$('scanProbed').textContent=Number(p.filesProbed||0).toLocaleString();$('scanCurrentItem').textContent=p.currentItem||(!running&&p.phase==='SUCCESS'?'すべての処理が完了しました':'—');$('scanElapsed').textContent=formatClock(p.elapsedMs);$('scanEta').textContent=running?formatClock(p.etaMs):'—';const er=$('scanError');er.hidden=!p.error;er.textContent=p.error?`エラー: ${p.error}`:'';$('scanClose').textContent=running?'閉じる（処理は継続）':'閉じる';$('scanButton').textContent=running?'進捗を表示':'再スキャン';$('scanButton').disabled=false;if(running){$('scanStatus').textContent=`${phaseLabel(p.phase)} ${total>0?percent+'%':''}`.trim()}else if(p.phase==='FAILED'){$('scanStatus').textContent='スキャン失敗'}}
-async function loadStats(){const s=await api('/api/stats');$('stats').textContent=`${s.works}作品 / ${s.videos}動画 / 字幕 ${s.subtitles??0}`;const w=$('categories');w.replaceChildren();const a=node('button','chip active','すべて');a.dataset.category='';w.append(a);for(const c of s.categories){const b=node('button','chip',`${c.name} ${c.workCount}`);b.dataset.category=c.name;w.append(b)}}
-async function loadUser(){const r=await api('/api/current-user');$('currentUser').textContent=r.authenticated?`利用者: ${r.user.displayName}`:'匿名利用'}
+async function loadStats(){const s=await api('/api/stats');const stats=$('stats');if(stats)stats.textContent=`${s.works}作品 / ${s.videos}動画 / 字幕 ${s.subtitles??0}`;const w=$('categories');w.replaceChildren();const a=node('button','chip active','すべて');a.dataset.category='';w.append(a);for(const c of s.categories){const b=node('button','chip',`${c.name} ${c.workCount}`);b.dataset.category=c.name;w.append(b)}}
+async function loadUser(){const currentUser=$('currentUser');if(!currentUser)return;const r=await api('/api/current-user');currentUser.textContent=r.authenticated?`利用者: ${r.user.displayName}`:'匿名利用'}
 async function loadHome(){try{const [cw,nu]=await Promise.all([api('/api/me/continue-watching'),api('/api/me/next-up')]);renderStrip('continueSection','continueStrip',cw.items,true);renderStrip('nextSection','nextStrip',nu.items,false)}catch(e){$('continueSection').hidden=true;$('nextSection').hidden=true}}
-function renderStrip(secId,stripId,items,progress){const sec=$(secId),strip=$(stripId);strip.replaceChildren();sec.hidden=!items.length;for(const x of items){const c=node('div','mini'),media=node('div');if(x.posterUrl){const img=document.createElement('img');img.className='mini-poster';img.src=x.posterUrl;img.alt=`${x.workTitle} ポスター`;img.loading='lazy';img.onerror=()=>media.replaceChildren(node('div','mini-poster-fallback',(x.workTitle||'?').trim().slice(0,1)||'?'));media.append(img)}else media.append(node('div','mini-poster-fallback',(x.workTitle||'?').trim().slice(0,1)||'?'));const body=node('div','mini-body');body.append(node('strong','',x.workTitle));body.append(node('small','',[x.groupName,x.episodeOrType,x.episodeTitle].filter(Boolean).join(' · ')));if(progress&&x.percent!==null){const p=node('div','progress'),b=node('span');b.style.width=Math.max(0,Math.min(100,x.percent))+'%';p.append(b);body.append(p);body.append(node('small','',`${ft(x.positionMs)} から再開`))}c.append(media,body);c.onclick=()=>openInWork(x.workId,x.videoId);strip.append(c)}}
+function imageRetryUrl(url,attempt){const sep=String(url).includes('?')?'&':'?';return `${url}${sep}_image_retry=${attempt}-${Date.now()}`}
+function loadImageResilient(img,url,onFailure,retries=2){let attempt=0,finished=false;const success=img.onload;img.onerror=()=>{if(finished)return;if(attempt>=retries){finished=true;img.onerror=null;if(onFailure)onFailure();return}attempt+=1;setTimeout(()=>{if(!finished)img.src=imageRetryUrl(url,attempt)},200*attempt)};img.onload=e=>{finished=true;img.onerror=null;if(typeof success==='function')success.call(img,e)};img.src=url}
+function loadBackgroundResilient(el,url,retries=2){const probe=new Image();probe.onload=()=>{el.classList.add('has-backdrop');el.style.backgroundImage=`url("${probe.src}")`};loadImageResilient(probe,url,()=>{},retries)}
+function renderStrip(secId,stripId,items,progress){const sec=$(secId),strip=$(stripId);strip.replaceChildren();sec.hidden=!items.length;for(const x of items){const c=node('div','mini'),media=node('div');if(x.posterUrl){const img=document.createElement('img');img.className='mini-poster';img.alt=`${x.workTitle} ポスター`;img.loading='lazy';loadImageResilient(img,x.posterUrl,()=>media.replaceChildren(posterFallback(x.workTitle,true)));media.append(img)}else media.append(posterFallback(x.workTitle,true));const body=node('div','mini-body');body.append(node('strong','',x.workTitle));body.append(node('small','',[x.groupName,x.episodeOrType,x.episodeTitle].filter(Boolean).join(' · ')));if(progress&&x.percent!==null){const p=node('div','progress'),b=node('span');b.style.width=Math.max(0,Math.min(100,x.percent))+'%';p.append(b);body.append(p);body.append(node('small','',`${ft(x.positionMs)} から再開`))}c.append(media,body);makeOpenable(c,()=>openInWork(x.workId,x.videoId));strip.append(c)}setupStripNavigation(sec,strip)}
 async function loadScan(){const e=$('scanStatus');try{const s=await api('/api/scan/status');if(!s.videoRootConfigured){e.textContent='動画フォルダー未設定';$('scanButton').disabled=true;return s}if(s.running){renderScanProgress(s);if(!scanPollTimer)startScanPolling(false);return s}scanRunning=false;$('scanButton').textContent='再スキャン';$('scanButton').disabled=false;if(!s.latest){e.textContent='未スキャン';return s}const x=s.latest;e.textContent=`一致 ${x.filesMatched} / 欠落 ${x.filesMissing} / 新規 ${x.filesNew} / 字幕 ${x.subtitlesMatched??0}${x.subtitlesUnmatched?` (+未紐付${x.subtitlesUnmatched})`:''}${x.probeErrors?` / probeエラー ${x.probeErrors}`:''}`;return s}catch{e.textContent='';return null}}
 async function pollScan(){scanPollTimer=null;try{const s=await api('/api/scan/status');renderScanProgress(s);if(s.running){scanPollTimer=setTimeout(pollScan,1000);return}scanRunning=false;await Promise.all([loadScan(),loadStats(),loadWorks(true)]);if(!$('scanModal').hidden)showScanModal()}catch(e){$('scanError').hidden=false;$('scanError').textContent=`進捗取得エラー: ${e.message}`;scanPollTimer=setTimeout(pollScan,2000)}}
 function startScanPolling(openModal=true){if(openModal)showScanModal();if(scanPollTimer)return;scanPollTimer=setTimeout(pollScan,100)}
 async function runScan(){if(scanRunning){showScanModal();return}const b=$('scanButton');b.disabled=true;showScanModal();renderScanProgress({running:true,progress:{phase:'PREPARING',message:'スキャンを開始しています…',current:0,total:0,elapsedMs:0}});try{await api('/api/scan',{method:'POST'});scanRunning=true;b.textContent='進捗を表示';startScanPolling(true)}catch(e){scanRunning=false;b.disabled=false;b.textContent='再スキャン';renderScanProgress({running:false,progress:{phase:'FAILED',message:'再スキャンを開始できませんでした',error:e.message,elapsedMs:0}})}}
-function card(w){const c=node('article','card'),poster=node('div','poster');if(w.posterUrl){const img=document.createElement('img');img.src=w.posterUrl;img.alt=`${w.title} ポスター`;img.loading='lazy';img.onerror=()=>{poster.replaceChildren(node('div','poster-fallback',w.title))};poster.append(img)}else poster.append(node('div','poster-fallback',w.title));c.append(poster);const body=node('div','card-body');body.append(node('div','badge',w.category+(w.favorite?' · ★ お気に入り':'')));body.append(node('h2','',w.title));body.append(node('div','source',w.sourceTitle&&w.sourceTitle!==w.title?w.sourceTitle:''));if(w.progress.total)body.append(node('div','meta',`視聴 ${w.progress.watched}/${w.progress.total} (${w.progress.percent}%)`));const f=node('div','card-foot');f.append(node('span','',w.yearOrPeriod||'年不明'));f.append(node('span',w.availableVideoCount?'available':'',w.availableVideoCount?`${w.availableVideoCount}/${w.videoCount} 利用可`:`${w.videoCount}動画`));body.append(f);c.append(body);c.onclick=()=>location.hash=`#/work/${w.id}`;return c}
-async function loadWorks(reset=false){if(state.loading)return;state.loading=true;if(reset){state.offset=0;works.replaceChildren()}const p=new URLSearchParams({limit:PAGE,offset:state.offset,sort:state.sort});if(state.q)p.set('q',state.q);if(state.category)p.set('category',state.category);try{const d=await api('/api/works?'+p);state.total=d.total;for(const w of d.items)works.append(card(w));state.offset+=d.items.length;loadWrap.hidden=state.offset>=state.total}finally{state.loading=false}}
-async function showWork(id){$('continueSection').hidden=true;$('nextSection').hidden=true;$('catalog').hidden=true;$('detail').hidden=false;const w=await api(`/api/works/${id}`),r=document.createDocumentFragment(),h=node('div','hero');if(w.backdropUrl){h.classList.add('has-backdrop');h.style.backgroundImage=`url("${w.backdropUrl}")`}const layout=node('div','hero-layout'),posterSlot=node('div');if(w.posterUrl){const img=document.createElement('img');img.className='hero-poster';img.src=w.posterUrl;img.alt=`${w.title} ポスター`;img.onerror=()=>posterSlot.replaceChildren(node('div','hero-poster hero-poster-fallback',w.title));posterSlot.append(img)}else posterSlot.append(node('div','hero-poster hero-poster-fallback',w.title));layout.append(posterSlot);const heroBody=node('div','hero-body'),line=node('div','hero-line'),title=node('div');title.append(node('div','badge',w.category),node('h2','',w.title),node('div','meta',`視聴 ${w.progress.watched}/${w.progress.total} · 検出字幕 ${w.availableSubtitleCount??0}`));line.append(title);const a=node('div','hero-actions'),fav=node('button','action'+(w.favorite?' on':''),w.favorite?'★ お気に入り':'☆ お気に入り');fav.onclick=async()=>{w.favorite=!w.favorite;await api(`/api/me/works/${w.id}/favorite`,jo('PUT',{favorite:w.favorite}));fav.textContent=w.favorite?'★ お気に入り':'☆ お気に入り';fav.classList.toggle('on',w.favorite)};a.append(fav);line.append(a);heroBody.append(line);if(w.tmdb?.overview)heroBody.append(node('p','overview',w.tmdb.overview));const credits=node('div','credits'),director=creditRow('監督／演出',w.director),cast=creditRow('主な出演者／声優',w.cast);if(director)credits.append(director);if(cast)credits.append(cast);if(credits.childElementCount)heroBody.append(credits);layout.append(heroBody);h.append(layout);r.append(h);if(w.groups.length){const g=node('div','groups');w.groups.forEach((x,i)=>{const b=node('button','group'+(i===0?' active':''),`${x.name} (${x.watchedCount}/${x.videoCount})`);b.onclick=()=>{document.querySelectorAll('.group').forEach(q=>q.classList.toggle('active',q===b));loadEpisodes(w.id,x.id)};g.append(b)});r.append(g);const ep=node('div','episodes');ep.id='episodes';r.append(ep);const vd=node('div');vd.id='videoDetail';r.append(vd)}else r.append(node('div','empty','この作品には登録済み動画がありません。'));$('workDetail').replaceChildren(r);if(w.groups.length)loadEpisodes(w.id,w.groups[0].id)}
+function card(w){const c=node('article','card'),poster=node('div','poster');if(w.posterUrl){const img=document.createElement('img');img.alt=`${w.title} ポスター`;img.loading='lazy';loadImageResilient(img,w.posterUrl,()=>poster.replaceChildren(posterFallback(w.title)));poster.append(img)}else poster.append(posterFallback(w.title));c.append(poster);const body=node('div','card-body');body.append(node('div','badge',w.category+(w.favorite?' · ★ お気に入り':'')));body.append(node('h2','',w.title));body.append(node('div','source',w.sourceTitle&&w.sourceTitle!==w.title?w.sourceTitle:''));if(w.progress.total)body.append(node('div','meta',`視聴 ${w.progress.watched}/${w.progress.total} (${w.progress.percent}%)`));const f=node('div','card-foot');f.append(node('span','',w.yearOrPeriod||'年不明'));f.append(node('span',w.availableVideoCount?'available':'',w.availableVideoCount?`${w.availableVideoCount}/${w.videoCount} 利用可`:`${w.videoCount}動画`));body.append(f);c.append(body);makeOpenable(c,()=>{location.hash=`#/work/${w.id}`});return c}
+async function loadWorks(reset=false){if(state.loading)return;state.loading=true;if(reset){state.offset=0;works.replaceChildren()}const p=new URLSearchParams({limit:PAGE,offset:state.offset,sort:state.sort});if(state.q)p.set('q',state.q);if(state.category)p.set('category',state.category);try{const d=await api('/api/works?'+p);state.total=d.total;const catalogCount=$('catalogCount');if(catalogCount)catalogCount.textContent=`${Number(d.total||0).toLocaleString()} 作品`;for(const w of d.items)works.append(card(w));state.offset+=d.items.length;loadWrap.hidden=state.offset>=state.total}finally{state.loading=false}}
+async function showWork(id){$('continueSection').hidden=true;$('nextSection').hidden=true;$('catalog').hidden=true;$('peopleDirectory').hidden=true;$('detail').hidden=false;const w=await api(`/api/works/${id}`),r=document.createDocumentFragment(),h=node('div','hero');if(w.backdropUrl){loadBackgroundResilient(h,w.backdropUrl)}const layout=node('div','hero-layout'),posterSlot=node('div');if(w.posterUrl){const img=document.createElement('img');img.className='hero-poster';img.alt=`${w.title} ポスター`;loadImageResilient(img,w.posterUrl,()=>posterSlot.replaceChildren(node('div','hero-poster hero-poster-fallback',w.title)));posterSlot.append(img)}else posterSlot.append(node('div','hero-poster hero-poster-fallback',w.title));layout.append(posterSlot);const heroBody=node('div','hero-body'),line=node('div','hero-line'),title=node('div','hero-title-block');title.append(node('div','hero-kicker','FEATURE PRESENTATION'),node('div','badge',w.category),node('h2','',w.title),node('div','meta hero-meta',`視聴 ${w.progress.watched}/${w.progress.total} · 検出字幕 ${w.availableSubtitleCount??0}`));const a=node('div','hero-actions'),fav=node('button','action favorite-action'+(w.favorite?' on':''),w.favorite?'★ お気に入り':'☆ お気に入り');fav.onclick=async()=>{w.favorite=!w.favorite;await api(`/api/me/works/${w.id}/favorite`,jo('PUT',{favorite:w.favorite}));fav.textContent=w.favorite?'★ お気に入り':'☆ お気に入り';fav.classList.toggle('on',w.favorite)};a.append(fav);title.append(a);line.append(title);heroBody.append(line);if(w.tmdb?.overview)heroBody.append(node('p','overview',w.tmdb.overview));const credits=node('div','credits'),director=creditRow('監督／演出',w.director),cast=creditRow('主な出演者／声優',w.cast);if(director)credits.append(director);if(cast)credits.append(cast);if(credits.childElementCount)heroBody.append(credits);layout.append(heroBody);h.append(layout);r.append(h);if(w.groups.length){const program=node('section','program-section'),programHead=node('div','section-heading');programHead.append(node('span','section-heading-jp','上映プログラム'),node('small','section-heading-en','PROGRAM'));const g=node('div','groups');w.groups.forEach((x,i)=>{const b=node('button','group'+(i===0?' active':''),`${x.name} (${x.watchedCount}/${x.videoCount})`);b.onclick=()=>{document.querySelectorAll('.group').forEach(q=>q.classList.toggle('active',q===b));loadEpisodes(w.id,x.id)};g.append(b)});program.append(programHead,g);r.append(program);const listing=node('section','screening-list'),listHead=node('div','section-heading');listHead.append(node('span','section-heading-jp','上映目録'),node('small','section-heading-en','SCREENING LIST'));const ep=node('div','episodes');ep.id='episodes';listing.append(listHead,ep);r.append(listing);const vd=node('div');vd.id='videoDetail';r.append(vd)}else r.append(node('div','empty','この作品には登録済み動画がありません。'));$('workDetail').replaceChildren(r);if(w.groups.length)loadEpisodes(w.id,w.groups[0].id)}
 function es(v){if(v.state.watched)return'✓ 視聴済み';if(v.state.positionMs>0)return`▶ ${ft(v.state.positionMs)}`;return'○ 未視聴'}
 function episodeTech(v){const f=v.file||{},parts=[];if(f.width&&f.height)parts.push(`${f.width}×${f.height}`);if(f.videoCodec)parts.push(String(f.videoCodec).toUpperCase());if(f.durationMs)parts.push(ft(f.durationMs));if(f.subtitleCount)parts.push(`字幕 ${f.subtitleCount}`);return parts.join(' · ')}
-async function loadEpisodes(w,g){const e=$('episodes'),d=await api(`/api/works/${w}/videos?groupId=${g}`);e.replaceChildren();for(const v of d.items){const r=node('div','episode'),main=node('div','episode-main');main.append(node('div','',v.episodeTitle||'タイトル未設定'));const tech=episodeTech(v);if(tech)main.append(node('small','',tech));r.append(node('div','ep-no',v.episodeOrType||v.contentType),main,node('div','episode-state'+(v.state.watched?' watched':''),(v.state.favorite?'★ · ':'')+es(v)));r.onclick=()=>showVideo(v.id);e.append(r)}}
+async function loadEpisodes(w,g){const e=$('episodes'),d=await api(`/api/works/${w}/videos?groupId=${g}`);e.replaceChildren();for(const v of d.items){const r=node('div','episode'),main=node('div','episode-main');main.append(node('div','episode-title',v.episodeTitle||'タイトル未設定'));const tech=episodeTech(v);if(tech)main.append(node('small','',tech));r.append(node('div','ep-no',v.episodeOrType||v.contentType),main,node('div','episode-state'+(v.state.watched?' watched':''),(v.state.favorite?'★ · ':'')+es(v)));r.onclick=()=>showVideo(v.id);e.append(r)}}
 function addTech(container,label,value){const item=node('div','tech-item');item.append(node('strong','',label),node('span','',value));container.append(item)}
 let activePlayer=null,playerPrepareTimer=null;
 function closePlayerModal(){const m=$('playerModal');if(playerPrepareTimer){clearInterval(playerPrepareTimer);playerPrepareTimer=null}if(activePlayer){try{activePlayer.pause()}catch{}activePlayer.removeAttribute('src');activePlayer.load();activePlayer=null}m.dataset.requestToken='';m.hidden=true;document.body.style.overflow=''}
@@ -130,10 +471,11 @@ async function showVideo(id){const m=$('playerModal'),b=$('playerContent'),token
   else d.append(node('div','notice','動画ファイルが見つかりません。'));b.replaceChildren(d)}
 $('playerClose').onclick=closePlayerModal;$('playerModal').addEventListener('click',e=>{if(e.target===$('playerModal'))closePlayerModal()});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('playerModal').hidden)closePlayerModal()});
 async function openInWork(w,v){location.hash=`#/work/${w}`;await showWork(w);await showVideo(v)}
-function route(){const p=location.hash.match(/^#\/person\/(.+)$/);if(p){let name=p[1];try{name=decodeURIComponent(name)}catch{}showPersonWorks(name);return}const m=location.hash.match(/^#\/work\/(\d+)$/);if(m){showWork(+m[1]);return}if(state.person){state.person='';state.q='';$('search').value=''}$('message').replaceChildren();$('detail').hidden=true;$('catalog').hidden=false;loadHome();if(!works.children.length)loadWorks(true)}
-let timer;$('search').oninput=e=>{clearTimeout(timer);timer=setTimeout(()=>{state.person='';$('message').replaceChildren();state.q=e.target.value.trim();loadWorks(true)},250)};$('sort').onchange=e=>{state.sort=e.target.value;loadWorks(true)};$('categories').onclick=e=>{const b=e.target.closest('.chip');if(!b)return;state.person='';$('message').replaceChildren();state.category=b.dataset.category||'';document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('active',x===b));loadWorks(true)};$('loadMore').onclick=()=>loadWorks(false);$('back').onclick=()=>location.hash=state.person?`#/person/${encodeURIComponent(state.person)}`:'#/library';$('scanButton').onclick=runScan;$('scanClose').onclick=hideScanModal;window.onhashchange=route;
+async function showLibraryRoute(target='catalog',scrollTarget=true){clearPersonSearchFilter();$('message').replaceChildren();$('detail').hidden=true;$('peopleDirectory').hidden=true;$('catalog').hidden=false;await loadHome();await loadWorks(true);updateCinemaNavActive();if(!scrollTarget){window.scrollTo({top:0,left:0,behavior:'auto'});return}const id=target==='continue'?'continueSection':target==='next'?'nextSection':'catalog';const el=$(id);if(el&&!el.hidden)setTimeout(()=>el.scrollIntoView({behavior:'smooth',block:'start'}),30);else if(target!=='catalog')setTimeout(()=>$('catalog').scrollIntoView({behavior:'smooth',block:'start'}),30)}
+async function route(initial=false){const people=location.hash.match(/^#\/people\/(directors|cast)$/);if(people){await showPeopleDirectory(people[1]);return}const p=location.hash.match(/^#\/person\/(.+)$/);if(p){let name=p[1];try{name=decodeURIComponent(name)}catch{}await showPersonWorks(name);return}const m=location.hash.match(/^#\/work\/(\d+)$/);if(m){await showWork(+m[1]);updateCinemaNavActive();return}if(location.hash==='#/home/continue'){await showLibraryRoute('continue',!initial);return}if(location.hash==='#/home/next'){await showLibraryRoute('next',!initial);return}await showLibraryRoute('catalog',!initial)}
+let timer;$('search').oninput=e=>{clearTimeout(timer);timer=setTimeout(()=>{state.person='';$('message').replaceChildren();state.q=e.target.value.trim();loadWorks(true)},250)};$('sort').onchange=e=>{state.sort=e.target.value;loadWorks(true)};$('categories').onclick=e=>{const b=e.target.closest('.chip');if(!b)return;state.person='';$('message').replaceChildren();state.category=b.dataset.category||'';document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('active',x===b));loadWorks(true)};$('loadMore').onclick=()=>loadWorks(false);$('back').onclick=()=>location.hash=state.person?`#/person/${encodeURIComponent(state.person)}`:'#/library';$('scanClose').onclick=hideScanModal;window.onhashchange=()=>{void route(false)};if('scrollRestoration' in history)history.scrollRestoration='manual';
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js').catch(()=>{}))}
-(async()=>{await Promise.all([loadStats(),loadUser(),loadScan(),loadHome()]);route()})();
+(async()=>{await Promise.all([loadStats(),loadHome()]);await route(true);requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'auto'}))})();
 </script>
 </body>
 </html>
