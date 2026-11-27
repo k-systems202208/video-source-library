@@ -21,6 +21,13 @@ class ImageResponsiveCinemaUiTests(unittest.TestCase):
         self.assertIn('@media(min-width:768px) and (max-width:1199px)',HTML)
         self.assertIn('@media(max-width:767px)',HTML)
 
+    def test_responsive_shell_does_not_duplicate_navigation(self):
+        self.assertEqual(HTML.count('id="cinemaNav"'),1)
+        self.assertEqual(HTML.count('id="mobileMenuToggle"'),1)
+        self.assertEqual(HTML.count('id="cinemaNavBackdrop"'),1)
+        self.assertNotIn('CINEMA_LIBRARY_RESPONSIVE_IMAGE_SHELL_V1',HTML)
+        self.assertNotIn('cinema-mobile-nav',HTML)
+
     def test_header_brand_is_centered_compact_and_header_controls_are_removed(self):
         self.assertIn('SEKIMACHI_KITA_CINEMA_HEADER_V2',HTML)
         self.assertIn('<title>関町北映画館</title>',HTML)
