@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +14,7 @@ sys.path.insert(0, str(SRC))
 from database import connect, initialize_database, now_iso
 from library_service import get_work, list_works
 from tmdb_images import cached_image_path, resolve_cached_tmdb_image
+from tmdb_client import TmdbError
 from tmdb_sync import Candidate, choose_candidate, sync_tmdb_library
 
 
@@ -166,6 +169,62 @@ class TmdbUiAndSafetyTests(unittest.TestCase):
         self.assertNotIn("access_token=", sync_source)
         self.assertNotIn("api_key=", image_source)
         self.assertNotIn("access_token=", image_source)
+
+
+class TmdbSyncErrorTests(unittest.TestCase):
+    def test_api_failure_is_reported_per_work_without_replacing_saved_link(self):
+        class FailingTmdbClient:
+            def search_movie(self, query, *, year=None, language="ja-JP"):
+                raise TmdbError("TMDb API returned HTTP 503")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = root / "library.db"
+            work_id = seed_work(db)
+            stamp = now_iso()
+            with connect(db) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO tmdb_work_links(
+                        work_id,media_type,tmdb_id,match_status,confidence,matched_title,matched_year,
+                        created_at,updated_at
+                    ) VALUES(?, 'movie', 501, 'MATCHED', 0.99, 'Saved Match', '2020', ?, ?)
+                    """,
+                    (work_id, stamp, stamp),
+                )
+                connection.commit()
+
+            progress = []
+            report = sync_tmdb_library(
+                db,
+                root / "TMDbImages",
+                root / "diagnostics",
+                "token",
+                client=FailingTmdbClient(),
+                progress_callback=progress.append,
+            )
+
+            self.assertEqual(report["summary"]["errors"], 1)
+            self.assertEqual(report["summary"]["matched"], 0)
+            self.assertEqual(progress[-1]["errors"], 1)
+            with connect(db) as connection:
+                saved = connection.execute(
+                    "SELECT media_type,tmdb_id,match_status,matched_title FROM tmdb_work_links WHERE work_id=?",
+                    (work_id,),
+                ).fetchone()
+                self.assertEqual(tuple(saved), ("movie", 501, "MATCHED", "Saved Match"))
+                self.assertIsNone(connection.execute(
+                    "SELECT 1 FROM tmdb_api_cache WHERE cache_key='tmdb:matcher-version'"
+                ).fetchone())
+
+            with Path(report["jsonReport"]).open(encoding="utf-8") as handle:
+                payload = json.load(handle)
+            self.assertEqual(payload["items"][0]["status"], "ERROR")
+            self.assertEqual(payload["items"][0]["error"], "TMDb API returned HTTP 503")
+            with Path(report["csvReport"]).open(encoding="utf-8-sig", newline="") as handle:
+                row = next(csv.DictReader(handle))
+            self.assertEqual(row["status"], "ERROR")
+            self.assertEqual(row["error"], "TMDb API returned HTTP 503")
 
 
 if __name__ == "__main__":

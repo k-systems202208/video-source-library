@@ -15,7 +15,7 @@ from typing import Any, Callable, Iterable
 from app_version import APP_VERSION
 from database import connect, initialize_database, now_iso
 from tmdb_cache import get_cached_json, put_cached_json
-from tmdb_client import TmdbClient
+from tmdb_client import TmdbClient, TmdbError
 from tmdb_images import cached_image_path, cached_person_image_path, download_tmdb_image
 from tmdb_people import audit_tmdb_people_profiles, mark_people_sync_complete, sync_cast_people_for_work
 from tmdb_people_reviewed_overrides import (
@@ -26,6 +26,7 @@ from tmdb_people_reviewed_overrides import (
 _MATCHED = "MATCHED"
 _REVIEW = "REVIEW"
 _UNMATCHED = "UNMATCHED"
+_ERROR = "ERROR"
 _MATCHER_VERSION = 8
 _MATCHER_VERSION_CACHE_KEY = "tmdb:matcher-version"
 _SEARCH_CACHE_VERSION = 3
@@ -756,6 +757,7 @@ def _write_report(
         "matchedTitle",
         "matchedYear",
         "reason",
+        "error",
         "posterCached",
         "backdropCached",
     ]
@@ -792,6 +794,7 @@ def sync_tmdb_library(
     people_reviewed_alias_match_count = 0
     people_reviewed_work_person_match_count = 0
     people_sync_failures = 0
+    work_errors = 0
 
     with connect(database_path) as connection:
         initialize_database(connection)
@@ -825,39 +828,47 @@ def sync_tmdb_library(
 
             candidate: Candidate | None = None
             reason = ""
+            error_message = ""
             status = _UNMATCHED
 
-            if (
-                not force_reassess_matched
-                and existing is not None
-                and existing["match_status"] == _MATCHED
-                and existing["tmdb_id"]
-                and _work_audit_key(work) not in _AUDIT_FORCE_REASSESS_WORKS
-            ):
-                candidate = Candidate(
-                    media_type=str(existing["media_type"]),
-                    tmdb_id=int(existing["tmdb_id"]),
-                    title=str(existing["matched_title"] or work["official_title"]),
-                    year=str(existing["matched_year"] or ""),
-                    poster_path=str(existing["poster_path"]) if existing["poster_path"] else None,
-                    backdrop_path=str(existing["backdrop_path"]) if existing["backdrop_path"] else None,
-                    overview=str(existing["overview"] or ""),
-                    title_similarity=1.0,
-                    year_similarity=1.0,
-                    confidence=float(existing["confidence"] or 1.0),
-                )
-                status = _MATCHED
-                reason = "EXISTING_MATCH"
-                if legacy_image_repair and _requires_image_cache_repair(work):
-                    candidate = _refresh_matched_candidate_details(tmdb, candidate)
+            try:
+                if (
+                    not force_reassess_matched
+                    and existing is not None
+                    and existing["match_status"] == _MATCHED
+                    and existing["tmdb_id"]
+                    and _work_audit_key(work) not in _AUDIT_FORCE_REASSESS_WORKS
+                ):
+                    candidate = Candidate(
+                        media_type=str(existing["media_type"]),
+                        tmdb_id=int(existing["tmdb_id"]),
+                        title=str(existing["matched_title"] or work["official_title"]),
+                        year=str(existing["matched_year"] or ""),
+                        poster_path=str(existing["poster_path"]) if existing["poster_path"] else None,
+                        backdrop_path=str(existing["backdrop_path"]) if existing["backdrop_path"] else None,
+                        overview=str(existing["overview"] or ""),
+                        title_similarity=1.0,
+                        year_similarity=1.0,
+                        confidence=float(existing["confidence"] or 1.0),
+                    )
+                    status = _MATCHED
+                    reason = "EXISTING_MATCH"
+                    if legacy_image_repair and _requires_image_cache_repair(work):
+                        candidate = _refresh_matched_candidate_details(tmdb, candidate)
+                        _upsert_link(connection, int(work["id"]), status, candidate)
+                        connection.commit()
+                        reason = "EXISTING_MATCH_METADATA_REFRESH"
+                else:
+                    candidates = _collect_candidates(connection, tmdb, work)
+                    status, candidate, reason = choose_candidate(work, candidates)
                     _upsert_link(connection, int(work["id"]), status, candidate)
                     connection.commit()
-                    reason = "EXISTING_MATCH_METADATA_REFRESH"
-            else:
-                candidates = _collect_candidates(connection, tmdb, work)
-                status, candidate, reason = choose_candidate(work, candidates)
-                _upsert_link(connection, int(work["id"]), status, candidate)
-                connection.commit()
+            except TmdbError as exc:
+                status = _ERROR
+                candidate = None
+                reason = "TMDB_API_ERROR"
+                error_message = str(exc)
+                work_errors += 1
 
             poster_cached = False
             backdrop_cached = False
@@ -936,7 +947,7 @@ def sync_tmdb_library(
                     # Person photos are enrichment only.  Preserve a completed
                     # work match even if credits/profile retrieval is temporarily unavailable.
                     people_sync_failures += 1
-            else:
+            elif status != _ERROR:
                 connection.execute(
                     "DELETE FROM tmdb_work_people WHERE work_id=? AND role='CAST'",
                     (int(work["id"]),),
@@ -957,6 +968,7 @@ def sync_tmdb_library(
                 "matchedTitle": candidate.title if candidate else "",
                 "matchedYear": candidate.year if candidate else "",
                 "reason": reason,
+                "error": error_message,
                 "posterCached": poster_cached,
                 "backdropCached": backdrop_cached,
                 "castPeopleMatched": cast_people_matched,
@@ -972,13 +984,15 @@ def sync_tmdb_library(
                         "matched": sum(1 for item in rows if item["status"] == _MATCHED),
                         "review": sum(1 for item in rows if item["status"] == _REVIEW),
                         "unmatched": sum(1 for item in rows if item["status"] == _UNMATCHED),
+                        "errors": sum(1 for item in rows if item["status"] == _ERROR),
                         "currentItem": str(work["official_title"]),
                     }
                 )
 
-        _store_matcher_version(connection)
-        _store_image_cache_repair_version(connection)
-        if people_sync_failures == 0:
+        if work_errors == 0:
+            _store_matcher_version(connection)
+            _store_image_cache_repair_version(connection)
+        if work_errors == 0 and people_sync_failures == 0:
             mark_people_sync_complete(connection)
         connection.commit()
 
@@ -989,6 +1003,7 @@ def sync_tmdb_library(
         "matched": sum(1 for item in rows if item["status"] == _MATCHED),
         "review": sum(1 for item in rows if item["status"] == _REVIEW),
         "unmatched": sum(1 for item in rows if item["status"] == _UNMATCHED),
+        "errors": work_errors,
         "posterCached": sum(1 for item in rows if item["posterCached"]),
         "backdropCached": sum(1 for item in rows if item["backdropCached"]),
         "peopleMatched": len(people_matched_ids),
