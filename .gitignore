@@ -16,3 +16,8 @@ windows-installer/dist/
 windows-installer/output/
 windows-installer/pyinstaller-work/
 windows-installer/tools/ffprobe.exe
+
+# Playwright browser E2E outputs.
+browser-e2e/node_modules/
+browser-e2e/playwright-report/
+browser-e2e/test-results/

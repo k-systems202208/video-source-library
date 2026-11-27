@@ -16,7 +16,7 @@ from app_version import APP_VERSION
 from backup_restore import cancel_restore, create_manual_backup, list_backups, pending_restore, restore_status, schedule_restore
 from database import SCHEMA_VERSION, connect, initialize_database, quick_check
 from identity_service import local_owner_user, resolve_tailscale_user
-from library_service import get_video, get_work, library_stats, list_work_videos, list_works
+from library_service import get_video, get_work, library_stats, list_people, list_work_videos, list_works
 from local_auth import LocalOwnerAuth, cookie_value, session_cookie_header
 from matroska_audio import apply_patch_to_chunk, preferred_japanese_audio_patch
 from playback_compat import prepare_browser_playback
@@ -26,6 +26,8 @@ from scan_runner import scan_library
 from subtitle_stream import resolve_subtitle_file, subtitle_file_to_webvtt
 from scanner import latest_scan_status, mime_type_for_extension, resolve_video_file
 from tailscale_identity import parse_tailscale_identity
+from tmdb_images import resolve_or_repair_cached_tmdb_image, resolve_or_repair_cached_tmdb_person_image
+from work_visibility import is_person_visible, is_subtitle_visible, is_work_visible
 from user_state import (
     PlaybackSessionStore,
     continue_watching,
@@ -53,6 +55,9 @@ STATIC_FILES = {
     "/offline.html": ("offline.html", "text/html; charset=utf-8"),
     "/diagnostics.html": ("diagnostics.html", "text/html; charset=utf-8"),
     "/icon.svg": ("icon.svg", "image/svg+xml"),
+    "/cinema-header.svg": ("cinema-header.svg", "image/svg+xml"),
+    "/cinema-sidebar.svg": ("cinema-sidebar.svg", "image/svg+xml"),
+    "/cinema-footer.svg": ("cinema-footer.svg", "image/svg+xml"),
 }
 
 
@@ -177,11 +182,6 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             text = ui_path.read_text(encoding="utf-8")
             if "manifest.webmanifest" not in text:
                 text = text.replace("</head>", '<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg"></head>')
-            if "diagnostics.html" not in text:
-                text = text.replace(
-                    '<button class="ghost" id="scanButton">再スキャン</button>',
-                    '<a class="ghost" style="text-decoration:none" href="/diagnostics.html">診断</a><button class="ghost" id="scanButton">再スキャン</button>',
-                )
             if "serviceWorker.register" not in text:
                 text = text.replace("</body>", "<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js').catch(()=>{}));}</script></body>")
             body = text.encode("utf-8")
@@ -268,13 +268,18 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                 self._error(409, "VIDEO_ROOT_NOT_CONFIGURED", "動画フォルダーが設定されていません。")
                 return
             with connect(db_path) as connection:
+                user = self._request_user(connection)
+                user_id = int(user["id"]) if user else None
+                video = get_video(connection, video_id, user_id=user_id)
+                if video is None:
+                    self._error(404, "VIDEO_NOT_FOUND", "動画が見つかりません。")
+                    return
                 resolved = resolve_video_file(connection, root_path, video_id)
-                video = get_video(connection, video_id)
             if resolved is None:
                 self._error(404, "VIDEO_FILE_NOT_FOUND", "動画ファイルが見つかりません。")
                 return
             path, extension = resolved
-            file_info = (video or {}).get("file") or {}
+            file_info = video.get("file") or {}
             try:
                 prepared = prepare_browser_playback(
                     path,
@@ -335,6 +340,11 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                 self._error(409, "VIDEO_ROOT_NOT_CONFIGURED", "動画フォルダーが設定されていません。")
                 return
             with connect(db_path) as connection:
+                user = self._request_user(connection)
+                user_id = int(user["id"]) if user else None
+                if not is_subtitle_visible(connection, subtitle_id, user_id):
+                    self._error(404, "SUBTITLE_FILE_NOT_FOUND", "字幕ファイルが見つかりません。")
+                    return
                 resolved = resolve_subtitle_file(connection, root_path, subtitle_id)
             if resolved is None:
                 self._error(404, "SUBTITLE_FILE_NOT_FOUND", "字幕ファイルが見つかりません。")
@@ -359,6 +369,64 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             if not head:
                 self.wfile.write(body)
 
+        def _serve_tmdb_image(self, kind: str, work_id: int, *, head: bool = False) -> None:
+            with connect(db_path) as connection:
+                user = self._request_user(connection)
+                user_id = int(user["id"]) if user else None
+                if not is_work_visible(connection, work_id, user_id):
+                    self._error(404, "TMDB_IMAGE_NOT_FOUND", "TMDb画像が見つかりません。")
+                    return
+                resolved = resolve_or_repair_cached_tmdb_image(connection, app_data_root / "TMDbImages", work_id, kind)
+            if resolved is None:
+                self._error(404, "TMDB_IMAGE_NOT_FOUND", "TMDb画像が見つかりません。")
+                return
+            image_path, content_type = resolved
+            try:
+                size = image_path.stat().st_size
+            except OSError:
+                self._error(404, "TMDB_IMAGE_NOT_FOUND", "TMDb画像が見つかりません。")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(size))
+            self._common(cache="private, max-age=300")
+            self.end_headers()
+            if not head:
+                try:
+                    self.wfile.write(image_path.read_bytes())
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
+        def _serve_tmdb_person_image(self, person_id: int, *, head: bool = False) -> None:
+            with connect(db_path) as connection:
+                user = self._request_user(connection)
+                user_id = int(user["id"]) if user else None
+                if not is_person_visible(connection, person_id, user_id):
+                    self._error(404, "TMDB_PERSON_IMAGE_NOT_FOUND", "TMDb人物画像が見つかりません。")
+                    return
+                resolved = resolve_or_repair_cached_tmdb_person_image(
+                    connection, app_data_root / "TMDbImages", person_id
+                )
+            if resolved is None:
+                self._error(404, "TMDB_PERSON_IMAGE_NOT_FOUND", "TMDb人物画像が見つかりません。")
+                return
+            image_path, content_type = resolved
+            try:
+                size = image_path.stat().st_size
+            except OSError:
+                self._error(404, "TMDB_PERSON_IMAGE_NOT_FOUND", "TMDb人物画像が見つかりません。")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(size))
+            self._common(cache="private, max-age=300")
+            self.end_headers()
+            if not head:
+                try:
+                    self.wfile.write(image_path.read_bytes())
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
         def do_GET(self) -> None:
             parsed = urlsplit(self.path); path = parsed.path; query = parse_qs(parsed.query, keep_blank_values=True)
             if path in ("/", "/index.html"):
@@ -376,6 +444,12 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             subtitle = re.fullmatch(r"/subtitle/(\d+)\.vtt", path)
             if subtitle:
                 self._serve_subtitle(int(subtitle.group(1))); return
+            tmdb_image = re.fullmatch(r"/tmdb-image/(poster|backdrop)/(\d+)", path)
+            if tmdb_image:
+                self._serve_tmdb_image(tmdb_image.group(1), int(tmdb_image.group(2))); return
+            tmdb_person_image = re.fullmatch(r"/tmdb-person-image/(\d+)", path)
+            if tmdb_person_image:
+                self._serve_tmdb_person_image(int(tmdb_person_image.group(1))); return
             stream = re.fullmatch(r"/video/(\d+)", path)
             if stream:
                 self._serve_video(int(stream.group(1))); return
@@ -400,7 +474,7 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                                          "videoRootConfigured": root_path is not None}); return
                     if path == "/api/current-user":
                         self._json(200, {"authenticated": user is not None, "user": user}); return
-                    if path == "/api/stats": self._json(200, library_stats(connection)); return
+                    if path == "/api/stats": self._json(200, library_stats(connection, user_id=user_id)); return
                     if path == "/api/scan/status":
                         value = latest_scan_status(connection)
                         live = scan_progress.snapshot()
@@ -417,9 +491,26 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
                         if path.endswith(".csv"):
                             self._download(diagnostics_csv_bytes(value), "text/csv; charset=utf-8", "scan-diagnostics.csv"); return
                         self._json(200, value); return
+                    if path == "/api/people":
+                        try:
+                            self._json(200, list_people(connection, role=_first(query, "role") or "", user_id=user_id))
+                        except ValueError as exc:
+                            self._error(400, "INVALID_PEOPLE_ROLE", str(exc))
+                        return
                     if path == "/api/works":
-                        self._json(200, list_works(connection, user_id=user_id, q=_first(query, "q"), category=_first(query, "category"),
-                                                   sort=_first(query, "sort") or "title", limit=_first(query, "limit"), offset=_first(query, "offset"))); return
+                        self._json(
+                            200,
+                            list_works(
+                                connection,
+                                user_id=user_id,
+                                q=_first(query, "q"),
+                                category=_first(query, "category"),
+                                sort=_first(query, "sort") or "title",
+                                limit=_first(query, "limit"),
+                                offset=_first(query, "offset"),
+                            ),
+                        )
+                        return
                     if path.startswith("/api/me/"):
                         user = self._require_user(connection)
                         if user is None: return
@@ -459,6 +550,12 @@ def make_handler(database_path: Path | str, html_path: Path | str, *, video_root
             subtitle = re.fullmatch(r"/subtitle/(\d+)\.vtt", urlsplit(self.path).path)
             if subtitle:
                 self._serve_subtitle(int(subtitle.group(1)), head=True); return
+            tmdb_image = re.fullmatch(r"/tmdb-image/(poster|backdrop)/(\d+)", urlsplit(self.path).path)
+            if tmdb_image:
+                self._serve_tmdb_image(tmdb_image.group(1), int(tmdb_image.group(2)), head=True); return
+            tmdb_person_image = re.fullmatch(r"/tmdb-person-image/(\d+)", urlsplit(self.path).path)
+            if tmdb_person_image:
+                self._serve_tmdb_person_image(int(tmdb_person_image.group(1)), head=True); return
             stream = re.fullmatch(r"/video/(\d+)", urlsplit(self.path).path)
             if stream:
                 self._serve_video(int(stream.group(1)), head=True); return

@@ -95,10 +95,10 @@ class DiagnosticsHttpTests(unittest.TestCase):
         self.assertIn("attachment", json_headers["Content-Disposition"])
         self.assertEqual(json_payload["summary"]["newFiles"], 1)
 
-    def test_main_page_links_to_diagnostics(self):
+    def test_main_page_does_not_link_to_diagnostics(self):
         status, _, html = self.request("GET", "/")
         self.assertEqual(status, 200)
-        self.assertIn("/diagnostics.html", html.decode("utf-8"))
+        self.assertNotIn("/diagnostics.html", html.decode("utf-8"))
 
 
 if __name__ == "__main__":
