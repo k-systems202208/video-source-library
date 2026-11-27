@@ -3,6 +3,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 HTML = ROOT / "windows-installer" / "src" / "video-library.html"
+LAUNCHER = ROOT / "windows-installer" / "src" / "launcher.py"
 
 
 class CinemaLibraryBaseDesignV110Tests(unittest.TestCase):
@@ -16,6 +17,7 @@ class CinemaLibraryBaseDesignV110Tests(unittest.TestCase):
         self.assertIn("PRIVATE CINEMA ARCHIVE", self.html)
         self.assertNotIn("シネマ蔵書館", self.html)
         self.assertNotIn("映画で、また会える。", self.html)
+        self.assertIn('APP_NAME = "関町北映画館"', LAUNCHER.read_text(encoding="utf-8"))
 
     def test_theater_language_is_used(self):
         for value in ("上映中", "NOW SHOWING", "次回上映", "COMING SOON", "← 作品目録"):

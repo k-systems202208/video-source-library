@@ -38,7 +38,7 @@ from work_visibility import (
     reset_user_visibility,
 )
 
-APP_NAME = "自宅動画ライブラリ"
+APP_NAME = "関町北映画館"
 # Music Library uses 8765. Keep Video Library on a different localhost origin
 # so Service Worker, Cache Storage and PWA state cannot collide.
 DEFAULT_PORT = 8876
